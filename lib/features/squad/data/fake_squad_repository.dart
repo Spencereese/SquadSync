@@ -21,6 +21,7 @@ class FakeSquadRepository implements SquadRepository {
 
   bool fail;
   bool failEnsure;
+  bool failCreate = false;
 
   /// Pauses [myProfile] so a test can switch accounts while a load is in flight.
   Future<void>? holdProfile;
@@ -104,6 +105,11 @@ class FakeSquadRepository implements SquadRepository {
   @override
   Future<Squad> createMine() async {
     _guard('create');
+    if (failCreate) {
+      throw const RepositoryFailure(
+        'The squad was not opened. Nothing is on screen until the server returns it.',
+      );
+    }
     final existing = _squad;
     if (existing != null) return existing;
     final created = Squad(
@@ -113,6 +119,11 @@ class FakeSquadRepository implements SquadRepository {
     );
     _squad = created;
     return created;
+  }
+
+  /// Test seam. Joining a code seats this person in [squad].
+  void seat(Squad squad) {
+    _squad = squad;
   }
 
   @override

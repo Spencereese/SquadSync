@@ -25,6 +25,8 @@ Run these in order, in one project, as the migration role:
 4. `20261103_0004_read_state.sql`
 5. `20261108_0005_own_profile_and_squad_guard.sql` — **not applied**. Spencer has to approve this one before it runs. It adds an insert of only your own profile, one squad per owner, and a lock so two overlapping joins cannot pass eight members.
 6. `20261108_0006_check_ins.sql` — **not applied**. This is the availability board. It can be applied after files 1 and 2 whether or not file 5 is applied. It adds `sq8_check_ins` only.
+7. `20261109_0007_squad_owner_select.sql` — idempotent owner select on `sq8_squads`. A reported live copy already exists; this checkout did not query that project. Running the file again does not replace an existing policy of the same name.
+8. `20261109_0008_invites.sql` — **not applied**. Invite codes and the join function. Apply only after 1, 2, 5, and 7. Before applying, `select public.sq8_join_with_code('x');` should fail because the function is absent, and `select owner_id from public.sq8_squads group by owner_id having count(*) > 1;` should return no rows.
 
 ## What each file does
 
@@ -34,12 +36,27 @@ Run these in order, in one project, as the migration role:
 4. **Read state.** `sq8_chat_read_state` is one cursor per user per squad. You can read and write only your own row. Opening one squad does not write any other row.
 5. **Own profile and squad guard.** Not applied. An authenticated person may insert `sq8_profiles` only when `id` is their own auth id. A second insert does not change the name or default game. `sq8_squads.owner_id` is unique. The member cap locks the squad row before it counts, so two overlapping adds cannot both pass eight. Without this file the live cap is not safe. This checkout did not query the live project.
 6. **Check-ins.** Not applied. One row per person in `sq8_check_ins`. A member can read the squad's rows. Only that person can write or delete their own row. "Available now" is stamped to 60 minutes. "Available later" must be more than a minute ahead and within 7 days, and it is not rewritten to available now. A non-member and another squad cannot read the row. Leaving the squad deletes it.
+7. **Owner select.** Idempotent. Adds `sq8_squads_select_owner` with `using (owner_id = auth.uid())` when that policy name is absent. This matches the policy reported on the live project. This checkout did not open that project.
+8. **Invites.** Not applied. `sq8_invites` is readable by the squad owner only. `public.sq8_create_invite` and `public.sq8_join_with_code` are the only functions granted to `authenticated`. A code lasts 7 days, is 8 characters, and rotating it revokes the previous one. Joining locks the squad row, refuses a ninth person, treats the same squad as success, deletes an empty squad the caller owns, and refuses any other existing squad.
 
 ## Rollback
 
 Run these in reverse order. This deletes the slice 2 rows. It does not touch the old tables.
 
 ```sql
+-- 8 only. Also restores the owner-removal function from file 2 if you stop here.
+drop function if exists public.sq8_join_with_code(text);
+drop function if exists public.sq8_create_invite();
+drop function if exists sq8.join_with_code(text);
+drop function if exists sq8.create_invite();
+drop function if exists sq8.random_invite_code();
+drop function if exists sq8.normalize_invite_code(text);
+drop table if exists public.sq8_invites;
+drop table if exists sq8.empty_squad_leave;
+
+-- 7 only.
+drop policy if exists sq8_squads_select_owner on public.sq8_squads;
+
 -- 6 only. Does not touch check-in rows in other tables.
 drop trigger if exists sq8_squad_members_clear_check_in on public.sq8_squad_members;
 drop table if exists public.sq8_check_ins;

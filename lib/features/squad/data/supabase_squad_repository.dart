@@ -88,6 +88,10 @@ class SupabaseSquadRepository implements SquadRepository {
       final raced = await findMine();
       if (raced != null) return raced;
       rethrow;
+    } on RepositoryFailure {
+      final raced = await findMine();
+      if (raced != null) return raced;
+      rethrow;
     }
   }
 

@@ -82,17 +82,27 @@ class SupabaseSq8Database implements Sq8Database {
     final me = _requireUser();
     final Map<String, dynamic> row;
     try {
-      row = await _guardValue(
-        () => _client
-            .from('sq8_squads')
-            .insert({'owner_id': me})
-            .select('id')
-            .single(),
-      );
-    } on Sq8DuplicateRow {
-      final existing = await mySquadId();
-      if (existing != null) return existing;
-      rethrow;
+      row = await _client
+          .from('sq8_squads')
+          .insert({'owner_id': me})
+          .select('id')
+          .single();
+    } on PostgrestException catch (error) {
+      if (error.code == '23505') {
+        final existing = await mySquadId();
+        if (existing != null) return existing;
+        throw const Sq8DuplicateRow();
+      }
+      // The insert can seat the owner and still hide the returned row
+      // until the owner select policy exists. Open that squad if it is there.
+      if (error.code == 'PGRST116' || error.code == '42501') {
+        final existing = await mySquadId();
+        if (existing != null) return existing;
+        throw const RepositoryFailure(
+          'The squad was not opened. Nothing is on screen until the server returns it.',
+        );
+      }
+      throw mapPostgrest(error);
     }
     final id = row['id'];
     if (id is! String || id.isEmpty) {

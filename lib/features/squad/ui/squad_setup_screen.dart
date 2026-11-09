@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/auth/ui/sign_out_button.dart';
+import 'package:squadsync/features/invite/ui/invite_screen.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
 
@@ -82,6 +83,12 @@ class _SquadSetupScreenState extends ConsumerState<SquadSetupScreen> {
             onPressed: _busy ? null : _start,
             child: const Text('Create the squad'),
           ),
+          const SizedBox(height: 8),
+          OutlinedButton(
+            key: const Key('join-with-code'),
+            onPressed: _busy ? null : _join,
+            child: const Text('Join with a code'),
+          ),
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(
@@ -112,6 +119,15 @@ class _SquadSetupScreenState extends ConsumerState<SquadSetupScreen> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _join() async {
+    final joined = await showDialog<bool>(
+      context: context,
+      builder: (context) => const JoinCodeDialog(),
+    );
+    if (joined != true || !mounted) return;
+    ref.read(accountRevisionProvider.notifier).bump();
   }
 }
 

@@ -6,6 +6,7 @@ import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/auth/ui/sign_out_button.dart';
 import 'package:squadsync/features/availability/ui/availability_screen.dart';
+import 'package:squadsync/features/invite/ui/invite_screen.dart';
 import 'package:squadsync/features/chat/ui/message_bubble.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
@@ -47,6 +48,19 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen> {
               icon: const Icon(Icons.person),
             ),
           if (!widget.demo) const SignOutButton(),
+          if (squad != null && squad.ownerId == state.meId)
+            IconButton(
+              key: const Key('open-invite'),
+              tooltip: 'Invite',
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => InviteScreen(demo: widget.demo),
+                  ),
+                );
+              },
+              icon: const Icon(Icons.person_add_alt_1),
+            ),
           if (squad != null)
             IconButton(
               key: const Key('open-availability'),

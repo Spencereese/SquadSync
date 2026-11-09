@@ -9,6 +9,10 @@ import 'package:squadsync/features/availability/data/availability_repository.dar
 import 'package:squadsync/features/availability/data/fake_availability_repository.dart';
 import 'package:squadsync/features/availability/data/supabase_availability_repository.dart';
 import 'package:squadsync/features/availability/domain/check_in.dart';
+import 'package:squadsync/features/invite/data/code_share.dart';
+import 'package:squadsync/features/invite/data/fake_invite_repository.dart';
+import 'package:squadsync/features/invite/data/invite_repository.dart';
+import 'package:squadsync/features/invite/data/supabase_invite_repository.dart';
 import 'package:squadsync/features/chat/data/chat_repository.dart';
 import 'package:squadsync/features/chat/data/fake_chat_repository.dart';
 import 'package:squadsync/features/chat/data/supabase_chat_repository.dart';
@@ -75,6 +79,19 @@ final availabilityRepositoryProvider = Provider<AvailabilityRepository>((ref) {
   }
   return SupabaseAvailabilityRepository(client);
 });
+
+final inviteRepositoryProvider = Provider<InviteRepository>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  if (client == null) {
+    final squads = ref.watch(squadRepositoryProvider);
+    return FakeInviteRepository(
+      squads: squads is FakeSquadRepository ? squads : null,
+    );
+  }
+  return SupabaseInviteRepository(client);
+});
+
+final codeShareProvider = Provider<CodeShare>((ref) => PlatformCodeShare());
 
 final clientIdFactoryProvider = Provider<ClientIdFactory>(
   (ref) => RandomClientIdFactory(),

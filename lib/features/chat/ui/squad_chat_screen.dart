@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/auth/ui/sign_out_button.dart';
+import 'package:squadsync/features/availability/ui/availability_controller.dart';
 import 'package:squadsync/features/availability/ui/availability_screen.dart';
 import 'package:squadsync/features/invite/ui/invite_screen.dart';
 import 'package:squadsync/features/chat/ui/message_bubble.dart';
@@ -21,14 +22,31 @@ class SquadChatScreen extends ConsumerStatefulWidget {
   ConsumerState<SquadChatScreen> createState() => _SquadChatScreenState();
 }
 
-class _SquadChatScreenState extends ConsumerState<SquadChatScreen> {
+class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
+    with WidgetsBindingObserver {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       unawaited(ref.read(squadChatControllerProvider.notifier).open());
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed || !mounted) return;
+    unawaited(
+      ref.read(squadChatControllerProvider.notifier).refreshFromRoster(),
+    );
+    unawaited(ref.read(availabilityControllerProvider.notifier).refresh());
   }
 
   @override
@@ -120,7 +138,15 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen> {
                     },
                     child: const Text('Earlier messages'),
                   ),
-                const Expanded(child: _MessageList()),
+                Expanded(
+                  child: RefreshIndicator(
+                    key: const Key('refresh-chat'),
+                    onRefresh: () => ref
+                        .read(squadChatControllerProvider.notifier)
+                        .refreshFromRoster(),
+                    child: const _MessageList(),
+                  ),
+                ),
                 const _Composer(),
               ],
             ),
@@ -285,11 +311,18 @@ class _MessageList extends ConsumerWidget {
     final state = ref.watch(squadChatControllerProvider);
     final messages = state.messages;
     if (messages.isEmpty) {
-      return const Center(child: Text('No messages yet'));
+      return ListView(
+        key: const Key('message-list'),
+        physics: const AlwaysScrollableScrollPhysics(),
+        children: const [
+          SizedBox(height: 240, child: Center(child: Text('No messages yet'))),
+        ],
+      );
     }
     return ListView.builder(
       key: const Key('message-list'),
       reverse: true,
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(12),
       itemCount: messages.length,
       itemBuilder: (context, index) {

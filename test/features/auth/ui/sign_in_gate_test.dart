@@ -8,6 +8,8 @@ import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/features/auth/data/fake_auth_repository.dart';
 import 'package:squadsync/features/auth/domain/auth_user.dart';
 import 'package:squadsync/features/squad/data/fake_squad_repository.dart';
+import 'package:squadsync/features/squad/domain/member.dart';
+import 'package:squadsync/features/squad/domain/squad.dart';
 
 void main() {
   testWidgets('a failed squad load can be retried or signed out', (
@@ -102,6 +104,84 @@ void main() {
 
     gate.complete();
     await tester.pumpAndSettle();
+    expect(find.byKey(const Key('composer')), findsOneWidget);
+  });
+
+  testWidgets('being seated while waiting opens the squad chat', (
+    tester,
+  ) async {
+    final squads = FakeSquadRepository(startEmpty: true);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLinkProvider.overrideWithValue(AppLink.live),
+          authRepositoryProvider.overrideWithValue(
+            FakeAuthRepository(
+              signedIn: const AuthUser(
+                id: 'spencer',
+                email: 'spencer@example.com',
+              ),
+            ),
+          ),
+          squadRepositoryProvider.overrideWithValue(squads),
+        ],
+        child: const SquadSyncApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Start the squad'), findsOneWidget);
+
+    squads.seat(
+      Squad(
+        id: 'joined',
+        ownerId: 'owner',
+        members: const [
+          Member(
+            id: 'owner',
+            displayName: 'Owner',
+            defaultGame: 'Call of Duty',
+          ),
+          spencer,
+        ],
+      ),
+    );
+    squads.notifyRoster();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('composer')), findsOneWidget);
+    expect(find.text('Start the squad'), findsNothing);
+  });
+
+  testWidgets('pull to refresh on the no-squad screen picks up a seat', (
+    tester,
+  ) async {
+    final squads = FakeSquadRepository(startEmpty: true);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLinkProvider.overrideWithValue(AppLink.live),
+          authRepositoryProvider.overrideWithValue(
+            FakeAuthRepository(
+              signedIn: const AuthUser(
+                id: 'spencer',
+                email: 'spencer@example.com',
+              ),
+            ),
+          ),
+          squadRepositoryProvider.overrideWithValue(squads),
+        ],
+        child: const SquadSyncApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    squads.seat(Squad.seed());
+    final refresh = tester.widget<RefreshIndicator>(
+      find.byKey(const Key('refresh-setup')),
+    );
+    await refresh.onRefresh();
+    await tester.pumpAndSettle();
+
     expect(find.byKey(const Key('composer')), findsOneWidget);
   });
 }

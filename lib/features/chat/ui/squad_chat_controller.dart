@@ -60,6 +60,7 @@ final squadChatControllerProvider =
 /// Without a signed-in user the phone acts as the squad owner (the fakes).
 class SquadChatController extends Notifier<SquadChatState> {
   StreamSubscription<List<ChatMessage>>? _echo;
+  StreamSubscription<void>? _roster;
   var _started = false;
   var _loadingOlder = false;
   var _epoch = 0;
@@ -70,6 +71,9 @@ class SquadChatController extends Notifier<SquadChatState> {
       final echo = _echo;
       _echo = null;
       if (echo != null) unawaited(echo.cancel());
+      final roster = _roster;
+      _roster = null;
+      if (roster != null) unawaited(roster.cancel());
     });
     return const SquadChatState();
   }
@@ -98,6 +102,7 @@ class SquadChatController extends Notifier<SquadChatState> {
         hasOlder: page.hasOlder,
         unread: cleared,
       );
+      await _listenRoster();
     } on RepositoryFailure catch (error) {
       if (!ref.mounted) return;
       state = state.copyWith(error: error.message);
@@ -121,6 +126,9 @@ class SquadChatController extends Notifier<SquadChatState> {
     final echo = _echo;
     _echo = null;
     if (echo != null) unawaited(echo.cancel());
+    final roster = _roster;
+    _roster = null;
+    if (roster != null) unawaited(roster.cancel());
     state = const SquadChatState();
   }
 
@@ -157,6 +165,16 @@ class SquadChatController extends Notifier<SquadChatState> {
     }
   }
 
+  /// Reloads the member list and the newest messages. Safe when realtime is off.
+  Future<void> refreshFromRoster() async {
+    if (state.squad == null) return;
+    final squad = await ref.read(squadRepositoryProvider).findMine();
+    if (!ref.mounted || state.squad == null) return;
+    if (squad == null) return;
+    replaceSquad(squad);
+    await reload();
+  }
+
   /// Refetches the newest page and subscribes again. Local failed rows stay,
   /// and a row the server already has is not duplicated.
   Future<void> reload() async {
@@ -175,6 +193,8 @@ class SquadChatController extends Notifier<SquadChatState> {
       await chats.saveUnread(cleared);
       if (!_reloadCurrent(epoch, chatId)) return;
       await _listen(chats, chatId);
+      if (!_reloadCurrent(epoch, chatId)) return;
+      await _listenRoster();
       if (!_reloadCurrent(epoch, chatId)) return;
       // Merge after the awaits so a row that arrived while they ran stays.
       final merged = ChatThread(state.messages)
@@ -245,9 +265,28 @@ class SquadChatController extends Notifier<SquadChatState> {
     return ref.mounted && epoch == _epoch && state.squad?.chatId == chatId;
   }
 
+  Future<void> _listenRoster() async {
+    final squad = state.squad;
+    if (squad == null) {
+      final previous = _roster;
+      _roster = null;
+      if (previous != null) unawaited(previous.cancel());
+      return;
+    }
+    // Subscribe before cancel so a roster event is not dropped while the
+    // previous channel's cancel future is still running.
+    final previous = _roster;
+    _roster = ref
+        .read(squadRepositoryProvider)
+        .watchRoster(squadId: squad.id, userId: state.meId)
+        .listen((_) => unawaited(refreshFromRoster()));
+    if (previous != null) unawaited(previous.cancel());
+  }
+
   Future<void> _listen(ChatRepository chats, String chatId) async {
-    await _echo?.cancel();
+    final previous = _echo;
     _echo = chats.watch(chatId).listen(_onEcho, onError: _onLinkDown);
+    if (previous != null) unawaited(previous.cancel());
   }
 
   void _onLinkDown(Object error, StackTrace stack) {

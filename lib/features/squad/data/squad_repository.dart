@@ -24,6 +24,10 @@ abstract class SquadRepository {
   /// A second call does not create another squad.
   Future<Squad> createMine();
 
+  /// Fires when this person's seat or their squad's member rows change.
+  /// An empty stream is fine. Resume and pull-to-refresh do not depend on it.
+  Stream<void> watchRoster({String? squadId, required String userId});
+
   Future<Squad> load();
 
   Future<AddMember> addMember(Member member);

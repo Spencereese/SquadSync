@@ -68,6 +68,10 @@ abstract class Sq8Database {
   /// Inserts a squad owned by the signed-in person. The database seats them.
   Future<String> createSquad();
 
+  /// Member and, when [squadId] is set, message inserts for that squad.
+  /// The stream is empty when realtime is not available.
+  Stream<void> watchRoster({String? squadId, required String userId});
+
   Future<String> ownerId(String squadId);
 
   Future<List<Sq8Member>> membersOf(String squadId);

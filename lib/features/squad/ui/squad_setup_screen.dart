@@ -9,9 +9,10 @@ import 'package:squadsync/features/squad/domain/squad.dart';
 
 /// Signed in, profile exists, no squad yet. Creates one squad of at most 8.
 class SquadSetupScreen extends ConsumerStatefulWidget {
-  const SquadSetupScreen({required this.profile, super.key});
+  const SquadSetupScreen({required this.profile, this.onRefresh, super.key});
 
   final Member profile;
+  final Future<void> Function()? onRefresh;
 
   @override
   ConsumerState<SquadSetupScreen> createState() => _SquadSetupScreenState();
@@ -44,60 +45,65 @@ class _SquadSetupScreenState extends ConsumerState<SquadSetupScreen> {
         title: const Text('SquadSync'),
         actions: const [SignOutButton()],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(24),
-        children: [
-          const Text(
-            'Start the squad',
-            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'One private squad, $squadCapacity people including you. '
-            'You are the owner and cannot be removed. '
-            'Call of Duty is the starting default game.',
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            key: const Key('setup-name'),
-            controller: _name,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(
-              labelText: 'Your name',
-              border: OutlineInputBorder(),
+      body: RefreshIndicator(
+        key: const Key('refresh-setup'),
+        onRefresh: widget.onRefresh ?? () async {},
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(24),
+          children: [
+            const Text(
+              'Start the squad',
+              style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),
             ),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            key: const Key('setup-game'),
-            controller: _game,
-            textCapitalization: TextCapitalization.words,
-            decoration: const InputDecoration(
-              labelText: 'Default game',
-              border: OutlineInputBorder(),
-            ),
-          ),
-          const SizedBox(height: 16),
-          FilledButton(
-            key: const Key('start-squad'),
-            onPressed: _busy ? null : _start,
-            child: const Text('Create the squad'),
-          ),
-          const SizedBox(height: 8),
-          OutlinedButton(
-            key: const Key('join-with-code'),
-            onPressed: _busy ? null : _join,
-            child: const Text('Join with a code'),
-          ),
-          if (_error != null) ...[
-            const SizedBox(height: 12),
+            const SizedBox(height: 8),
             Text(
-              _error!,
-              key: const Key('setup-error'),
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
+              'One private squad, $squadCapacity people including you. '
+              'You are the owner and cannot be removed. '
+              'Call of Duty is the starting default game.',
             ),
+            const SizedBox(height: 16),
+            TextField(
+              key: const Key('setup-name'),
+              controller: _name,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Your name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              key: const Key('setup-game'),
+              controller: _game,
+              textCapitalization: TextCapitalization.words,
+              decoration: const InputDecoration(
+                labelText: 'Default game',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              key: const Key('start-squad'),
+              onPressed: _busy ? null : _start,
+              child: const Text('Create the squad'),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton(
+              key: const Key('join-with-code'),
+              onPressed: _busy ? null : _join,
+              child: const Text('Join with a code'),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(
+                _error!,
+                key: const Key('setup-error'),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

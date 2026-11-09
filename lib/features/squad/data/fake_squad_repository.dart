@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/squad/data/squad_repository.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
@@ -25,6 +27,13 @@ class FakeSquadRepository implements SquadRepository {
 
   /// Pauses [myProfile] so a test can switch accounts while a load is in flight.
   Future<void>? holdProfile;
+
+  final _roster = StreamController<void>.broadcast();
+
+  /// Tells listeners that a member row changed. Tests use this as realtime.
+  void notifyRoster() {
+    if (!_roster.isClosed) _roster.add(null);
+  }
 
   Squad get snapshot => _squad ?? (throw StateError('no squad'));
 
@@ -124,6 +133,11 @@ class FakeSquadRepository implements SquadRepository {
   /// Test seam. Joining a code seats this person in [squad].
   void seat(Squad squad) {
     _squad = squad;
+  }
+
+  @override
+  Stream<void> watchRoster({String? squadId, required String userId}) {
+    return _roster.stream;
   }
 
   @override

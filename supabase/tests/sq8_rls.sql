@@ -102,6 +102,7 @@ values (
 do $$
 declare
   published boolean;
+  table_name text;
 begin
   select exists (
     select 1
@@ -113,6 +114,19 @@ begin
   if not published then
     raise exception 'sq8_messages is not in supabase_realtime';
   end if;
+  foreach table_name in array array['sq8_squad_members', 'sq8_check_ins']
+  loop
+    select exists (
+      select 1
+      from pg_publication_tables
+      where pubname = 'supabase_realtime'
+        and schemaname = 'public'
+        and tablename = table_name
+    ) into published;
+    if not published then
+      raise exception '% is not in supabase_realtime', table_name;
+    end if;
+  end loop;
 end $$;
 
 -- A member can read a squad mate's profile. An outsider cannot.

@@ -61,6 +61,7 @@ class _AvailabilityScreenState extends ConsumerState<AvailabilityScreen>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed || !mounted) return;
     ref.read(availabilityControllerProvider.notifier).reevaluate();
+    unawaited(ref.read(availabilityControllerProvider.notifier).refresh());
   }
 
   @override

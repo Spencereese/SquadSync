@@ -96,6 +96,11 @@ class SupabaseSquadRepository implements SquadRepository {
   }
 
   @override
+  Stream<void> watchRoster({String? squadId, required String userId}) {
+    return _db.watchRoster(squadId: squadId, userId: userId);
+  }
+
+  @override
   Future<Squad> load() async {
     final squad = await findMine();
     if (squad == null) {

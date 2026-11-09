@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:squadsync/core/repository_failure.dart';
+import 'package:squadsync/features/squad/data/roster_channel.dart';
 import 'package:squadsync/core/sq8_database.dart';
 import 'package:squadsync/core/sq8_rows.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -248,6 +249,74 @@ class SupabaseSq8Database implements Sq8Database {
           }
         });
     controller.onCancel = () {
+      unawaited(_client.removeChannel(channel));
+    };
+    return controller.stream;
+  }
+
+  @override
+  Stream<void> watchRoster({String? squadId, required String userId}) {
+    final topic = rosterTopic(squadId: squadId, userId: userId);
+    final channel = _client.channel(topic);
+    final controller = StreamController<void>.broadcast();
+    var disposed = false;
+
+    void emit(PostgresChangePayload _) {
+      if (disposed || controller.isClosed) return;
+      controller.add(null);
+    }
+
+    if (squadId == null || squadId.isEmpty) {
+      for (final event in [
+        PostgresChangeEvent.insert,
+        PostgresChangeEvent.delete,
+      ]) {
+        channel.onPostgresChanges(
+          event: event,
+          schema: 'public',
+          table: 'sq8_squad_members',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: userId,
+          ),
+          callback: emit,
+        );
+      }
+    } else {
+      for (final event in PostgresChangeEvent.values) {
+        if (event == PostgresChangeEvent.all) continue;
+        channel.onPostgresChanges(
+          event: event,
+          schema: 'public',
+          table: 'sq8_squad_members',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'squad_id',
+            value: squadId,
+          ),
+          callback: emit,
+        );
+      }
+      channel.onPostgresChanges(
+        event: PostgresChangeEvent.insert,
+        schema: 'public',
+        table: 'sq8_messages',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'squad_id',
+          value: squadId,
+        ),
+        callback: emit,
+      );
+    }
+
+    // subscribe() can be called once per channel. Error, timeout, and a
+    // dropped socket are rejoined by the realtime client. Token refresh
+    // drops this channel and opens a new one.
+    channel.subscribe();
+    controller.onCancel = () {
+      disposed = true;
       unawaited(_client.removeChannel(channel));
     };
     return controller.stream;

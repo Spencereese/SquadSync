@@ -10,7 +10,14 @@ Future<void> main() async {
   final overrides = [squadSyncConfigProvider.overrideWithValue(config)];
   if (config.isPresent) {
     WidgetsFlutterBinding.ensureInitialized();
-    await Supabase.initialize(url: config.url, publishableKey: config.anonKey);
+    await Supabase.initialize(
+      url: config.url,
+      publishableKey: config.anonKey,
+      authOptions: const FlutterAuthClientOptions(
+        autoRefreshToken: true,
+        persistSession: true,
+      ),
+    );
     overrides.add(
       supabaseClientProvider.overrideWithValue(Supabase.instance.client),
     );

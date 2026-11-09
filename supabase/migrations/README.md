@@ -27,6 +27,7 @@ Run these in order, in one project, as the migration role:
 6. `20261108_0006_check_ins.sql` — **not applied**. This is the availability board. It can be applied after files 1 and 2 whether or not file 5 is applied. It adds `sq8_check_ins` only.
 7. `20261109_0007_squad_owner_select.sql` — idempotent owner select on `sq8_squads`. A reported live copy already exists; this checkout did not query that project. Running the file again does not replace an existing policy of the same name.
 8. `20261109_0008_invites.sql` — **not applied**. Invite codes and the join function. Apply only after 1, 2, 5, and 7. Before applying, `select public.sq8_join_with_code('x');` should fail because the function is absent, and `select owner_id from public.sq8_squads group by owner_id having count(*) > 1;` should return no rows.
+9. `20261109_0009_realtime_roster.sql` — **not applied**. Adds `sq8_squad_members` and `sq8_check_ins` to `supabase_realtime`. `sq8_messages` is already there from file 3. Realtime still uses the select policies, so a non-member does not receive the rows. The app reloads on resume and pull-to-refresh even when this publication is missing.
 
 ## What each file does
 
@@ -44,6 +45,10 @@ Run these in order, in one project, as the migration role:
 Run these in reverse order. This deletes the slice 2 rows. It does not touch the old tables.
 
 ```sql
+-- 9 only.
+-- alter publication supabase_realtime drop table public.sq8_squad_members;
+-- alter publication supabase_realtime drop table public.sq8_check_ins;
+
 -- 8 only. Also restores the owner-removal function from file 2 if you stop here.
 drop function if exists public.sq8_join_with_code(text);
 drop function if exists public.sq8_create_invite();

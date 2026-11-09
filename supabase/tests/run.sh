@@ -26,6 +26,7 @@ psql -v ON_ERROR_STOP=1 -f "$root/tests/sq8_invites.sql"
 psql -v ON_ERROR_STOP=1 -f "$root/tests/sq8_invite_anon.sql"
 psql -v ON_ERROR_STOP=1 -f "$root/tests/sq8_invite_capacity.sql"
 bash "$root/tests/sq8_invite_race.sh"
+bash "$root/tests/sq8_invite_rotate_race.sh"
 bash "$root/tests/sq8_concurrency.sh"
 bash "$root/tests/sq8_cap_unlocked.sh"
 

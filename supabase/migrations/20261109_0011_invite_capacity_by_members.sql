@@ -7,6 +7,19 @@
 -- A removed member used to leave `uses` incremented. The next join was
 -- refused once uses hit max_uses, even with an open seat. Capacity is the
 -- live member count under the squad row lock. uses is only a counter.
+--
+-- Lock order matches create_invite: the squad row, then that squad's invite
+-- rows. Join used to lock the invite first, so a concurrent rotate could
+-- deadlock. The squad id is read without a row lock, the squad is locked,
+-- and the invite is locked only after that.
+--
+-- Deleting the caller's empty squad happens after the target squad and its
+-- invite are locked. That delete locks the empty squad row and then, through
+-- the cascade, its invite rows. A join into that same empty squad takes the
+-- squad row and then its invite, so those two sessions do not deadlock.
+-- Two owners of empty squads who join each other's squads can: each holds
+-- the other's squad and then waits to delete their own. That pair is outside
+-- the rotate-versus-join order this function fixes.
 
 alter table public.sq8_invites drop constraint if exists sq8_invites_uses_nonnegative;
 
@@ -23,6 +36,7 @@ as $$
 declare
   me uuid := (select auth.uid());
   normalized text;
+  target_squad uuid;
   inv public.sq8_invites%rowtype;
   member_count integer;
   mine_squad uuid;
@@ -38,10 +52,27 @@ begin
     return jsonb_build_object('ok', false, 'error', 'invalid');
   end if;
 
+  select squad_id
+    into target_squad
+  from public.sq8_invites
+  where code = normalized;
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'invalid');
+  end if;
+
+  perform 1
+  from public.sq8_squads
+  where id = target_squad
+  for update;
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'invalid');
+  end if;
+
   select *
     into inv
   from public.sq8_invites
   where code = normalized
+    and squad_id = target_squad
   for update;
 
   if not found or inv.revoked_at is not null then
@@ -49,14 +80,6 @@ begin
   end if;
   if inv.expires_at <= now() then
     return jsonb_build_object('ok', false, 'error', 'expired');
-  end if;
-
-  perform 1
-  from public.sq8_squads
-  where id = inv.squad_id
-  for update;
-  if not found then
-    return jsonb_build_object('ok', false, 'error', 'invalid');
   end if;
 
   if exists (
@@ -91,6 +114,8 @@ begin
 
     if mine_owner = me and mine_count = 1 then
       insert into sq8.empty_squad_leave (user_id) values (me);
+      -- Squad row first, then cascaded invite rows. Same order as a join
+      -- into this empty squad, so that join does not deadlock with this delete.
       delete from public.sq8_squads where id = mine_squad;
       delete from sq8.empty_squad_leave where user_id = me;
     elsif mine_owner = me then

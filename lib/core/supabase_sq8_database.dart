@@ -1,9 +1,16 @@
 import 'dart:async';
 
 import 'package:squadsync/core/repository_failure.dart';
+import 'package:squadsync/features/squad/data/roster_channel.dart';
 import 'package:squadsync/core/sq8_database.dart';
 import 'package:squadsync/core/sq8_rows.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+/// A member delete is [RosterSignal.deleted]. Everything else is a change.
+RosterSignal rosterSignalFor(PostgresChangeEvent event) {
+  if (event == PostgresChangeEvent.delete) return RosterSignal.deleted;
+  return RosterSignal.changed;
+}
 
 /// Maps a PostgREST error onto the exceptions the repositories already catch.
 Exception mapPostgrest(PostgrestException error) {
@@ -82,17 +89,27 @@ class SupabaseSq8Database implements Sq8Database {
     final me = _requireUser();
     final Map<String, dynamic> row;
     try {
-      row = await _guardValue(
-        () => _client
-            .from('sq8_squads')
-            .insert({'owner_id': me})
-            .select('id')
-            .single(),
-      );
-    } on Sq8DuplicateRow {
-      final existing = await mySquadId();
-      if (existing != null) return existing;
-      rethrow;
+      row = await _client
+          .from('sq8_squads')
+          .insert({'owner_id': me})
+          .select('id')
+          .single();
+    } on PostgrestException catch (error) {
+      if (error.code == '23505') {
+        final existing = await mySquadId();
+        if (existing != null) return existing;
+        throw const Sq8DuplicateRow();
+      }
+      // The insert can seat the owner and still hide the returned row
+      // until the owner select policy exists. Open that squad if it is there.
+      if (error.code == 'PGRST116' || error.code == '42501') {
+        final existing = await mySquadId();
+        if (existing != null) return existing;
+        throw const RepositoryFailure(
+          'The squad was not opened. Nothing is on screen until the server returns it.',
+        );
+      }
+      throw mapPostgrest(error);
     }
     final id = row['id'];
     if (id is! String || id.isEmpty) {
@@ -238,6 +255,57 @@ class SupabaseSq8Database implements Sq8Database {
           }
         });
     controller.onCancel = () {
+      unawaited(_client.removeChannel(channel));
+    };
+    return controller.stream;
+  }
+
+  @override
+  Stream<RosterSignal> watchRoster({String? squadId, required String userId}) {
+    final topic = rosterTopic(squadId: squadId, userId: userId);
+    final channel = _client.channel(topic);
+    final controller = StreamController<RosterSignal>.broadcast();
+    var disposed = false;
+
+    void bind(
+      PostgresChangeEvent event,
+      String table,
+      String column,
+      String value,
+    ) {
+      channel.onPostgresChanges(
+        event: event,
+        schema: 'public',
+        table: table,
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: column,
+          value: value,
+        ),
+        callback: (_) {
+          if (disposed || controller.isClosed) return;
+          controller.add(rosterSignalFor(event));
+        },
+      );
+    }
+
+    if (squadId == null || squadId.isEmpty) {
+      bind(PostgresChangeEvent.insert, 'sq8_squad_members', 'user_id', userId);
+      bind(PostgresChangeEvent.delete, 'sq8_squad_members', 'user_id', userId);
+    } else {
+      for (final event in PostgresChangeEvent.values) {
+        if (event == PostgresChangeEvent.all) continue;
+        bind(event, 'sq8_squad_members', 'squad_id', squadId);
+      }
+      bind(PostgresChangeEvent.insert, 'sq8_messages', 'squad_id', squadId);
+    }
+
+    // subscribe() can be called once per channel. Error, timeout, and a
+    // dropped socket are rejoined by the realtime client. Token refresh
+    // drops this channel and opens a new one.
+    channel.subscribe();
+    controller.onCancel = () {
+      disposed = true;
       unawaited(_client.removeChannel(channel));
     };
     return controller.stream;

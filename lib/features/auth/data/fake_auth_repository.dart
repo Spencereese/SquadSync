@@ -13,6 +13,7 @@ class FakeAuthRepository implements AuthRepository {
   bool fail;
   AuthUser? _user;
   final _updates = StreamController<AuthUser?>.broadcast();
+  final _refreshes = StreamController<void>.broadcast();
 
   String? lastEmail;
   String? lastCode;
@@ -20,6 +21,14 @@ class FakeAuthRepository implements AuthRepository {
 
   @override
   AuthUser? get currentUser => _user;
+
+  @override
+  Stream<void> watchTokenRefresh() => _refreshes.stream;
+
+  /// Test seam. A successful silent refresh. Does not sign the person out.
+  void tokenRefresh() {
+    if (!_refreshes.isClosed) _refreshes.add(null);
+  }
 
   @override
   Stream<AuthUser?> watchUser() async* {

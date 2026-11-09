@@ -25,6 +25,11 @@ Run these in order, in one project, as the migration role:
 4. `20261103_0004_read_state.sql`
 5. `20261108_0005_own_profile_and_squad_guard.sql` — **not applied**. Spencer has to approve this one before it runs. It adds an insert of only your own profile, one squad per owner, and a lock so two overlapping joins cannot pass eight members.
 6. `20261108_0006_check_ins.sql` — **not applied**. This is the availability board. It can be applied after files 1 and 2 whether or not file 5 is applied. It adds `sq8_check_ins` only.
+7. `20261109_0007_squad_owner_select.sql` — idempotent owner select on `sq8_squads`. A reported live copy already exists; this checkout did not query that project. Running the file again does not replace an existing policy of the same name.
+8. `20261109_0008_invites.sql` — **not applied**. Invite codes and the join function. Apply only after 1, 2, 5, and 7. Before applying, `select public.sq8_join_with_code('x');` should fail because the function is absent, and `select owner_id from public.sq8_squads group by owner_id having count(*) > 1;` should return no rows.
+9. `20261109_0009_realtime_roster.sql` — **not applied**. Adds `sq8_squad_members` and `sq8_check_ins` to `supabase_realtime`. `sq8_messages` is already there from file 3. Realtime still uses the select policies, so a non-member does not receive the rows. The app reloads on resume and pull-to-refresh even when this publication is missing.
+10. `20261109_0010_revoke_anon_invite_rpcs.sql` — **not applied**. Needs Spencer's approval. Revokes `EXECUTE` from `anon` and `public` on `public.sq8_join_with_code`, `public.sq8_create_invite`, and the `sq8` implementations. `authenticated` keeps the two public wrappers. Running it again is safe.
+11. `20261109_0011_invite_capacity_by_members.sql` — **not applied**. Apply after file 8. Files 9 and 10 may already be applied or not; this file does not depend on either. Preflight: `sq8.join_with_code(text)` and `public.sq8_invites` exist. It does not read the live project. Running it again is safe. It does not grant `anon` or `public`.
 
 ## What each file does
 
@@ -34,12 +39,38 @@ Run these in order, in one project, as the migration role:
 4. **Read state.** `sq8_chat_read_state` is one cursor per user per squad. You can read and write only your own row. Opening one squad does not write any other row.
 5. **Own profile and squad guard.** Not applied. An authenticated person may insert `sq8_profiles` only when `id` is their own auth id. A second insert does not change the name or default game. `sq8_squads.owner_id` is unique. The member cap locks the squad row before it counts, so two overlapping adds cannot both pass eight. Without this file the live cap is not safe. This checkout did not query the live project.
 6. **Check-ins.** Not applied. One row per person in `sq8_check_ins`. A member can read the squad's rows. Only that person can write or delete their own row. "Available now" is stamped to 60 minutes. "Available later" must be more than a minute ahead and within 7 days, and it is not rewritten to available now. A non-member and another squad cannot read the row. Leaving the squad deletes it.
+7. **Owner select.** Idempotent. Adds `sq8_squads_select_owner` with `using (owner_id = auth.uid())` when that policy name is absent. This matches the policy reported on the live project. This checkout did not open that project.
+8. **Invites.** Not applied. `sq8_invites` is readable by the squad owner only. `public.sq8_create_invite` and `public.sq8_join_with_code` are the only functions granted to `authenticated`. A code lasts 7 days, is 8 characters, and rotating it revokes the previous one. Joining locks the squad row, refuses a ninth person, treats the same squad as success, deletes an empty squad the caller owns, and refuses any other existing squad. File 8 also stops a join once `uses` reaches `max_uses`. File 11 removes that cap.
+11. **Invite capacity.** Not applied. Does not depend on file 10. A join is full only when the locked squad already has 8 members. Leaving and rejoining does not spend a seat. `uses` still counts new joins and does not cap them. `max_uses` on a new code is 8, not the number of open seats. Expired and revoked codes are unchanged. Join locks the squad row before its invite, the same order as rotating a code. `create or replace` keeps existing grants, and this file does not grant `anon` or `public`.
 
 ## Rollback
 
 Run these in reverse order. This deletes the slice 2 rows. It does not touch the old tables.
 
 ```sql
+-- 11 only. Re-applying file 8's function bodies would put the use cap back.
+-- Do not grant execute to anon or public.
+
+-- 10 only. Nothing to drop. Do not grant execute back to anon.
+-- The function drops under file 8 remove the wrappers.
+
+-- 9 only.
+-- alter publication supabase_realtime drop table public.sq8_squad_members;
+-- alter publication supabase_realtime drop table public.sq8_check_ins;
+
+-- 8 only. Also restores the owner-removal function from file 2 if you stop here.
+drop function if exists public.sq8_join_with_code(text);
+drop function if exists public.sq8_create_invite();
+drop function if exists sq8.join_with_code(text);
+drop function if exists sq8.create_invite();
+drop function if exists sq8.random_invite_code();
+drop function if exists sq8.normalize_invite_code(text);
+drop table if exists public.sq8_invites;
+drop table if exists sq8.empty_squad_leave;
+
+-- 7 only.
+drop policy if exists sq8_squads_select_owner on public.sq8_squads;
+
 -- 6 only. Does not touch check-in rows in other tables.
 drop trigger if exists sq8_squad_members_clear_check_in on public.sq8_squad_members;
 drop table if exists public.sq8_check_ins;

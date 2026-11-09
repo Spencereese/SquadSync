@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:squadsync/core/sq8_database.dart';
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/squad/data/squad_repository.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
@@ -21,9 +24,31 @@ class FakeSquadRepository implements SquadRepository {
 
   bool fail;
   bool failEnsure;
+  bool failCreate = false;
 
   /// Pauses [myProfile] so a test can switch accounts while a load is in flight.
   Future<void>? holdProfile;
+
+  final _roster = StreamController<RosterSignal>.broadcast();
+
+  /// Tells listeners that a member row changed. Tests use this as realtime.
+  void notifyRoster() {
+    _signal(RosterSignal.changed);
+  }
+
+  /// A member-row delete. The removed person may not receive this.
+  void notifyDeleted() {
+    _signal(RosterSignal.deleted);
+  }
+
+  void _signal(RosterSignal signal) {
+    if (!_roster.isClosed) _roster.add(signal);
+  }
+
+  /// Drops this person's seat without a realtime event.
+  void unseat() {
+    _squad = null;
+  }
 
   Squad get snapshot => _squad ?? (throw StateError('no squad'));
 
@@ -104,6 +129,11 @@ class FakeSquadRepository implements SquadRepository {
   @override
   Future<Squad> createMine() async {
     _guard('create');
+    if (failCreate) {
+      throw const RepositoryFailure(
+        'The squad was not opened. Nothing is on screen until the server returns it.',
+      );
+    }
     final existing = _squad;
     if (existing != null) return existing;
     final created = Squad(
@@ -113,6 +143,16 @@ class FakeSquadRepository implements SquadRepository {
     );
     _squad = created;
     return created;
+  }
+
+  /// Test seam. Joining a code seats this person in [squad].
+  void seat(Squad squad) {
+    _squad = squad;
+  }
+
+  @override
+  Stream<RosterSignal> watchRoster({String? squadId, required String userId}) {
+    return _roster.stream;
   }
 
   @override

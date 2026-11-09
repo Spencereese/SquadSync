@@ -53,6 +53,7 @@ iOS and Android only. There is no web or desktop target.
 | Send, fail, retry the same id, echo dedupe | Implemented. Widget-tested on the fake. Reload keeps a failed row |
 | Earlier messages and reload | Implemented and tested |
 | Availability board | Implemented and tested on a fake clock and a throwaway database. "Available now" lasts 60 minutes from the check-in. "Available later" is a chosen time and does not become available now when it arrives. Unavailable is explicit. No row means not checked in. Opening the app does not check anyone in. Migration `20261108_0006_check_ins.sql` is not applied, so a live project without that table shows that availability is not enabled |
+| Invite code | The owner can make or replace an 8-character code. A friend can join with it. The same squad is a no-op. An empty squad they own is removed first. A squad they own with other people, or a squad they only belong to, is refused. A missing invite table says invites are not enabled. Migration `20261109_0008_invites.sql` is not applied. File 7 records the owner select policy and is idempotent |
 | Live OTP on a phone | Not verified. No device sign-in and no two-client session were run. The email template was not read or changed in this run |
 | App Store / TestFlight | Not done |
 

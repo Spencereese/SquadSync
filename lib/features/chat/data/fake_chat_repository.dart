@@ -22,6 +22,7 @@ class FakeChatRepository implements ChatRepository {
   final List<ChatMessage> _messages;
   UnreadBook _unread;
   final List<void Function(List<ChatMessage>)> _listeners = [];
+  final List<StreamController<List<ChatMessage>>> _watches = [];
 
   bool fail;
   Future<void>? holdSends;
@@ -107,9 +108,22 @@ class FakeChatRepository implements ChatRepository {
       onListen: () => _listeners.add(onRows),
       onCancel: () {
         _listeners.remove(onRows);
+        _watches.remove(controller);
       },
     );
+    _watches.add(controller);
     return controller.stream;
+  }
+
+  /// The live channel failed. Does not remove stored rows.
+  void dropLink() {
+    for (final controller in List<StreamController<List<ChatMessage>>>.of(
+      _watches,
+    )) {
+      if (!controller.isClosed) {
+        controller.addError(StateError('live updates stopped'));
+      }
+    }
   }
 
   @override

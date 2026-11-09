@@ -17,7 +17,17 @@ class SupabaseAuthRepository implements AuthRepository {
   @override
   Stream<AuthUser?> watchUser() async* {
     yield currentUser;
-    yield* _auth.onAuthStateChange.map((state) => _map(state.session?.user));
+    yield* _auth.onAuthStateChange.map(
+      (state) => restoredUser(state.event, state.session?.user),
+    );
+  }
+
+  @override
+  Stream<void> watchTokenRefresh() {
+    return _auth.onAuthStateChange
+        .where((state) => state.event == AuthChangeEvent.tokenRefreshed)
+        .where((state) => state.session?.user != null)
+        .map((_) {});
   }
 
   @override
@@ -59,7 +69,12 @@ class SupabaseAuthRepository implements AuthRepository {
   }
 }
 
-AuthUser? _map(User? user) {
-  if (user == null) return null;
+/// A refreshed or restored session keeps the person signed in.
+/// Only a missing user, or an explicit sign-out, returns them to the email form.
+AuthUser? restoredUser(AuthChangeEvent event, User? user) {
+  if (user == null || event == AuthChangeEvent.signedOut) return null;
   return AuthUser(id: user.id, email: user.email);
 }
+
+AuthUser? _map(User? user) =>
+    restoredUser(AuthChangeEvent.initialSession, user);

@@ -1,3 +1,10 @@
+/// What a realtime roster channel reported.
+///
+/// [deleted] is a member row going away. Row level security can hide that
+/// delete from the person who was removed, so callers also re-check
+/// membership when no event arrives.
+enum RosterSignal { changed, deleted }
+
 /// Rows the squad and chat repositories need. The Supabase adapter and the
 /// test double both speak this. Widgets do not.
 class Sq8Member {
@@ -67,6 +74,11 @@ abstract class Sq8Database {
 
   /// Inserts a squad owned by the signed-in person. The database seats them.
   Future<String> createSquad();
+
+  /// Member and, when [squadId] is set, message inserts for that squad.
+  /// [RosterSignal.deleted] is a member-row delete. The stream is empty when
+  /// realtime is not available. A missing delete is not proof of membership.
+  Stream<RosterSignal> watchRoster({String? squadId, required String userId});
 
   Future<String> ownerId(String squadId);
 

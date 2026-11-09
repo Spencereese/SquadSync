@@ -88,7 +88,16 @@ class SupabaseSquadRepository implements SquadRepository {
       final raced = await findMine();
       if (raced != null) return raced;
       rethrow;
+    } on RepositoryFailure {
+      final raced = await findMine();
+      if (raced != null) return raced;
+      rethrow;
     }
+  }
+
+  @override
+  Stream<RosterSignal> watchRoster({String? squadId, required String userId}) {
+    return _db.watchRoster(squadId: squadId, userId: userId);
   }
 
   @override

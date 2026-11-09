@@ -245,4 +245,111 @@ void main() {
     expect(find.text('line-44'), findsOneWidget);
     expect(find.text('chat before failed'), findsNothing);
   });
+
+  testWidgets('a realtime member and message show up without a restart', (
+    tester,
+  ) async {
+    final squads = FakeSquadRepository();
+    final chats = FakeChatRepository();
+    await _pump(tester, squads: squads, chats: chats);
+    expect(find.byKey(const Key('member-friend')), findsNothing);
+
+    await squads.addMember(
+      const Member(id: 'friend', displayName: 'Friend', defaultGame: 'Halo'),
+    );
+    squads.notifyRoster();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('member-friend')), findsOneWidget);
+
+    chats.deliver(
+      ChatMessage(
+        id: 'late',
+        chatId: 'squad',
+        senderId: 'friend',
+        text: 'hello from the other phone',
+        sentAt: DateTime.utc(2026, 11, 9, 8),
+      ),
+    );
+    chats.deliver(
+      ChatMessage(
+        id: 'late',
+        chatId: 'squad',
+        senderId: 'friend',
+        text: 'hello from the other phone',
+        sentAt: DateTime.utc(2026, 11, 9, 8),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('hello from the other phone'), findsOneWidget);
+  });
+
+  testWidgets(
+    'resume and pull to refresh load a message that realtime missed',
+    (tester) async {
+      final chats = FakeChatRepository();
+      await _pump(tester, chats: chats);
+
+      chats.storeQuietly(
+        ChatMessage(
+          id: 'stored',
+          chatId: 'squad',
+          senderId: 'friend',
+          text: 'saved while the phone was away',
+          sentAt: DateTime.utc(2026, 11, 9, 8),
+        ),
+      );
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pumpAndSettle();
+
+      expect(find.text('saved while the phone was away'), findsOneWidget);
+
+      chats.storeQuietly(
+        ChatMessage(
+          id: 'pulled',
+          chatId: 'squad',
+          senderId: 'friend',
+          text: 'pulled into view',
+          sentAt: DateTime.utc(2026, 11, 9, 9),
+        ),
+      );
+      final refresh = tester.widget<RefreshIndicator>(
+        find.byKey(const Key('refresh-chat')),
+      );
+      await refresh.onRefresh();
+      await tester.pumpAndSettle();
+
+      expect(find.text('pulled into view'), findsOneWidget);
+      expect(find.text('saved while the phone was away'), findsOneWidget);
+    },
+  );
+
+  testWidgets('a member delete updates the count for everyone else', (
+    tester,
+  ) async {
+    final squads = FakeSquadRepository();
+    await _pump(tester, squads: squads);
+    expect(find.text('1 of 8'), findsOneWidget);
+
+    await squads.addMember(
+      const Member(id: 'friend', displayName: 'Friend', defaultGame: 'Halo'),
+    );
+    await squads.addMember(
+      const Member(id: 'other', displayName: 'Other', defaultGame: 'Halo'),
+    );
+    squads.notifyDeleted();
+    await tester.pumpAndSettle();
+
+    expect(find.text('3 of 8'), findsOneWidget);
+
+    await squads.removeMember('other');
+    squads.notifyDeleted();
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 of 8'), findsOneWidget);
+    expect(find.byKey(const Key('member-other')), findsNothing);
+    expect(find.byKey(const Key('member-friend')), findsOneWidget);
+    expect(find.byKey(const Key('composer')), findsOneWidget);
+  });
 }

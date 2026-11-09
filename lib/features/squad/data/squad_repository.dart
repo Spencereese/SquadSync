@@ -1,3 +1,4 @@
+import 'package:squadsync/core/sq8_database.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
 
@@ -23,6 +24,10 @@ abstract class SquadRepository {
   /// The squad this person is already in, or a new one they own.
   /// A second call does not create another squad.
   Future<Squad> createMine();
+
+  /// Fires when this person's seat or their squad's member rows change.
+  /// An empty stream is fine. Resume and pull-to-refresh do not depend on it.
+  Stream<RosterSignal> watchRoster({String? squadId, required String userId});
 
   Future<Squad> load();
 

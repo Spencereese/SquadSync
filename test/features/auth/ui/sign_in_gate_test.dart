@@ -7,7 +7,11 @@ import 'package:squadsync/core/app.dart';
 import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/features/auth/data/fake_auth_repository.dart';
 import 'package:squadsync/features/auth/domain/auth_user.dart';
+import 'package:squadsync/features/chat/data/fake_chat_repository.dart';
+import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
 import 'package:squadsync/features/squad/data/fake_squad_repository.dart';
+import 'package:squadsync/features/squad/domain/member.dart';
+import 'package:squadsync/features/squad/domain/squad.dart';
 
 void main() {
   testWidgets('a failed squad load can be retried or signed out', (
@@ -104,4 +108,187 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('composer')), findsOneWidget);
   });
+
+  testWidgets('being seated while waiting opens the squad chat', (
+    tester,
+  ) async {
+    final squads = FakeSquadRepository(startEmpty: true);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLinkProvider.overrideWithValue(AppLink.live),
+          authRepositoryProvider.overrideWithValue(
+            FakeAuthRepository(
+              signedIn: const AuthUser(
+                id: 'spencer',
+                email: 'spencer@example.com',
+              ),
+            ),
+          ),
+          squadRepositoryProvider.overrideWithValue(squads),
+        ],
+        child: const SquadSyncApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Start the squad'), findsOneWidget);
+
+    squads.seat(
+      Squad(
+        id: 'joined',
+        ownerId: 'owner',
+        members: const [
+          Member(
+            id: 'owner',
+            displayName: 'Owner',
+            defaultGame: 'Call of Duty',
+          ),
+          spencer,
+        ],
+      ),
+    );
+    squads.notifyRoster();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('composer')), findsOneWidget);
+    expect(find.text('Start the squad'), findsNothing);
+  });
+
+  testWidgets('pull to refresh on the no-squad screen picks up a seat', (
+    tester,
+  ) async {
+    final squads = FakeSquadRepository(startEmpty: true);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLinkProvider.overrideWithValue(AppLink.live),
+          authRepositoryProvider.overrideWithValue(
+            FakeAuthRepository(
+              signedIn: const AuthUser(
+                id: 'spencer',
+                email: 'spencer@example.com',
+              ),
+            ),
+          ),
+          squadRepositoryProvider.overrideWithValue(squads),
+        ],
+        child: const SquadSyncApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    squads.seat(Squad.seed());
+    final refresh = tester.widget<RefreshIndicator>(
+      find.byKey(const Key('refresh-setup')),
+    );
+    await refresh.onRefresh();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('composer')), findsOneWidget);
+  });
+
+  testWidgets('reload leaves after the seat is gone with no delete event', (
+    tester,
+  ) async {
+    final squads = FakeSquadRepository(seed: _three());
+    await _live(tester, squads);
+    expect(find.text('3 of 8'), findsOneWidget);
+
+    squads.unseat();
+    await tester.tap(find.byKey(const Key('reload-chat')));
+    await tester.pumpAndSettle();
+
+    _expectLeft(tester);
+  });
+
+  testWidgets('pull to refresh leaves after the seat is gone', (tester) async {
+    final squads = FakeSquadRepository(seed: _three());
+    await _live(tester, squads);
+
+    squads.unseat();
+    final refresh = tester.widget<RefreshIndicator>(
+      find.byKey(const Key('refresh-chat')),
+    );
+    await refresh.onRefresh();
+    await tester.pumpAndSettle();
+
+    _expectLeft(tester);
+  });
+
+  testWidgets('a member delete drops the removed person from the squad', (
+    tester,
+  ) async {
+    final squads = FakeSquadRepository(seed: _three());
+    await _live(tester, squads);
+
+    squads.unseat();
+    squads.notifyDeleted();
+    await tester.pumpAndSettle();
+
+    _expectLeft(tester);
+  });
+
+  testWidgets('a channel error re-checks membership and leaves', (
+    tester,
+  ) async {
+    final squads = FakeSquadRepository(seed: _three());
+    final chats = FakeChatRepository();
+    await _live(tester, squads, chats: chats);
+    expect(find.text('3 of 8'), findsOneWidget);
+
+    squads.unseat();
+    chats.dropLink();
+    await tester.pumpAndSettle();
+
+    _expectLeft(tester);
+  });
+}
+
+Squad _three() {
+  return Squad(
+    id: 'squad',
+    ownerId: 'owner',
+    members: const [
+      Member(id: 'owner', displayName: 'Owner', defaultGame: 'Halo'),
+      Member(id: 'friend', displayName: 'Friend', defaultGame: 'Halo'),
+      spencer,
+    ],
+  );
+}
+
+Future<void> _live(
+  WidgetTester tester,
+  FakeSquadRepository squads, {
+  FakeChatRepository? chats,
+}) async {
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: [
+        appLinkProvider.overrideWithValue(AppLink.live),
+        authRepositoryProvider.overrideWithValue(
+          FakeAuthRepository(
+            signedIn: const AuthUser(
+              id: 'spencer',
+              email: 'spencer@example.com',
+            ),
+          ),
+        ),
+        squadRepositoryProvider.overrideWithValue(squads),
+        if (chats != null) chatRepositoryProvider.overrideWithValue(chats),
+      ],
+      child: const SquadSyncApp(),
+    ),
+  );
+  await tester.pumpAndSettle();
+}
+
+void _expectLeft(WidgetTester tester) {
+  expect(find.text("You're no longer in this squad"), findsOneWidget);
+  expect(find.byKey(const Key('composer')), findsNothing);
+  expect(find.text('3 of 8'), findsNothing);
+  final context = tester.element(find.byType(MaterialApp));
+  final state = ProviderScope.containerOf(context)
+      .read(squadChatControllerProvider);
+  expect(state.squad, isNull);
+  expect(state.messages, isEmpty);
 }

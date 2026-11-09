@@ -1,3 +1,4 @@
+import 'package:squadsync/core/sq8_database.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
 
@@ -26,7 +27,7 @@ abstract class SquadRepository {
 
   /// Fires when this person's seat or their squad's member rows change.
   /// An empty stream is fine. Resume and pull-to-refresh do not depend on it.
-  Stream<void> watchRoster({String? squadId, required String userId});
+  Stream<RosterSignal> watchRoster({String? squadId, required String userId});
 
   Future<Squad> load();
 

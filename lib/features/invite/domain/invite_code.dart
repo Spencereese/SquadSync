@@ -11,6 +11,35 @@ class SquadInvite {
   final String squadId;
 
   String get shareText => 'Join my SquadSync squad. Code: $code';
+
+  bool isExpired(DateTime now) => !now.toUtc().isBefore(expiresAt.toUtc());
+}
+
+const _weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const _months = [
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
+];
+
+/// Local wall time, for example `Expires Mon Nov 16, 2:43 AM`.
+String formatInviteExpiry(DateTime expiresAt, Duration offset) {
+  final local = expiresAt.toUtc().add(offset);
+  final hour12 = local.hour % 12 == 0 ? 12 : local.hour % 12;
+  final minute = local.minute.toString().padLeft(2, '0');
+  final period = local.hour < 12 ? 'AM' : 'PM';
+  final weekday = _weekdays[local.weekday - 1];
+  final month = _months[local.month - 1];
+  return 'Expires $weekday $month ${local.day}, $hour12:$minute $period';
 }
 
 enum JoinError {

@@ -6,6 +6,12 @@ import 'package:squadsync/core/sq8_database.dart';
 import 'package:squadsync/core/sq8_rows.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+/// A member delete is [RosterSignal.deleted]. Everything else is a change.
+RosterSignal rosterSignalFor(PostgresChangeEvent event) {
+  if (event == PostgresChangeEvent.delete) return RosterSignal.deleted;
+  return RosterSignal.changed;
+}
+
 /// Maps a PostgREST error onto the exceptions the repositories already catch.
 Exception mapPostgrest(PostgrestException error) {
   if (error.code == '23505') return const Sq8DuplicateRow();
@@ -255,60 +261,43 @@ class SupabaseSq8Database implements Sq8Database {
   }
 
   @override
-  Stream<void> watchRoster({String? squadId, required String userId}) {
+  Stream<RosterSignal> watchRoster({String? squadId, required String userId}) {
     final topic = rosterTopic(squadId: squadId, userId: userId);
     final channel = _client.channel(topic);
-    final controller = StreamController<void>.broadcast();
+    final controller = StreamController<RosterSignal>.broadcast();
     var disposed = false;
 
-    void emit(PostgresChangePayload _) {
-      if (disposed || controller.isClosed) return;
-      controller.add(null);
+    void bind(
+      PostgresChangeEvent event,
+      String table,
+      String column,
+      String value,
+    ) {
+      channel.onPostgresChanges(
+        event: event,
+        schema: 'public',
+        table: table,
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: column,
+          value: value,
+        ),
+        callback: (_) {
+          if (disposed || controller.isClosed) return;
+          controller.add(rosterSignalFor(event));
+        },
+      );
     }
 
     if (squadId == null || squadId.isEmpty) {
-      for (final event in [
-        PostgresChangeEvent.insert,
-        PostgresChangeEvent.delete,
-      ]) {
-        channel.onPostgresChanges(
-          event: event,
-          schema: 'public',
-          table: 'sq8_squad_members',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'user_id',
-            value: userId,
-          ),
-          callback: emit,
-        );
-      }
+      bind(PostgresChangeEvent.insert, 'sq8_squad_members', 'user_id', userId);
+      bind(PostgresChangeEvent.delete, 'sq8_squad_members', 'user_id', userId);
     } else {
       for (final event in PostgresChangeEvent.values) {
         if (event == PostgresChangeEvent.all) continue;
-        channel.onPostgresChanges(
-          event: event,
-          schema: 'public',
-          table: 'sq8_squad_members',
-          filter: PostgresChangeFilter(
-            type: PostgresChangeFilterType.eq,
-            column: 'squad_id',
-            value: squadId,
-          ),
-          callback: emit,
-        );
+        bind(event, 'sq8_squad_members', 'squad_id', squadId);
       }
-      channel.onPostgresChanges(
-        event: PostgresChangeEvent.insert,
-        schema: 'public',
-        table: 'sq8_messages',
-        filter: PostgresChangeFilter(
-          type: PostgresChangeFilterType.eq,
-          column: 'squad_id',
-          value: squadId,
-        ),
-        callback: emit,
-      );
+      bind(PostgresChangeEvent.insert, 'sq8_messages', 'squad_id', squadId);
     }
 
     // subscribe() can be called once per channel. Error, timeout, and a

@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:squadsync/core/sq8_database.dart';
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/squad/data/squad_repository.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
@@ -28,11 +29,25 @@ class FakeSquadRepository implements SquadRepository {
   /// Pauses [myProfile] so a test can switch accounts while a load is in flight.
   Future<void>? holdProfile;
 
-  final _roster = StreamController<void>.broadcast();
+  final _roster = StreamController<RosterSignal>.broadcast();
 
   /// Tells listeners that a member row changed. Tests use this as realtime.
   void notifyRoster() {
-    if (!_roster.isClosed) _roster.add(null);
+    _signal(RosterSignal.changed);
+  }
+
+  /// A member-row delete. The removed person may not receive this.
+  void notifyDeleted() {
+    _signal(RosterSignal.deleted);
+  }
+
+  void _signal(RosterSignal signal) {
+    if (!_roster.isClosed) _roster.add(signal);
+  }
+
+  /// Drops this person's seat without a realtime event.
+  void unseat() {
+    _squad = null;
   }
 
   Squad get snapshot => _squad ?? (throw StateError('no squad'));
@@ -136,7 +151,7 @@ class FakeSquadRepository implements SquadRepository {
   }
 
   @override
-  Stream<void> watchRoster({String? squadId, required String userId}) {
+  Stream<RosterSignal> watchRoster({String? squadId, required String userId}) {
     return _roster.stream;
   }
 

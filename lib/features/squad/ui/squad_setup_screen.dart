@@ -9,9 +9,15 @@ import 'package:squadsync/features/squad/domain/squad.dart';
 
 /// Signed in, profile exists, no squad yet. Creates one squad of at most 8.
 class SquadSetupScreen extends ConsumerStatefulWidget {
-  const SquadSetupScreen({required this.profile, this.onRefresh, super.key});
+  const SquadSetupScreen({
+    required this.profile,
+    this.notice,
+    this.onRefresh,
+    super.key,
+  });
 
   final Member profile;
+  final String? notice;
   final Future<void> Function()? onRefresh;
 
   @override
@@ -52,6 +58,10 @@ class _SquadSetupScreenState extends ConsumerState<SquadSetupScreen> {
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.all(24),
           children: [
+            if (widget.notice != null) ...[
+              Text(widget.notice!, key: const Key('left-squad')),
+              const SizedBox(height: 16),
+            ],
             const Text(
               'Start the squad',
               style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600),

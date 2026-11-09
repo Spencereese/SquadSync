@@ -103,8 +103,15 @@ class _AccountGateState extends ConsumerState<_AccountGate>
     try {
       final squads = ref.read(squadRepositoryProvider);
       final profile = await squads.myProfile();
+      final hadSquad = _squad != null;
       final squad = profile == null ? null : await squads.findMine();
       if (!_current(generation, userId)) return;
+      if (squad != null) {
+        ref.read(removedNoticeProvider.notifier).clear();
+      } else if (hadSquad) {
+        ref.read(squadChatControllerProvider.notifier).abandon();
+        ref.read(removedNoticeProvider.notifier).show(removedFromSquadMessage);
+      }
       setState(() {
         _profile = profile;
         _squad = squad;
@@ -154,7 +161,8 @@ class _AccountGateState extends ConsumerState<_AccountGate>
     ref.listen<int>(accountRevisionProvider, (previous, next) {
       if (previous != next) unawaited(_load(silent: _profile != null));
     });
-    if (_loading) {
+    final removed = ref.watch(removedNoticeProvider);
+    if (_loading && removed == null) {
       return const Scaffold(
         body: Center(
           child: CircularProgressIndicator(key: Key('gate-loading')),
@@ -166,9 +174,10 @@ class _AccountGateState extends ConsumerState<_AccountGate>
     }
     final profile = _profile;
     if (profile == null) return const ProfileMissingScreen();
-    if (_squad == null) {
+    if (_squad == null || removed != null) {
       return SquadSetupScreen(
         profile: profile,
+        notice: removed,
         onRefresh: () => _load(silent: true),
       );
     }

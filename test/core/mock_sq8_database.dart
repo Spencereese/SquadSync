@@ -179,7 +179,7 @@ class MockSq8Database implements Sq8Database {
   Stream<Sq8Message> watchInserts(String squadId) => _inserts.stream;
 
   @override
-  Stream<void> watchRoster({String? squadId, required String userId}) {
+  Stream<RosterSignal> watchRoster({String? squadId, required String userId}) {
     return const Stream.empty();
   }
 

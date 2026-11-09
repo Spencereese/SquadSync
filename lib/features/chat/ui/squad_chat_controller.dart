@@ -8,7 +8,9 @@ import 'package:squadsync/features/chat/domain/chat_message.dart';
 import 'package:squadsync/features/chat/domain/message_history.dart';
 import 'package:squadsync/features/chat/domain/send_machine.dart';
 import 'package:squadsync/features/chat/domain/unread.dart';
+import 'package:squadsync/core/sq8_database.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
+import 'package:squadsync/features/squad/ui/squad_setup_screen.dart';
 
 class SquadChatState {
   const SquadChatState({
@@ -57,10 +59,25 @@ final squadChatControllerProvider =
       SquadChatController.new,
     );
 
+const removedFromSquadMessage = "You're no longer in this squad";
+
+class RemovedNotice extends Notifier<String?> {
+  @override
+  String? build() => null;
+
+  void show(String message) => state = message;
+
+  void clear() => state = null;
+}
+
+final removedNoticeProvider = NotifierProvider<RemovedNotice, String?>(
+  RemovedNotice.new,
+);
+
 /// Without a signed-in user the phone acts as the squad owner (the fakes).
 class SquadChatController extends Notifier<SquadChatState> {
   StreamSubscription<List<ChatMessage>>? _echo;
-  StreamSubscription<void>? _roster;
+  StreamSubscription<RosterSignal>? _roster;
   var _started = false;
   var _loadingOlder = false;
   var _epoch = 0;
@@ -166,18 +183,12 @@ class SquadChatController extends Notifier<SquadChatState> {
   }
 
   /// Reloads the member list and the newest messages. Safe when realtime is off.
-  Future<void> refreshFromRoster() async {
-    if (state.squad == null) return;
-    final squad = await ref.read(squadRepositoryProvider).findMine();
-    if (!ref.mounted || state.squad == null) return;
-    if (squad == null) return;
-    replaceSquad(squad);
-    await reload();
-  }
+  Future<void> refreshFromRoster() => reload();
 
-  /// Refetches the newest page and subscribes again. Local failed rows stay,
-  /// and a row the server already has is not duplicated.
+  /// Re-reads membership, then the newest page. A missing seat leaves the squad.
+  /// Local failed rows stay, and a row the server already has is not duplicated.
   Future<void> reload() async {
+    if (!await _confirmSeat()) return;
     final current = state;
     final squad = current.squad;
     if (squad == null) return;
@@ -265,6 +276,32 @@ class SquadChatController extends Notifier<SquadChatState> {
     return ref.mounted && epoch == _epoch && state.squad?.chatId == chatId;
   }
 
+  /// False when this person is no longer a member. A failed read stays put.
+  Future<bool> _confirmSeat() async {
+    if (state.squad == null) return false;
+    final Squad? squad;
+    try {
+      squad = await ref.read(squadRepositoryProvider).findMine();
+    } on RepositoryFailure catch (error) {
+      if (!ref.mounted) return false;
+      state = state.copyWith(error: error.message, linkDown: true);
+      return false;
+    }
+    if (!ref.mounted || state.squad == null) return false;
+    if (squad == null) {
+      _leaveSquad();
+      return false;
+    }
+    replaceSquad(squad);
+    return true;
+  }
+
+  void _leaveSquad() {
+    abandon();
+    ref.read(removedNoticeProvider.notifier).show(removedFromSquadMessage);
+    ref.read(accountRevisionProvider.notifier).bump();
+  }
+
   Future<void> _listenRoster() async {
     final squad = state.squad;
     if (squad == null) {
@@ -292,6 +329,7 @@ class SquadChatController extends Notifier<SquadChatState> {
   void _onLinkDown(Object error, StackTrace stack) {
     if (!ref.mounted) return;
     state = state.copyWith(linkDown: true);
+    unawaited(_confirmSeat());
   }
 
   void _onEcho(List<ChatMessage> remote) {

@@ -168,4 +168,48 @@ void main() {
     expect(gone.messages.single.replyToId, 'm1');
     expect(gone.messages.single.replyText, 'Original message unavailable');
   });
+
+  test('a failed quote lookup still loads the thread', () async {
+    final plain = messageFromRow({
+      'id': 'm1',
+      'squad_id': 'squad',
+      'sender_id': 'alex',
+      'body': 'hello',
+      'sent_at': '2026-11-02T12:00:00.000Z',
+    });
+    final reply = messageFromRow({
+      'id': 'm2',
+      'squad_id': 'squad',
+      'sender_id': 'user-1',
+      'body': 'on my way',
+      'sent_at': '2026-11-02T12:01:00.000Z',
+      'reply_to_id': 'm1',
+    });
+    final db = MockSq8Database()
+      ..messages = [reply, plain]
+      ..bodiesError = const RepositoryFailure('500');
+    final repo = SupabaseChatRepository(db);
+
+    final page = await repo.newest('squad');
+
+    expect(page.messages.map((message) => message.text), [
+      'hello',
+      'on my way',
+    ]);
+    expect(page.messages.first.replyText, isNull);
+    expect(page.messages.last.replyToId, 'm1');
+    expect(page.messages.last.replyText, 'Original message unavailable');
+
+    final seen = <List<ChatMessage>>[];
+    final errors = <Object>[];
+    final sub = repo.watch('squad').listen(seen.add, onError: errors.add);
+    db.emit(reply);
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    await sub.cancel();
+
+    expect(errors, isEmpty);
+    expect(seen.single.single.text, 'on my way');
+    expect(seen.single.single.replyText, 'Original message unavailable');
+  });
 }

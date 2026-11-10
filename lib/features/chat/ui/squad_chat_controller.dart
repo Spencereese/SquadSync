@@ -94,6 +94,9 @@ final squadChatControllerProvider =
 
 const removedFromSquadMessage = "You're no longer in this squad";
 
+const couldNotLoadMessenger =
+    "Couldn't load reactions or seen-by. Messages are still here.";
+
 class RemovedNotice extends Notifier<String?> {
   @override
   String? build() => null;
@@ -196,16 +199,24 @@ class SquadChatController extends Notifier<SquadChatState> {
     final typing = _typing;
     _typing = null;
     _typingChat = null;
-    if (typing != null) unawaited(typing.cancel());
-    if (_typingKeys.stop()) {
-      final chatId = state.squad?.chatId;
-      if (chatId != null) {
-        unawaited(
-          ref.read(chatRepositoryProvider).setTyping(chatId, typing: false),
-        );
-      }
+    final chatId = state.squad?.chatId;
+    final stop = _typingKeys.stop();
+    if (stop && chatId != null) {
+      unawaited(_stopTyping(chatId, typing));
+    } else if (typing != null) {
+      unawaited(typing.cancel());
     }
     state = const SquadChatState();
+  }
+
+  /// Sends the stop on the channel that is already open, then closes it.
+  /// A stop after close would subscribe a new channel and leave it behind.
+  Future<void> _stopTyping(
+    String chatId,
+    StreamSubscription<Set<String>>? typing,
+  ) async {
+    await ref.read(chatRepositoryProvider).setTyping(chatId, typing: false);
+    if (typing != null) await typing.cancel();
   }
 
   void setChatVisible(bool visible) {
@@ -488,11 +499,8 @@ class SquadChatController extends Notifier<SquadChatState> {
   ) async {
     try {
       return (board: await chats.messenger(chatId), error: null);
-    } on RepositoryFailure catch (error) {
-      return (
-        board: MessengerBoard.disabled,
-        error: 'Reactions and read receipts are unavailable. ${error.message}',
-      );
+    } on RepositoryFailure {
+      return (board: MessengerBoard.disabled, error: couldNotLoadMessenger);
     }
   }
 

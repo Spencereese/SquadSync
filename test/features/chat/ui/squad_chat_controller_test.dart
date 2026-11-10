@@ -373,8 +373,12 @@ void main() {
     expect(state.messages.single.text, 'hello');
     expect(state.messenger.enabled, isFalse);
     expect(state.error, isNull);
-    expect(state.messengerError, contains('Reactions and read receipts'));
-    expect(state.messengerError, contains('permission denied'));
+    expect(
+      state.messengerError,
+      "Couldn't load reactions or seen-by. Messages are still here.",
+    );
+    expect(state.messengerError, isNot(contains('permission denied')));
+    expect(state.messengerError, isNot(contains('sq8_message_reads')));
   });
 
   test('typing starts once per burst and the channel is not stacked', () async {
@@ -397,5 +401,23 @@ void main() {
     container.dispose();
     await Future<void>.delayed(Duration.zero);
     expect(chats.openTypingWatches, 0);
+    expect(chats.channelsOpenedAfterClose, 0);
+  });
+
+  test('closing while typing stops on the open channel', () async {
+    final chats = FakeChatRepository();
+    final container = _container(chats: chats);
+    final controller = container.read(squadChatControllerProvider.notifier);
+
+    await controller.open();
+    await controller.setTyping(true);
+    controller.abandon();
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+
+    expect(chats.typingSends, [true, false]);
+    expect(chats.channelsOpenedAfterClose, 0);
+    expect(chats.openTypingWatches, 0);
+    container.dispose();
   });
 }

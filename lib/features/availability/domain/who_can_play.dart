@@ -147,6 +147,7 @@ String whoSpokenLine(WhoRow row, {required Duration localOffset}) {
         return '$name, playing ${row.game}, until $clock';
       }
       if (clock.isEmpty) return '$name, available';
+      if (promoted) return '$name, available since $clock';
       return '$name, available until $clock';
     case AvailabilityEffect.availableLater:
       final until = checkIn?.until;

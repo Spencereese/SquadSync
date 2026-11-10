@@ -147,14 +147,12 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
             )
           : Column(
               children: [
-                Flexible(
-                  flex: MediaQuery.textScalerOf(context).scale(1) > 1.5
-                      ? 8
-                      : 3,
+                Expanded(
                   child: RefreshIndicator(
                     key: const Key('refresh-chat'),
                     onRefresh: _refreshHome,
                     child: CustomScrollView(
+                      key: const Key('home-scroll'),
                       physics: const AlwaysScrollableScrollPhysics(),
                       slivers: [
                         SliverToBoxAdapter(
@@ -177,7 +175,6 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
                                   ),
                                 ),
                               _who(squad, state.meId),
-                              MemberStrip(members: squad.members),
                             ],
                           ),
                         ),
@@ -185,6 +182,7 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
                     ),
                   ),
                 ),
+                MemberStrip(members: squad.members),
                 if (state.hasOlder)
                   TextButton(
                     key: const Key('earlier'),
@@ -197,7 +195,7 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
                     },
                     child: const Text('Earlier messages'),
                   ),
-                const Flexible(flex: 2, child: _MessageList()),
+                const SizedBox(height: 88, child: _MessageList()),
                 const _Composer(),
               ],
             ),

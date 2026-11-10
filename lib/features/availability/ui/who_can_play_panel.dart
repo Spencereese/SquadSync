@@ -129,13 +129,7 @@ class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
               onGame: _saveGame,
             ),
             const SizedBox(height: 4),
-            _Sections(showRest: _rest),
-            TextButton(
-              key: Key(_rest ? 'who-collapse' : 'who-expand'),
-              style: TextButton.styleFrom(minimumSize: const Size(44, 44)),
-              onPressed: _toggleRest,
-              child: Text(_rest ? 'Hide the rest' : 'Show the squad'),
-            ),
+            _Sections(showRest: _rest, onToggle: _toggleRest),
           ],
         ),
       ),
@@ -266,7 +260,7 @@ class _Mine extends StatelessWidget {
             key: const Key('status-game'),
             controller: game,
             focusNode: gameFocus,
-            textCapitalization: TextCapitalization.words,
+            textCapitalization: TextCapitalization.sentences,
             textInputAction: TextInputAction.done,
             decoration: const InputDecoration(
               labelText: 'Game',
@@ -410,9 +404,10 @@ class _Lead extends ConsumerWidget {
 }
 
 class _Sections extends ConsumerWidget {
-  const _Sections({required this.showRest});
+  const _Sections({required this.showRest, required this.onToggle});
 
   final bool showRest;
+  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -425,7 +420,7 @@ class _Sections extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (showRest && who.nobodyCheckedIn)
+        if (who.nobodyCheckedIn)
           const Padding(
             padding: EdgeInsets.only(top: 4),
             child: Text(
@@ -436,18 +431,18 @@ class _Sections extends ConsumerWidget {
         _Section(
           title: 'Playing now',
           sectionKey: const Key('section-playing'),
-          empty: 'Nobody playing',
+          empty: 'Nobody else yet',
           rows: who.playingNow,
           offset: offset,
         ),
+        _Section(
+          title: 'Available',
+          sectionKey: const Key('section-available'),
+          empty: 'Nobody else yet',
+          rows: who.available,
+          offset: offset,
+        ),
         if (showRest) ...[
-          _Section(
-            title: 'Available',
-            sectionKey: const Key('section-available'),
-            empty: 'Nobody available without a game',
-            rows: who.available,
-            offset: offset,
-          ),
           _Section(
             title: 'Maybe later',
             sectionKey: const Key('section-later'),
@@ -463,6 +458,16 @@ class _Sections extends ConsumerWidget {
             offset: offset,
           ),
         ],
+        TextButton(
+          key: Key(showRest ? 'who-collapse' : 'who-expand'),
+          style: TextButton.styleFrom(minimumSize: const Size(44, 44)),
+          onPressed: onToggle,
+          child: Text(
+            showRest
+                ? 'Hide the rest'
+                : 'Maybe later ${who.maybeLater.length} · Offline ${who.offline.length}',
+          ),
+        ),
       ],
     );
   }

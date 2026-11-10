@@ -45,7 +45,10 @@ void main() {
     _expectOnScreen(tester, find.byKey(const Key('status-later')));
     _expectOnScreen(tester, find.byKey(const Key('status-cant')));
     _expectOnScreen(tester, find.byKey(const Key('section-playing')));
+    _expectOnScreen(tester, find.byKey(const Key('section-available')));
     expect(find.text('0 of 8 available'), findsOneWidget);
+    expect(find.text('Nobody else yet'), findsWidgets);
+    expect(find.text('Maybe later 0 · Offline 1'), findsOneWidget);
   });
 
   testWidgets('double text still shows the count and status buttons', (
@@ -60,6 +63,31 @@ void main() {
     _expectOnScreen(tester, find.byKey(const Key('status-later')));
     _expectOnScreen(tester, find.byKey(const Key('status-cant')));
     expect(tester.takeException(), isNull);
+
+    final page = find
+        .descendant(
+          of: find.byKey(const Key('home-scroll')),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('who-expand')),
+      120,
+      scrollable: page,
+    );
+    await tester.drag(page, const Offset(0, -80));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const Key('who-expand')).hitTestable(at: Alignment.topCenter),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('who-panel')),
+        matching: find.byType(Scrollable),
+      ),
+      findsNothing,
+    );
   });
 
   testWidgets('a row and the count are each one semantics node', (
@@ -145,8 +173,7 @@ void main() {
       nodes
           .where(
             (node) =>
-                node.flagsCollection.isHeader &&
-                node.label == 'Playing now',
+                node.flagsCollection.isHeader && node.label == 'Playing now',
           )
           .length,
       1,

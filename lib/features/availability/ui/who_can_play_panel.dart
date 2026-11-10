@@ -353,6 +353,7 @@ class _Lead extends ConsumerWidget {
     }
     if (state.board == null && state.error == null) {
       return Semantics(
+        container: true,
         label: "Loading who's on",
         excludeSemantics: true,
         child: Skeletonizer(

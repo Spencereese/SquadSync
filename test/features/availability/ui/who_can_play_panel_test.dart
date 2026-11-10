@@ -109,6 +109,8 @@ void main() {
     await _pump(tester, repo: repo, clock: clock);
 
     expect(find.byKey(const Key('who-empty')), findsOneWidget);
+    expect(find.byKey(const Key('section-playing')), findsNothing);
+    expect(find.text('Playing now'), findsNothing);
     expect(find.byKey(const Key('who-summary')), findsOneWidget);
     expect(find.text('0 of 8 available'), findsOneWidget);
     expect(repo.rows, isEmpty);
@@ -153,6 +155,11 @@ void main() {
 
     expect(find.byKey(const Key('who-loading')), findsOneWidget);
     expect(find.byKey(const Key('who-summary')), findsNothing);
+    expect(find.bySemanticsLabel("Loading who's on"), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(RegExp("Loading who's on.*Notifications")),
+      findsNothing,
+    );
 
     gate.complete();
     await tester.pump();

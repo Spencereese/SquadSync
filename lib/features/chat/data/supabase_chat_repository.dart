@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/core/sq8_database.dart';
@@ -391,8 +392,19 @@ class SupabaseChatRepository implements ChatRepository {
     try {
       return await _db.messageBodies(ids);
     } on RepositoryFailure {
-      // One failed lookup must not drop the thread. Each reply falls back.
+      // A PostgREST refusal must not drop the thread. Each reply falls back.
       return const {};
+    } catch (error) {
+      // SocketException, package:http ClientException, and TimeoutException
+      // are the network failures. PostgREST already arrived as
+      // RepositoryFailure above. http stays transitive, so ClientException
+      // is matched by type name.
+      if (error is SocketException ||
+          error is TimeoutException ||
+          error.runtimeType.toString() == 'ClientException') {
+        return const {};
+      }
+      rethrow;
     }
   }
 

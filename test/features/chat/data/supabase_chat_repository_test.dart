@@ -11,6 +11,7 @@ import 'package:squadsync/core/sq8_rows.dart';
 import 'package:squadsync/features/chat/data/supabase_chat_repository.dart';
 import 'package:squadsync/features/chat/domain/chat_message.dart';
 import 'package:squadsync/features/chat/domain/send_machine.dart';
+import 'package:squadsync/features/chat/domain/typing.dart';
 import 'package:squadsync/features/chat/domain/unread.dart';
 
 import '../../../core/mock_sq8_database.dart';
@@ -167,12 +168,18 @@ void main() {
     final loaded = page.messages.last;
     expect(loaded.id, 'm2');
     expect(loaded.replyToId, 'm1');
-    expect(loaded.replyText, 'be on in five');
+    expect(loaded.replyText, isNull);
+    expect(await repo.quoteBodies(['m1']), {'m1': 'be on in five'});
 
     db.messages = [reply];
     final gone = await repo.newest('squad');
     expect(gone.messages.single.replyToId, 'm1');
-    expect(gone.messages.single.replyText, 'Original message unavailable');
+    expect(gone.messages.single.replyText, isNull);
+    expect(await repo.quoteBodies(['m1']), isEmpty);
+    expect(
+      resolvedQuoteText(replyToId: 'm1', current: null, quotes: const {}),
+      'Original message unavailable',
+    );
   });
 
   test('a failed quote lookup still loads the thread', () async {
@@ -204,7 +211,8 @@ void main() {
     ]);
     expect(page.messages.first.replyText, isNull);
     expect(page.messages.last.replyToId, 'm1');
-    expect(page.messages.last.replyText, 'Original message unavailable');
+    expect(page.messages.last.replyText, isNull);
+    expect(await repo.quoteBodies(['m1']), isEmpty);
 
     final seen = <List<ChatMessage>>[];
     final errors = <Object>[];
@@ -216,7 +224,7 @@ void main() {
 
     expect(errors, isEmpty);
     expect(seen.single.single.text, 'on my way');
-    expect(seen.single.single.replyText, 'Original message unavailable');
+    expect(seen.single.single.replyText, isNull);
   });
 
   test(
@@ -256,7 +264,8 @@ void main() {
           'on my way',
         ]);
         expect(page.messages.last.replyToId, 'm1');
-        expect(page.messages.last.replyText, 'Original message unavailable');
+        expect(page.messages.last.replyText, isNull);
+        expect(await repo.quoteBodies(['m1']), isEmpty);
       }
     },
   );
@@ -297,7 +306,8 @@ void main() {
           'hello',
           'on my way',
         ]);
-        expect(page.messages.last.replyText, 'Original message unavailable');
+        expect(page.messages.last.replyText, isNull);
+        expect(await repo.quoteBodies(['m1']), isEmpty);
       }
     },
   );

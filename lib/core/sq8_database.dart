@@ -104,6 +104,9 @@ abstract class Sq8Database {
 
   Future<void> insertMessage(Sq8Message message);
 
+  /// Bodies for these ids. An id that is gone is omitted.
+  Future<Map<String, String>> messageBodies(Iterable<String> ids);
+
   Stream<Sq8Message> watchInserts(String squadId);
 
   Future<Sq8Cursor?> readCursor(String squadId);

@@ -43,6 +43,20 @@ void main() {
 
     expect(message.id, 'msg-1');
     expect(message.sentAt, DateTime.utc(2026, 11, 2, 12));
+    expect(message.replyToId, isNull);
+  });
+
+  test('a message row keeps reply_to_id', () {
+    final message = messageFromRow({
+      'id': 'msg-2',
+      'squad_id': 'squad',
+      'sender_id': 'spencer',
+      'body': 'on my way',
+      'sent_at': '2026-11-02T12:01:00.000Z',
+      'reply_to_id': 'msg-1',
+    });
+
+    expect(message.replyToId, 'msg-1');
   });
 
   test('postgrest errors map onto duplicate, full, and owner', () {

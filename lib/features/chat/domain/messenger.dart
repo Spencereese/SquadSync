@@ -164,12 +164,13 @@ String? firstUnreadMessageId({
 }
 
 /// File 0014 is not on this database. Hide reactions and receipts.
+/// Only a missing table or column counts. A permission error that names
+/// the table is still an error.
 bool messengerTableMissing(String? code, String message) {
-  if (code == '42P01' || code == 'PGRST205') return true;
-  if (code == '42703' || code == 'PGRST204') return true;
-  return message.contains('sq8_message_reactions') ||
-      message.contains('sq8_message_reads') ||
-      message.contains('reply_to_id');
+  return code == '42P01' ||
+      code == 'PGRST205' ||
+      code == '42703' ||
+      code == 'PGRST204';
 }
 
 String typingLine(Iterable<String> names) {

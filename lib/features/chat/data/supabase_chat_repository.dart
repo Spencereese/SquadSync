@@ -7,6 +7,7 @@ import 'package:squadsync/features/chat/domain/chat_message.dart';
 import 'package:squadsync/features/chat/domain/message_history.dart';
 import 'package:squadsync/features/chat/domain/messenger.dart';
 import 'package:squadsync/features/chat/domain/send_machine.dart';
+import 'package:squadsync/features/chat/domain/typing.dart';
 import 'package:squadsync/features/chat/domain/unread.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -17,11 +18,13 @@ class SupabaseChatRepository implements ChatRepository {
   final SupabaseClient? _client;
   var _messengerOff = false;
   final Map<String, RealtimeChannel> _typingChannels = {};
+  final Map<String, StreamController<Set<String>>> _typingRooms = {};
+  final Map<String, TypingRoster> _typingRosters = {};
 
   @override
   Future<HistoryPage> newest(String chatId, {int limit = openPageSize}) async {
     final rows = await _db.newestMessages(chatId, limit: limit + 1);
-    return _page(rows, limit);
+    return _page(rows, limit, await _quoteBodies(rows));
   }
 
   @override
@@ -36,7 +39,7 @@ class SupabaseChatRepository implements ChatRepository {
       beforeId: cursor.id,
       limit: limit + 1,
     );
-    return _page(rows, limit);
+    return _page(rows, limit, await _quoteBodies(rows));
   }
 
   @override
@@ -47,7 +50,7 @@ class SupabaseChatRepository implements ChatRepository {
       return SendConflict(message.id);
     } on RepositoryFailure catch (error) {
       if (message.replyToId != null &&
-          messengerTableMissing(null, error.message)) {
+          messengerTableMissing(error.code, error.message)) {
         _messengerOff = true;
         await _insert(message, withReply: false);
         return SendConfirmed(message.id);
@@ -72,7 +75,10 @@ class SupabaseChatRepository implements ChatRepository {
 
   @override
   Stream<List<ChatMessage>> watch(String chatId) {
-    return _db.watchInserts(chatId).map((row) => [_toMessage(row)]);
+    return _db.watchInserts(chatId).asyncMap((row) async {
+      final quotes = await _quoteBodies([row]);
+      return [_toMessage(row, quotes)];
+    });
   }
 
   @override
@@ -141,7 +147,7 @@ class SupabaseChatRepository implements ChatRepository {
         _messengerOff = true;
         return MessengerBoard.disabled;
       }
-      throw RepositoryFailure(error.message);
+      throw RepositoryFailure(error.message, code: error.code);
     }
   }
 
@@ -183,7 +189,7 @@ class SupabaseChatRepository implements ChatRepository {
         _messengerOff = true;
         return;
       }
-      throw RepositoryFailure(error.message);
+      throw RepositoryFailure(error.message, code: error.code);
     }
   }
 
@@ -208,7 +214,7 @@ class SupabaseChatRepository implements ChatRepository {
         _messengerOff = true;
         return;
       }
-      throw RepositoryFailure(error.message);
+      throw RepositoryFailure(error.message, code: error.code);
     }
   }
 
@@ -217,30 +223,36 @@ class SupabaseChatRepository implements ChatRepository {
     final client = _client;
     final me = _db.userId;
     if (client == null) return const Stream.empty();
-    final channel = _typingChannel(chatId);
-    final controller = StreamController<Set<String>>.broadcast();
-    final typing = <String, DateTime>{};
-    void emit() {
-      final now = DateTime.now().toUtc();
-      typing.removeWhere(
-        (_, at) => now.difference(at) > const Duration(seconds: 4),
-      );
-      if (!controller.isClosed) controller.add(typing.keys.toSet());
-    }
+    final open = _typingRooms[chatId];
+    if (open != null && !open.isClosed) return open.stream;
 
+    final controller = StreamController<Set<String>>.broadcast();
+    final roster = TypingRoster();
+    _typingRooms[chatId] = controller;
+    _typingRosters[chatId] = roster;
+    final channel = _typingChannel(chatId);
     channel.onBroadcast(
       event: 'typing',
       callback: (payload) {
         final id = payload['user_id']?.toString() ?? '';
         if (id.isEmpty || id == me) return;
-        if (payload['typing'] == true) {
-          typing[id] = DateTime.now().toUtc();
-        } else {
-          typing.remove(id);
-        }
-        emit();
+        final names = roster.apply(
+          userId: id,
+          typing: payload['typing'] == true,
+          emit: (left) {
+            if (!controller.isClosed) controller.add(left);
+          },
+        );
+        if (!controller.isClosed) controller.add(names);
       },
     );
+    controller.onCancel = () {
+      roster.dispose();
+      _typingRooms.remove(chatId);
+      _typingRosters.remove(chatId);
+      final live = _typingChannels.remove(chatId);
+      if (live != null) unawaited(client.removeChannel(live));
+    };
     return controller.stream;
   }
 
@@ -265,17 +277,31 @@ class SupabaseChatRepository implements ChatRepository {
     return channel;
   }
 
-  HistoryPage _page(List<Sq8Message> newestFirst, int limit) {
+  Future<Map<String, String>> _quoteBodies(List<Sq8Message> rows) {
+    final ids = [
+      for (final row in rows)
+        if (row.replyToId != null) row.replyToId!,
+    ];
+    if (ids.isEmpty) return Future.value(const {});
+    return _db.messageBodies(ids);
+  }
+
+  HistoryPage _page(
+    List<Sq8Message> newestFirst,
+    int limit,
+    Map<String, String> quotes,
+  ) {
     final hasOlder = newestFirst.length > limit;
     final window = newestFirst.take(limit).toList().reversed;
     return HistoryPage(
-      messages: [for (final row in window) _toMessage(row)],
+      messages: [for (final row in window) _toMessage(row, quotes)],
       hasOlder: hasOlder,
     );
   }
 
-  ChatMessage _toMessage(Sq8Message row) {
+  ChatMessage _toMessage(Sq8Message row, Map<String, String> quotes) {
     final mine = row.senderId == _db.userId;
+    final replyId = row.replyToId;
     return ChatMessage(
       id: row.id,
       chatId: row.squadId,
@@ -283,6 +309,10 @@ class SupabaseChatRepository implements ChatRepository {
       text: row.body,
       sentAt: row.sentAt,
       delivery: mine ? Delivery.sent : null,
+      replyToId: replyId,
+      replyText: replyId == null
+          ? null
+          : (quotes[replyId] ?? originalMessageUnavailable),
     );
   }
 }

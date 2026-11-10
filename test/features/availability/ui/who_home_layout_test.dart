@@ -45,7 +45,8 @@ void main() {
     _expectOnScreen(tester, find.byKey(const Key('status-available')));
     _expectOnScreen(tester, find.byKey(const Key('status-later')));
     _expectOnScreen(tester, find.byKey(const Key('status-cant')));
-    _expectOnScreen(tester, find.byKey(const Key('section-playing')));
+    expect(find.byKey(const Key('section-playing')), findsNothing);
+    expect(find.text('Playing now'), findsNothing);
     _expectOnScreen(tester, find.byKey(const Key('section-available')));
     expect(find.text('0 of 8 available'), findsOneWidget);
     expect(find.byKey(const Key('who-empty')), findsOneWidget);

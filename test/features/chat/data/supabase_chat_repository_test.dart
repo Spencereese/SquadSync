@@ -1,4 +1,10 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+// http is transitive through supabase_flutter. This test throws the real type.
+// ignore: depend_on_referenced_packages
+import 'package:http/http.dart';
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/core/sq8_database.dart';
 import 'package:squadsync/core/sq8_rows.dart';
@@ -212,4 +218,46 @@ void main() {
     expect(seen.single.single.text, 'on my way');
     expect(seen.single.single.replyText, 'Original message unavailable');
   });
+
+  test(
+    'a network failure during quote lookup still loads the thread',
+    () async {
+      final plain = messageFromRow({
+        'id': 'm1',
+        'squad_id': 'squad',
+        'sender_id': 'alex',
+        'body': 'hello',
+        'sent_at': '2026-11-02T12:00:00.000Z',
+      });
+      final reply = messageFromRow({
+        'id': 'm2',
+        'squad_id': 'squad',
+        'sender_id': 'user-1',
+        'body': 'on my way',
+        'sent_at': '2026-11-02T12:01:00.000Z',
+        'reply_to_id': 'm1',
+      });
+      final failures = <Object>[
+        const SocketException('failed host lookup'),
+        ClientException('connection closed'),
+        TimeoutException('quote lookup'),
+      ];
+
+      for (final failure in failures) {
+        final db = MockSq8Database()
+          ..messages = [reply, plain]
+          ..bodiesError = failure;
+        final repo = SupabaseChatRepository(db);
+
+        final page = await repo.newest('squad');
+
+        expect(page.messages.map((message) => message.text), [
+          'hello',
+          'on my way',
+        ]);
+        expect(page.messages.last.replyToId, 'm1');
+        expect(page.messages.last.replyText, 'Original message unavailable');
+      }
+    },
+  );
 }

@@ -42,6 +42,10 @@ class FakeChatRepository implements ChatRepository {
   final typingSends = <bool>[];
   var typingWatches = 0;
 
+  /// A stop that arrived after the watch was already closed. That used to
+  /// open a channel and leave it.
+  var channelsOpenedAfterClose = 0;
+
   int get openTypingWatches => _typingWatches.length;
 
   /// When set, [messenger] throws this instead of returning a board.
@@ -231,6 +235,10 @@ class FakeChatRepository implements ChatRepository {
 
   @override
   Future<void> setTyping(String chatId, {required bool typing}) async {
+    if (_typingWatches.isEmpty) {
+      channelsOpenedAfterClose += 1;
+      return;
+    }
     typingSends.add(typing);
     if (typing) {
       _typing.add('spencer');

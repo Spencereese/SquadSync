@@ -246,22 +246,33 @@ class SupabaseChatRepository implements ChatRepository {
         if (!controller.isClosed) controller.add(names);
       },
     );
-    controller.onCancel = () {
+    controller.onCancel = () async {
+      final meId = _db.userId;
+      if (meId != null) {
+        try {
+          await channel.sendBroadcastMessage(
+            event: 'typing',
+            payload: {'user_id': meId, 'typing': false},
+          );
+        } on Object {
+          // The other phone drops a typer after a few seconds.
+        }
+      }
       roster.dispose();
       _typingRooms.remove(chatId);
       _typingRosters.remove(chatId);
       final live = _typingChannels.remove(chatId);
-      if (live != null) unawaited(client.removeChannel(live));
+      if (live != null) await client.removeChannel(live);
     };
     return controller.stream;
   }
 
   @override
   Future<void> setTyping(String chatId, {required bool typing}) async {
-    final client = _client;
     final me = _db.userId;
-    if (client == null || me == null) return;
-    await _typingChannel(chatId).sendBroadcastMessage(
+    final channel = _typingChannels[chatId];
+    if (me == null || channel == null) return;
+    await channel.sendBroadcastMessage(
       event: 'typing',
       payload: {'user_id': me, 'typing': typing},
     );
@@ -277,13 +288,18 @@ class SupabaseChatRepository implements ChatRepository {
     return channel;
   }
 
-  Future<Map<String, String>> _quoteBodies(List<Sq8Message> rows) {
+  Future<Map<String, String>> _quoteBodies(List<Sq8Message> rows) async {
     final ids = [
       for (final row in rows)
         if (row.replyToId != null) row.replyToId!,
     ];
-    if (ids.isEmpty) return Future.value(const {});
-    return _db.messageBodies(ids);
+    if (ids.isEmpty) return const {};
+    try {
+      return await _db.messageBodies(ids);
+    } on RepositoryFailure {
+      // One failed lookup must not drop the thread. Each reply falls back.
+      return const {};
+    }
   }
 
   HistoryPage _page(

@@ -110,4 +110,74 @@ void main() {
     expect(messengerTableMissing('23505', 'duplicate'), isFalse);
     expect(typingLine(const ['Alex']), 'Alex is typing');
   });
+
+  test('reaction and read deletes reload only a known row', () {
+    expect(
+      messengerEventReloads(
+        const MessengerEvent(
+          table: 'sq8_message_reactions',
+          deleted: false,
+          squadId: 'squad',
+          messageId: 'm1',
+        ),
+        squadId: 'squad',
+        messageIds: {'m1'},
+        memberIds: {'alex'},
+      ),
+      isTrue,
+    );
+    expect(
+      messengerEventReloads(
+        const MessengerEvent(
+          table: 'sq8_message_reactions',
+          deleted: false,
+          squadId: 'other',
+        ),
+        squadId: 'squad',
+        messageIds: {'m1'},
+        memberIds: {'alex'},
+      ),
+      isFalse,
+    );
+    expect(
+      messengerEventReloads(
+        const MessengerEvent(
+          table: 'sq8_message_reactions',
+          deleted: true,
+          messageId: 'm1',
+        ),
+        squadId: 'squad',
+        messageIds: {'m1'},
+        memberIds: {'alex'},
+      ),
+      isTrue,
+    );
+    expect(
+      messengerEventReloads(
+        const MessengerEvent(
+          table: 'sq8_message_reactions',
+          deleted: true,
+          messageId: 'elsewhere',
+        ),
+        squadId: 'squad',
+        messageIds: {'m1'},
+        memberIds: {'alex'},
+      ),
+      isFalse,
+    );
+    expect(
+      messengerEventReloads(
+        const MessengerEvent(
+          table: 'sq8_message_reads',
+          deleted: true,
+          squadId: 'other',
+          userId: 'alex',
+        ),
+        squadId: 'squad',
+        messageIds: {'m1'},
+        memberIds: {'alex'},
+      ),
+      isFalse,
+    );
+  });
 }

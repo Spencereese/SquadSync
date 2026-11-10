@@ -41,6 +41,8 @@ class FakeChatRepository implements ChatRepository {
   final List<StreamController<Set<String>>> _typingWatches = [];
   final typingSends = <bool>[];
   var typingWatches = 0;
+  var messengerLoads = 0;
+  final _messengerEvents = StreamController<MessengerEvent>.broadcast();
 
   /// A stop that arrived after the watch was already closed. That used to
   /// open a channel and leave it.
@@ -189,6 +191,7 @@ class FakeChatRepository implements ChatRepository {
 
   @override
   Future<MessengerBoard> messenger(String chatId) async {
+    messengerLoads += 1;
     final failure = messengerFailure;
     if (failure != null) throw failure;
     _guard('messenger');
@@ -231,6 +234,14 @@ class FakeChatRepository implements ChatRepository {
     _reads.add(
       MemberRead(userId: 'spencer', messageId: messageId, readAt: readAt),
     );
+  }
+
+  @override
+  Stream<MessengerEvent> watchMessenger(String chatId) =>
+      _messengerEvents.stream;
+
+  void deliverMessenger(MessengerEvent event) {
+    if (!_messengerEvents.isClosed) _messengerEvents.add(event);
   }
 
   @override

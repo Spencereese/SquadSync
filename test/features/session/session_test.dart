@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squadsync/core/dependencies.dart';
+import 'package:squadsync/core/repository_failure.dart';
+import 'package:squadsync/features/session/data/session_repository.dart';
 import 'package:squadsync/features/availability/domain/check_in.dart';
 import 'package:squadsync/features/session/data/calendar_export.dart';
 import 'package:squadsync/features/session/data/fake_session_repository.dart';
@@ -266,6 +268,58 @@ void main() {
     expect(find.text('Sessions are not set up yet.'), findsOneWidget);
     expect(find.byKey(const Key('session-schedule')), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+
+  test('an RSVP for another session does not reload this list', () {
+    expect(sessionChangeReloads(const SessionChange.squad(), const []), isTrue);
+    expect(
+      sessionChangeReloads(SessionChange.maybe('session-1'), const [
+        'session-1',
+      ]),
+      isTrue,
+    );
+    expect(
+      sessionChangeReloads(SessionChange.maybe('other'), const ['session-1']),
+      isFalse,
+    );
+    expect(sessionChangeReloads(SessionChange.maybe(null), const []), isTrue);
+  });
+
+  testWidgets('a failed session load is an error and not not set up', (
+    tester,
+  ) async {
+    final sessions = FakeSessionRepository(enabled: true)
+      ..loadError = const RepositoryFailure('sessions could not be loaded');
+    await _pump(
+      tester,
+      sessions: sessions,
+      calendar: MemoryCalendarExport(),
+      clock: DateTime.utc(2026, 11, 10, 20),
+    );
+    expect(find.byKey(const Key('session-error')), findsOneWidget);
+    expect(find.text('Sessions are not set up yet.'), findsNothing);
+    expect(find.text('No sessions scheduled.'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('resume reloads the session list', (tester) async {
+    final sessions = FakeSessionRepository(
+      enabled: true,
+      sessions: [_session()],
+    );
+    await _pump(
+      tester,
+      sessions: sessions,
+      calendar: MemoryCalendarExport(),
+      clock: DateTime.utc(2026, 11, 10, 20),
+    );
+    final loads = sessions.loads;
+    final context = tester.element(find.byType(SessionList));
+    ProviderScope.containerOf(context)
+        .read(sessionRefreshProvider.notifier)
+        .bump();
+    await tester.pumpAndSettle();
+    expect(sessions.loads, loads + 1);
   });
 }
 

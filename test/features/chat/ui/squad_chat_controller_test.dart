@@ -7,6 +7,7 @@ import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/chat/data/fake_chat_repository.dart';
 import 'package:squadsync/features/chat/domain/chat_message.dart';
+import 'package:squadsync/features/chat/domain/messenger.dart';
 import 'package:squadsync/features/chat/domain/unread.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
 import 'package:squadsync/features/squad/data/fake_squad_repository.dart';
@@ -420,4 +421,45 @@ void main() {
     expect(chats.openTypingWatches, 0);
     container.dispose();
   });
+
+  test(
+    'a reaction delete reloads only when that message is on screen',
+    () async {
+      final chats = FakeChatRepository(
+        messages: [
+          ChatMessage(
+            id: 'm1',
+            chatId: 'squad',
+            senderId: 'friend',
+            text: 'hello',
+            sentAt: DateTime.utc(2026, 11, 2),
+          ),
+        ],
+      );
+      final container = _container(chats: chats);
+      addTearDown(container.dispose);
+      await container.read(squadChatControllerProvider.notifier).open();
+      final loads = chats.messengerLoads;
+
+      chats.deliverMessenger(
+        const MessengerEvent(
+          table: 'sq8_message_reactions',
+          deleted: true,
+          messageId: 'elsewhere',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(chats.messengerLoads, loads);
+
+      chats.deliverMessenger(
+        const MessengerEvent(
+          table: 'sq8_message_reactions',
+          deleted: true,
+          messageId: 'm1',
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(chats.messengerLoads, loads + 1);
+    },
+  );
 }

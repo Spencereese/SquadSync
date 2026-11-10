@@ -173,6 +173,49 @@ bool messengerTableMissing(String? code, String message) {
       code == 'PGRST204';
 }
 
+/// A realtime reaction or read. Deletes are not filtered by squad.
+class MessengerEvent {
+  const MessengerEvent({
+    required this.table,
+    required this.deleted,
+    this.squadId,
+    this.messageId,
+    this.userId,
+  });
+
+  final String table;
+  final bool deleted;
+  final String? squadId;
+  final String? messageId;
+  final String? userId;
+}
+
+/// Inserts and updates reload only for this squad. Deletes reload when the
+/// row is one this phone already shows, or when the payload named no id.
+bool messengerEventReloads(
+  MessengerEvent event, {
+  required String squadId,
+  required Set<String> messageIds,
+  required Set<String> memberIds,
+}) {
+  if (!event.deleted) {
+    final rowSquad = event.squadId;
+    return rowSquad == null || rowSquad.isEmpty || rowSquad == squadId;
+  }
+  if (event.table == 'sq8_message_reactions') {
+    final id = event.messageId;
+    if (id == null || id.isEmpty) return true;
+    return messageIds.contains(id);
+  }
+  final rowSquad = event.squadId;
+  if (rowSquad != null && rowSquad.isNotEmpty && rowSquad != squadId) {
+    return false;
+  }
+  final id = event.userId;
+  if (id == null || id.isEmpty) return true;
+  return memberIds.contains(id);
+}
+
 String typingLine(Iterable<String> names) {
   final who = [for (final name in names) name.trim()]
       .where((name) => name.isNotEmpty);

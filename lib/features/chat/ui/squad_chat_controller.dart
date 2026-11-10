@@ -115,7 +115,9 @@ class SquadChatController extends Notifier<SquadChatState> {
   StreamSubscription<List<ChatMessage>>? _echo;
   StreamSubscription<RosterSignal>? _roster;
   StreamSubscription<Set<String>>? _typing;
+  StreamSubscription<MessengerEvent>? _messengerLive;
   String? _typingChat;
+  String? _messengerChat;
   final _typingKeys = TypingThrottle();
   var _started = false;
   var _chatVisible = false;
@@ -135,6 +137,10 @@ class SquadChatController extends Notifier<SquadChatState> {
       _typing = null;
       _typingChat = null;
       if (typing != null) unawaited(typing.cancel());
+      final messenger = _messengerLive;
+      _messengerLive = null;
+      _messengerChat = null;
+      if (messenger != null) unawaited(messenger.cancel());
       _typingKeys.stop();
     });
     return const SquadChatState();
@@ -169,6 +175,7 @@ class SquadChatController extends Notifier<SquadChatState> {
         messengerError: reactions.error,
       );
       await _listenTyping(chats, squad.chatId);
+      await _listenMessenger(chats, squad.chatId);
       await _listenRoster();
       unawaited(_fillQuotes(chats, squad.chatId, _epoch));
     } on RepositoryFailure catch (error) {
@@ -200,6 +207,10 @@ class SquadChatController extends Notifier<SquadChatState> {
     final typing = _typing;
     _typing = null;
     _typingChat = null;
+    final messenger = _messengerLive;
+    _messengerLive = null;
+    _messengerChat = null;
+    if (messenger != null) unawaited(messenger.cancel());
     final chatId = state.squad?.chatId;
     final stop = _typingKeys.stop();
     if (stop && chatId != null) {
@@ -364,6 +375,8 @@ class SquadChatController extends Notifier<SquadChatState> {
       if (!_reloadCurrent(epoch, chatId)) return;
       await _listenTyping(chats, chatId);
       if (!_reloadCurrent(epoch, chatId)) return;
+      await _listenMessenger(chats, chatId);
+      if (!_reloadCurrent(epoch, chatId)) return;
       // Merge after the awaits so a row that arrived while they ran stays.
       final merged = ChatThread(state.messages)
           .mergeEcho(page.messages, meId: state.meId);
@@ -507,6 +520,48 @@ class SquadChatController extends Notifier<SquadChatState> {
     } on RepositoryFailure {
       return (board: MessengerBoard.disabled, error: couldNotLoadMessenger);
     }
+  }
+
+  Future<void> _listenMessenger(ChatRepository chats, String chatId) async {
+    if (!state.messenger.enabled) {
+      final previous = _messengerLive;
+      _messengerLive = null;
+      _messengerChat = null;
+      if (previous != null) unawaited(previous.cancel());
+      return;
+    }
+    if (_messengerChat == chatId && _messengerLive != null) return;
+    final next = chats.watchMessenger(chatId).listen((event) {
+      if (!ref.mounted || state.squad?.chatId != chatId) return;
+      final members = state.squad?.members ?? const [];
+      if (!messengerEventReloads(
+        event,
+        squadId: chatId,
+        messageIds: {for (final message in state.messages) message.id},
+        memberIds: {for (final member in members) member.id},
+      )) {
+        return;
+      }
+      unawaited(_reloadMessenger(chatId));
+    });
+    final previous = _messengerLive;
+    _messengerLive = next;
+    _messengerChat = chatId;
+    if (previous != null) unawaited(previous.cancel());
+  }
+
+  Future<void> _reloadMessenger(String chatId) async {
+    final epoch = _epoch;
+    final reactions = await _reactions(
+      ref.read(chatRepositoryProvider),
+      chatId,
+    );
+    if (!_reloadCurrent(epoch, chatId)) return;
+    state = state.copyWith(
+      messenger: reactions.board,
+      messengerError: reactions.error,
+      clearMessengerError: reactions.error == null,
+    );
   }
 
   Future<void> _listenTyping(ChatRepository chats, String chatId) async {

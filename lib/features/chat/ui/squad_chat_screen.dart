@@ -74,6 +74,7 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
     );
     unawaited(ref.read(availabilityControllerProvider.notifier).refresh());
     unawaited(ref.read(spotHomeProvider.notifier).refresh());
+    ref.read(sessionRefreshProvider.notifier).bump();
   }
 
   @override
@@ -299,6 +300,7 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
     await ref.read(squadChatControllerProvider.notifier).refreshFromRoster();
     await ref.read(availabilityControllerProvider.notifier).refresh();
     await ref.read(spotHomeProvider.notifier).refresh();
+    ref.read(sessionRefreshProvider.notifier).bump();
   }
 
   Future<void> _editProfile(BuildContext context, WidgetRef ref) async {

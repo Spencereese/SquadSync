@@ -221,6 +221,100 @@ class SupabaseChatRepository implements ChatRepository {
   }
 
   @override
+  Stream<MessengerEvent> watchMessenger(String chatId) {
+    final client = _client;
+    if (client == null || _messengerOff) return const Stream.empty();
+    final controller = StreamController<MessengerEvent>.broadcast();
+    final channel = client.channel('sq8-messenger-$chatId');
+    void emit(MessengerEvent event) {
+      if (!controller.isClosed) controller.add(event);
+    }
+
+    for (final event in [
+      PostgresChangeEvent.insert,
+      PostgresChangeEvent.update,
+    ]) {
+      channel.onPostgresChanges(
+        event: event,
+        schema: 'public',
+        table: 'sq8_message_reactions',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'squad_id',
+          value: chatId,
+        ),
+        callback: (payload) {
+          emit(
+            MessengerEvent(
+              table: 'sq8_message_reactions',
+              deleted: false,
+              squadId: payload.newRecord['squad_id']?.toString(),
+              messageId: payload.newRecord['message_id']?.toString(),
+              userId: payload.newRecord['user_id']?.toString(),
+            ),
+          );
+        },
+      );
+      channel.onPostgresChanges(
+        event: event,
+        schema: 'public',
+        table: 'sq8_message_reads',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'squad_id',
+          value: chatId,
+        ),
+        callback: (payload) {
+          emit(
+            MessengerEvent(
+              table: 'sq8_message_reads',
+              deleted: false,
+              squadId: payload.newRecord['squad_id']?.toString(),
+              messageId: payload.newRecord['last_read_id']?.toString(),
+              userId: payload.newRecord['user_id']?.toString(),
+            ),
+          );
+        },
+      );
+    }
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.delete,
+      schema: 'public',
+      table: 'sq8_message_reactions',
+      callback: (payload) {
+        emit(
+          MessengerEvent(
+            table: 'sq8_message_reactions',
+            deleted: true,
+            messageId: payload.oldRecord['message_id']?.toString(),
+            userId: payload.oldRecord['user_id']?.toString(),
+          ),
+        );
+      },
+    );
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.delete,
+      schema: 'public',
+      table: 'sq8_message_reads',
+      callback: (payload) {
+        emit(
+          MessengerEvent(
+            table: 'sq8_message_reads',
+            deleted: true,
+            squadId: payload.oldRecord['squad_id']?.toString(),
+            userId: payload.oldRecord['user_id']?.toString(),
+          ),
+        );
+      },
+    );
+    channel.subscribe();
+    controller.onCancel = () {
+      unawaited(client.removeChannel(channel));
+    };
+    return controller.stream;
+  }
+
+  @override
   Stream<Set<String>> watchTyping(String chatId) {
     final client = _client;
     final me = _db.userId;

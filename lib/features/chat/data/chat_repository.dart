@@ -13,6 +13,10 @@ abstract class ChatRepository {
     int limit = olderPageSize,
   });
 
+  /// Bodies for messages these replies quote. Does not use the history
+  /// request's retry loop. A network failure returns an empty map.
+  Future<Map<String, String>> quoteBodies(Iterable<String> ids);
+
   /// Resolves when the row is stored. A duplicate id comes back as
   /// [SendConflict], which the send machine treats as sent.
   Future<SendOutcome> send(ChatMessage message);

@@ -61,8 +61,30 @@ iOS and Android only. There is no web or desktop target.
 | Steam presence | Not live. A member can link a SteamID64 or vanity. The unreleased function `sq8-steam-presence` resolves the vanity and reads GetPlayerSummaries for the squad, cached about 60 seconds. The board says "Playing Halo Infinite · via Steam", which is not a check-in and is not a console. A missing key or deploy says "Steam presence not set up yet". A private profile and a missing link say so. Migration `20261110_0015_steam_links.sql` is not applied. Xbox is a research note only, in `docs/xbox-presence.md` |
 | Times, loading, reply swipe | Check-ins, a called spot, and seen-by use short ages such as `just now` and `2m ago`. Session start times stay on the clock. A cold start shimmers the board, the member strip, and chat until the squad arrives, and VoiceOver hears "Loading the squad" instead of the placeholders. Swipe a message to reply; long-press Reply still works. |
 | In the app | A green dot on the Who's on member strip. It uses Supabase Realtime Presence on `sq8-presence-<squad>`, not the typing channel, and it does not need a table. The dot is not a check-in and it is not "Playing … · via Steam". Closing the home, signing out, or backgrounding the app leaves the channel. If presence cannot be joined, the dots stay off and the board stays up |
+| Home widget and caller Live Activity | The home and lock screen widget shows Who's on and the open or called spot. It refreshes while SquadSync is open and when the OS asks. It does not stay live in the background until the parked push rewrite exists. A Live Activity starts on the phone that called the spot, with the 5-minute countdown and In/Out counts, and ends when that call is locked, ended, canceled, or the join window expires. Other members do not get one. Android skips Live Activities. Signing the extension is a human step below |
 | Scheduled sessions | Not live. A member schedules a game, a start, an optional note, and an optional duration. RSVP is In, Maybe, or Out, with at most eight In. Who's on shows `Tonight 9:00 PM · 4 in` in local time. Add to calendar shares a `.ics` file and does not ask for calendar access. When the start arrives, Call the spot now uses the existing spot call with that game. Edit and cancel are the creator or the owner, after confirmation. Migration `20261110_0016_sessions.sql` is not applied. Without it the phone says sessions are not set up yet |
 | App Store / TestFlight | Not done |
+
+## Home screen widget and Live Activity
+
+The widget and the caller Live Activity are wired in Dart. The Swift extension sources are in `ios/SquadWidget/` and are not a target in the Xcode project yet. This checkout is Linux and cannot compile or sign them. No certificate, profile, or key is in the repo.
+
+App Group: `group.com.spencereese.squadsync`. Bundle id stays `com.spencereese.squadsync`. Apple Team ID is `K4ZTXPQ8J9`. The widget extension bundle id is `com.spencereese.squadsync.SquadWidget`.
+
+What works without push: while SquadSync is open, the phone writes Who's on and the spot line into the App Group (iOS) or home-widget storage (Android), then asks the OS to redraw. The OS can also redraw on its own schedule. The signed-in person who calls a spot gets a Live Activity on that phone only, for the five-minute join window, with In and Out counts. Lock, end, cancel, and an expired join window dismiss it. Android does not start a Live Activity.
+
+What waits on push: the widget will not stay truly live in the background. Other members will not see a Live Activity. Both need the parked push rewrite (`20261110_0012_device_tokens.sql`, FCM HTTP v1, `sq8-notify-message`) and, for other members, Live Activity push through APNs. Remote updates on the activity are off on purpose.
+
+Human signing steps, on a Mac, after the App Group exists in the developer account for team `K4ZTXPQ8J9`:
+
+1. Register the App Group `group.com.spencereese.squadsync`. Enable it on the App ID `com.spencereese.squadsync` and on a new App ID `com.spencereese.squadsync.SquadWidget`.
+2. Open `ios/Runner.xcworkspace`. The Runner target already sets `CODE_SIGN_ENTITLEMENTS` to `Runner/Runner.entitlements`. Confirm the App Groups capability lists that same group. Do not invent another group id.
+3. File, New, Target, Widget Extension. Product name `SquadWidget`. Team `K4ZTXPQ8J9`. Bundle id `com.spencereese.squadsync.SquadWidget`. Deployment target iOS 16.1. One extension covers the home widget and the Live Activity.
+4. Remove the Swift file Xcode generated for that target. Add `ios/SquadWidget/SquadWidget.swift` to the SquadWidget target only. It has its own `@main`, so it must not be in the Runner target.
+5. Point the extension's Info.plist at `ios/SquadWidget/Info.plist` and its entitlements at `ios/SquadWidget/SquadWidget.entitlements`. Enable the same App Group on the extension.
+6. Runner's Info.plist already has `NSSupportsLiveActivities`.
+7. Signing is Automatic for Runner and SquadWidget, team `K4ZTXPQ8J9`. Let Xcode download the profiles. This repo does not contain a certificate or a provisioning profile.
+8. Run on iOS 16.1 or newer. Add the Who's on widget from the Home Screen. Call a spot on that signed-in phone to see the Live Activity. On Android, add the SquadSync home widget from the launcher. Live Activities are skipped there.
 
 ## What does not happen
 

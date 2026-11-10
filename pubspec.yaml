@@ -13,6 +13,8 @@ dependencies:
     sdk: flutter
   flutter_riverpod: ^3.4.3
   flutter_slidable: ^5.2.0
+  home_widget: 0.10.0
+  live_activities: 2.5.1
   share_plus: ^10.1.4
   skeletonizer: ^3.0.0
   supabase_flutter: ^2.18.3

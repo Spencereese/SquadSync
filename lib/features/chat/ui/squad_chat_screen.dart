@@ -23,6 +23,8 @@ import 'package:squadsync/features/steam/ui/steam_link_field.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
 import 'package:squadsync/features/squad/ui/member_strip.dart';
+import 'package:squadsync/features/surface/domain/squad_surface.dart';
+import 'package:squadsync/features/surface/ui/surface_sync.dart';
 
 enum SquadHomeView { who, chat }
 
@@ -95,6 +97,11 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
     if (squad != null) {
       unawaited(presence.open(squadId: squad.id, userId: chat.meId));
     }
+    unawaited(
+      ref
+          .read(surfaceSyncProvider)
+          .publish(meId: squad == null ? null : chat.meId),
+    );
   }
 
   @override
@@ -104,11 +111,21 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
       final presence = ref.read(appPresenceControllerProvider.notifier);
       if (id == null) {
         if (previous?.squad != null) unawaited(presence.leave());
+        unawaited(ref.read(surfaceSyncProvider).publish(meId: null));
         return;
       }
       if (id == previous?.squad?.id) return;
       unawaited(presence.open(squadId: id, userId: next.meId));
       unawaited(ref.read(spotHomeProvider.notifier).open(id));
+      unawaited(ref.read(surfaceSyncProvider).publish(meId: next.meId));
+    });
+    ref.listen(availabilityControllerProvider, (previous, next) {
+      final me = ref.read(squadChatControllerProvider).meId;
+      unawaited(ref.read(surfaceSyncProvider).publish(meId: me));
+    });
+    ref.listen(spotHomeProvider, (previous, next) {
+      final me = ref.read(squadChatControllerProvider).meId;
+      unawaited(ref.read(surfaceSyncProvider).publish(meId: me));
     });
     ref.listen(squadHomeViewProvider, (previous, next) {
       ref
@@ -237,6 +254,13 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
                 children: [
                   _who(squad, state.meId),
                   MemberStrip(members: squad.members),
+                  const Padding(
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
+                    child: Text(
+                      homeWidgetHonesty,
+                      key: Key('home-widget-note'),
+                    ),
+                  ),
                 ],
               ),
             ),

@@ -212,9 +212,17 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: SegmentedButton<SquadHomeView>(
             segments: [
-              const ButtonSegment(
+              ButtonSegment(
                 value: SquadHomeView.who,
-                label: Text("Who's on", key: Key('view-who')),
+                label: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    "Who's on",
+                    key: const Key('view-who'),
+                    maxLines: 1,
+                    softWrap: false,
+                  ),
+                ),
               ),
               ButtonSegment(
                 value: SquadHomeView.chat,
@@ -515,13 +523,19 @@ class _DemoBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Material(
-      color: Color(0xFFFFF3CD),
+    return Material(
+      color: const Color(0xFFFFF3CD),
       child: Padding(
-        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Text(
-          'Demo mode: messages clear when you close the app.',
-          key: Key('demo-banner'),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Semantics(
+          label: 'Demo mode: messages clear when you close the app.',
+          excludeSemantics: true,
+          child: Text(
+            'Demo mode: messages clear when you close the app.',
+            key: const Key('demo-banner'),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+          ),
         ),
       ),
     );
@@ -811,7 +825,15 @@ class _ComposerState extends ConsumerState<_Composer> {
                     key: const Key('composer'),
                     controller: _controller,
                     decoration: const InputDecoration(
-                      hintText: 'Message the squad',
+                      hint: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Message the squad',
+                          maxLines: 1,
+                          softWrap: false,
+                        ),
+                      ),
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),

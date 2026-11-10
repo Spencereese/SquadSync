@@ -60,12 +60,26 @@ class FakeChatRepository implements ChatRepository {
   /// Pauses [newest] so a cold start can show the loading skeleton.
   Future<void>? holdNewest;
 
+  /// Pauses [quoteBodies] so the thread can paint before a quote arrives.
+  Future<void>? holdQuotes;
+
   @override
   Future<HistoryPage> newest(String chatId, {int limit = openPageSize}) async {
     final hold = holdNewest;
     if (hold != null) await hold;
     _guard('newest');
     return newestPage(_for(chatId), limit: limit);
+  }
+
+  @override
+  Future<Map<String, String>> quoteBodies(Iterable<String> ids) async {
+    final hold = holdQuotes;
+    if (hold != null) await hold;
+    final wanted = ids.toSet();
+    return {
+      for (final message in _messages)
+        if (wanted.contains(message.id)) message.id: message.text,
+    };
   }
 
   @override

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/core/sq8_database.dart';
+import 'package:squadsync/core/sq8_rows.dart';
 import 'package:squadsync/features/chat/data/supabase_chat_repository.dart';
 import 'package:squadsync/features/chat/domain/chat_message.dart';
 import 'package:squadsync/features/chat/domain/send_machine.dart';
@@ -134,5 +135,37 @@ void main() {
     await repo.saveUnread(book.opened('squad'));
     expect(db.cursorWrites, 1);
     expect(db.cursor?.lastReadId, 'm1');
+  });
+
+  test('a server row with reply_to_id keeps its quote after reload', () async {
+    final original = messageFromRow({
+      'id': 'm1',
+      'squad_id': 'squad',
+      'sender_id': 'alex',
+      'body': 'be on in five',
+      'sent_at': '2026-11-02T12:00:00.000Z',
+    });
+    final reply = messageFromRow({
+      'id': 'm2',
+      'squad_id': 'squad',
+      'sender_id': 'user-1',
+      'body': 'on my way',
+      'sent_at': '2026-11-02T12:01:00.000Z',
+      'reply_to_id': 'm1',
+    });
+    expect(reply.replyToId, 'm1');
+    final db = MockSq8Database()..messages = [reply, original];
+    final repo = SupabaseChatRepository(db);
+
+    final page = await repo.newest('squad');
+    final loaded = page.messages.last;
+    expect(loaded.id, 'm2');
+    expect(loaded.replyToId, 'm1');
+    expect(loaded.replyText, 'be on in five');
+
+    db.messages = [reply];
+    final gone = await repo.newest('squad');
+    expect(gone.messages.single.replyToId, 'm1');
+    expect(gone.messages.single.replyText, 'Original message unavailable');
   });
 }

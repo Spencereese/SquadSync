@@ -185,6 +185,14 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
         ),
         if (widget.demo) const _DemoBanner(),
         if (state.linkDown) const _LinkDownBanner(),
+        if (state.messengerError != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              state.messengerError!,
+              key: const Key('messenger-error'),
+            ),
+          ),
         if (error != null)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),

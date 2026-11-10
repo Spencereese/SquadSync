@@ -7,6 +7,7 @@ import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/features/availability/data/fake_availability_repository.dart';
 import 'package:squadsync/features/availability/domain/check_in.dart';
 import 'package:squadsync/features/availability/ui/who_can_play_panel.dart';
+import 'package:squadsync/features/chat/ui/squad_chat_screen.dart';
 import 'package:squadsync/features/squad/data/fake_squad_repository.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
@@ -47,7 +48,8 @@ void main() {
     _expectOnScreen(tester, find.byKey(const Key('section-playing')));
     _expectOnScreen(tester, find.byKey(const Key('section-available')));
     expect(find.text('0 of 8 available'), findsOneWidget);
-    expect(find.text('Nobody else yet'), findsWidgets);
+    expect(find.byKey(const Key('who-empty')), findsOneWidget);
+    expect(find.text('Nobody else yet'), findsNothing);
     expect(find.text('Maybe later 0 · Offline 1'), findsOneWidget);
   });
 
@@ -60,8 +62,6 @@ void main() {
 
     _expectOnScreen(tester, find.byKey(const Key('who-summary')));
     _expectOnScreen(tester, find.byKey(const Key('status-available')));
-    _expectOnScreen(tester, find.byKey(const Key('status-later')));
-    _expectOnScreen(tester, find.byKey(const Key('status-cant')));
     expect(tester.takeException(), isNull);
 
     final page = find
@@ -261,5 +261,49 @@ void main() {
       findsOneWidget,
     );
     expect(repo.rows.single.kind, CheckInKind.availableLater);
+  });
+
+  testWidgets('chat fills the screen and the empty state is centered', (
+    tester,
+  ) async {
+    await _openPhone(tester);
+    await tester.tap(find.text('Chat'));
+    await tester.pumpAndSettle();
+
+    final list = tester.getRect(find.byKey(const Key('message-list')));
+    expect(list.height, greaterThanOrEqualTo(_phone.height * 0.6));
+    final empty = tester.getRect(find.byKey(const Key('no-messages')));
+    expect(find.byKey(const Key('no-messages')), findsOneWidget);
+    expect((empty.center.dy - list.center.dy).abs(), lessThan(24));
+    expect(find.byKey(const Key('composer')), findsOneWidget);
+    expect(find.byKey(const Key('section-playing')), findsNothing);
+  });
+
+  testWidgets('the views switch and a thread open lands on Chat', (
+    tester,
+  ) async {
+    await _openPhone(tester);
+    expect(find.byKey(const Key('section-available')), findsOneWidget);
+    expect(find.byKey(const Key('composer')), findsNothing);
+
+    await tester.tap(find.text('Chat'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('composer')), findsOneWidget);
+    expect(find.byKey(const Key('section-playing')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('chat-who-summary')));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('section-available')), findsOneWidget);
+    expect(find.byKey(const Key('composer')), findsNothing);
+
+    final context = tester.element(find.byType(SquadSyncApp));
+    ProviderScope.containerOf(context)
+        .read(squadHomeViewProvider.notifier)
+        .openThread();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const Key('message-list')), findsOneWidget);
+    expect(find.byKey(const Key('composer')), findsOneWidget);
+    expect(find.byKey(const Key('section-playing')), findsNothing);
   });
 }

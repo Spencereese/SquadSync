@@ -58,7 +58,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('sign-in-email')), findsNothing);
-    expect(find.byKey(const Key('composer')), findsOneWidget);
+    expect(find.byKey(const Key('squad-home')), findsOneWidget);
     expect(find.text('Spencer · Call of Duty'), findsOneWidget);
   });
 
@@ -78,13 +78,13 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('composer')), findsOneWidget);
+      expect(find.byKey(const Key('squad-home')), findsOneWidget);
 
       auth.tokenRefresh();
       await tester.pumpAndSettle();
 
       expect(find.byKey(const Key('sign-in-email')), findsNothing);
-      expect(find.byKey(const Key('composer')), findsOneWidget);
+      expect(find.byKey(const Key('squad-home')), findsOneWidget);
 
       auth.restore(null);
       await tester.pumpAndSettle();

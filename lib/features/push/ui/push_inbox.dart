@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/features/auth/domain/auth_user.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
+import 'package:squadsync/features/chat/ui/squad_chat_screen.dart';
 import 'package:squadsync/features/push/data/push_notifications.dart';
 import 'package:squadsync/features/push/domain/squad_push.dart';
 
@@ -108,13 +109,6 @@ class NotificationsStatus extends ConsumerWidget {
           ),
         if (!inbox.notificationsOn && !inbox.setupMissing)
           const Text('Notifications off', key: Key('notifications-off')),
-        if (inbox.route == SquadPushRoute.openChat)
-          const Text('Opened the squad chat.', key: Key('push-opened-chat')),
-        if (inbox.route == SquadPushRoute.wrongSquad)
-          const Text(
-            'That notification is for a squad you are not in.',
-            key: Key('push-wrong-squad'),
-          ),
       ],
     );
   }
@@ -183,6 +177,12 @@ class _PushListenerState extends ConsumerState<PushListener> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(pushInboxProvider, (previous, next) {
+      if (next.route == SquadPushRoute.openChat &&
+          previous?.route != SquadPushRoute.openChat) {
+        ref.read(squadHomeViewProvider.notifier).openThread();
+      }
+    });
     ref.listen(squadChatControllerProvider, (previous, next) {
       if (previous?.squad?.id == next.squad?.id) return;
       ref.read(pushInboxProvider.notifier).flush();
@@ -193,7 +193,26 @@ class _PushListenerState extends ConsumerState<PushListener> {
       if (user == null) return;
       unawaited(_registerFromSession());
     });
-    return const SizedBox.shrink();
+    final inbox = ref.watch(pushInboxProvider);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (inbox.route == SquadPushRoute.openChat)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text('Opened the squad chat.', key: Key('push-opened-chat')),
+          ),
+        if (inbox.route == SquadPushRoute.wrongSquad)
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              'That notification is for a squad you are not in.',
+              key: Key('push-wrong-squad'),
+            ),
+          ),
+      ],
+    );
   }
 
   Future<void> _registerFromSession() async {

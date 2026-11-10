@@ -428,25 +428,21 @@ class _Sections extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (who.nobodyCheckedIn)
-          const Padding(
-            padding: EdgeInsets.only(top: 4),
-            child: Text(
-              'Nobody is checked in. Tap Available if you can play.',
-              key: Key('who-empty'),
-            ),
-          ),
         _Section(
           title: 'Playing now',
           sectionKey: const Key('section-playing'),
           empty: 'Nobody else yet',
+          hideEmpty: who.nobodyCheckedIn,
           rows: who.playingNow,
           offset: offset,
         ),
         _Section(
           title: 'Available',
           sectionKey: const Key('section-available'),
-          empty: 'Nobody else yet',
+          empty: who.nobodyCheckedIn
+              ? 'Nobody is checked in. Tap Available if you can play.'
+              : 'Nobody else yet',
+          emptyKey: who.nobodyCheckedIn ? const Key('who-empty') : null,
           rows: who.available,
           offset: offset,
         ),
@@ -488,11 +484,15 @@ class _Section extends StatelessWidget {
     required this.empty,
     required this.rows,
     required this.offset,
+    this.emptyKey,
+    this.hideEmpty = false,
   });
 
   final String title;
   final Key sectionKey;
   final String empty;
+  final Key? emptyKey;
+  final bool hideEmpty;
   final List<WhoRow> rows;
   final Duration offset;
 
@@ -508,9 +508,9 @@ class _Section extends StatelessWidget {
             header: true,
             child: Text(title, style: Theme.of(context).textTheme.titleSmall),
           ),
-          if (rows.isEmpty)
-            Text(empty)
-          else
+          if (rows.isEmpty && !hideEmpty)
+            Text(empty, key: emptyKey)
+          else if (rows.isNotEmpty)
             for (final row in rows)
               Semantics(
                 label: whoSpokenLine(row, localOffset: offset),

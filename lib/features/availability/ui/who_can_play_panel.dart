@@ -518,6 +518,7 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (rows.isEmpty && hideEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Column(

@@ -176,6 +176,21 @@ DateTime localSelectionToUtc({
   return wall.subtract(localOffset);
 }
 
+/// Short age, for example `just now` or `2m ago`. A future instant is just now.
+/// Precise clocks stay on [formatLocalClock].
+String formatRelative(DateTime utc, DateTime clock) {
+  var age = clock.toUtc().difference(utc.toUtc());
+  if (age.isNegative) age = Duration.zero;
+  if (age < const Duration(seconds: 45)) return 'just now';
+  if (age < const Duration(hours: 1)) {
+    final minutes = age.inMinutes;
+    return '${minutes < 1 ? 1 : minutes}m ago';
+  }
+  if (age < const Duration(hours: 24)) return '${age.inHours}h ago';
+  final days = age.inDays;
+  return '${days < 1 ? 1 : days}d ago';
+}
+
 /// Clock only, for example `10:30 PM`. The date stays off this label.
 String formatLocalClock(DateTime utc, Duration offset) {
   final local = utc.toUtc().add(offset);

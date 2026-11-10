@@ -1,7 +1,10 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_slidable/flutter_slidable.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/auth/ui/sign_out_button.dart';
@@ -173,8 +176,8 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
       body: squad == null
           ? Center(
               child: error == null
-                  ? const CircularProgressIndicator()
-                  : Text(error),
+                  ? const _HomeSkeleton()
+                  : Text(error, key: const Key('home-error')),
             )
           : KeyedSubtree(
               key: const Key('squad-home'),
@@ -567,41 +570,70 @@ class _MessageList extends ConsumerWidget {
                   names: names,
                   meId: state.meId,
                 ),
+                clock: ref.watch(squadClockProvider).now(),
               )
             : '';
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
-          child: MessageBubble(
-            message: message,
-            mine: mine,
-            chips: state.messenger.enabled
-                ? reactionChips(
-                    messageId: message.id,
-                    reactions: state.messenger.reactions,
-                    names: names,
-                    meId: state.meId,
-                  )
-                : const [],
-            seen: state.messenger.enabled ? seen : '',
-            onLongPress: state.messenger.enabled
-                ? () => _openReactions(context, ref, message)
-                : () {
+          child: Slidable(
+            key: Key('slidable-${message.id}'),
+            startActionPane: ActionPane(
+              motion: const DrawerMotion(),
+              extentRatio: 0.28,
+              children: [
+                SlidableAction(
+                  key: Key('swipe-reply-${message.id}'),
+                  onPressed: (_) {
                     ref
                         .read(squadChatControllerProvider.notifier)
                         .quote(message);
                   },
-            onToggle: (emoji) {
-              unawaited(
-                ref
-                    .read(squadChatControllerProvider.notifier)
-                    .react(message.id, emoji),
-              );
-            },
-            onRetry: (id) {
-              unawaited(
-                ref.read(squadChatControllerProvider.notifier).retry(id),
-              );
-            },
+                  backgroundColor: Theme.of(context).colorScheme.primary,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                  icon: Icons.reply,
+                  label: 'Reply',
+                ),
+              ],
+            ),
+            child: Semantics(
+              customSemanticsActions: {
+                CustomSemanticsAction(label: 'Reply'): () {
+                  ref.read(squadChatControllerProvider.notifier).quote(message);
+                },
+              },
+              child: MessageBubble(
+                message: message,
+                mine: mine,
+                chips: state.messenger.enabled
+                    ? reactionChips(
+                        messageId: message.id,
+                        reactions: state.messenger.reactions,
+                        names: names,
+                        meId: state.meId,
+                      )
+                    : const [],
+                seen: state.messenger.enabled ? seen : '',
+                onLongPress: state.messenger.enabled
+                    ? () => _openReactions(context, ref, message)
+                    : () {
+                        ref
+                            .read(squadChatControllerProvider.notifier)
+                            .quote(message);
+                      },
+                onToggle: (emoji) {
+                  unawaited(
+                    ref
+                        .read(squadChatControllerProvider.notifier)
+                        .react(message.id, emoji),
+                  );
+                },
+                onRetry: (id) {
+                  unawaited(
+                    ref.read(squadChatControllerProvider.notifier).retry(id),
+                  );
+                },
+              ),
+            ),
           ),
         );
       },
@@ -655,6 +687,38 @@ class _MessageList extends ConsumerWidget {
     await ref
         .read(squadChatControllerProvider.notifier)
         .react(message.id, emoji);
+  }
+}
+
+/// Cold start. Placeholders stand in for the board, the member strip, and
+/// chat. VoiceOver hears one loading label, not the fake names.
+class _HomeSkeleton extends StatelessWidget {
+  const _HomeSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: 'Loading the squad',
+      excludeSemantics: true,
+      child: Skeletonizer(
+        child: ListView(
+          key: const Key('home-loading'),
+          padding: const EdgeInsets.all(16),
+          children: const [
+            Text('3 of 8 available'),
+            SizedBox(height: 12),
+            Text('Someone · Available'),
+            Text('Someone · Maybe later'),
+            SizedBox(height: 12),
+            Text('Alex · Halo'),
+            Text('Sam · Call of Duty'),
+            SizedBox(height: 16),
+            Text('Message from the squad'),
+            Text('Another message'),
+          ],
+        ),
+      ),
+    );
   }
 }
 

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:squadsync/core/app.dart';
 import 'package:squadsync/core/client_id.dart';
 import 'package:squadsync/core/dependencies.dart';
+import 'package:squadsync/features/availability/domain/check_in.dart';
 import 'package:squadsync/features/chat/data/fake_chat_repository.dart';
 import 'package:squadsync/features/chat/domain/chat_message.dart';
 import 'package:squadsync/features/chat/domain/messenger.dart';
@@ -48,6 +49,9 @@ Future<void> _open(
         chatRepositoryProvider.overrideWithValue(chats),
         if (squads != null) squadRepositoryProvider.overrideWithValue(squads),
         if (ids != null) clientIdFactoryProvider.overrideWithValue(ids),
+        squadClockProvider.overrideWithValue(
+          ManualSquadClock(DateTime.utc(2026, 11, 10, 21, 2)),
+        ),
       ],
       child: const SquadSyncApp(),
     ),
@@ -103,8 +107,11 @@ void main() {
     await tester.tap(find.text('Chat'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Seen by Alex'), findsOneWidget);
-    expect(find.bySemanticsLabel(RegExp('Seen by Alex')), findsOneWidget);
+    expect(find.text('Seen by Alex 2m ago'), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(RegExp('Seen by Alex 2m ago')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('the chat badge jumps to the first unread message', (
@@ -154,6 +161,17 @@ void main() {
     await tester.tap(find.byKey(const Key('pick-reply')));
     await tester.pumpAndSettle();
     expect(find.text('want to play'), findsWidgets);
+    expect(find.byKey(const Key('replying-to')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('reply-clear')));
+    await tester.pumpAndSettle();
+    await tester.drag(
+      find.byKey(const Key('message-m1')),
+      const Offset(400, 0),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('swipe-reply-m1')));
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('replying-to')), findsOneWidget);
 
     await tester.enterText(find.byKey(const Key('composer')), 'yes');

@@ -162,7 +162,8 @@ void main() {
       nodes
           .where(
             (node) =>
-                node.label == 'Alex, playing Call of Duty, until 10:30 PM',
+                node.label ==
+                'Alex, playing Call of Duty, until 10:30 PM, set just now',
           )
           .length,
       1,

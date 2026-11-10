@@ -68,6 +68,10 @@ void main() {
       meId: 'spencer',
     );
     expect(seenByLine(names), 'Seen by Alex');
+    expect(
+      seenByLine(names, clock: DateTime.utc(2026, 11, 10, 21, 2)),
+      'Seen by Alex 2m ago',
+    );
   });
 
   test('the first unread message is the oldest one after the cursor', () {

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:skeletonizer/skeletonizer.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/features/availability/domain/check_in.dart';
@@ -350,11 +351,21 @@ class _Lead extends ConsumerWidget {
         key: Key('who-disabled'),
       );
     }
-    if (state.loading || (state.board == null && state.error == null)) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(12),
-          child: CircularProgressIndicator(key: Key('who-loading')),
+    if (state.board == null && state.error == null) {
+      return Semantics(
+        label: "Loading who's on",
+        excludeSemantics: true,
+        child: Skeletonizer(
+          child: const Column(
+            key: Key('who-loading'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Playing now'),
+              Text('Someone · until 9:00 PM'),
+              Text('Available'),
+              Text('Someone · Available'),
+            ],
+          ),
         ),
       );
     }
@@ -444,6 +455,7 @@ class _Sections extends ConsumerWidget {
     final squad = state.squad;
     if (board == null || squad == null) return const SizedBox.shrink();
     final offset = ref.watch(localOffsetProvider);
+    final now = ref.watch(squadClockProvider).now();
     final who = WhoCanPlay.group(board: board, members: squad.members);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -455,6 +467,7 @@ class _Sections extends ConsumerWidget {
           hideEmpty: who.nobodyCheckedIn,
           rows: who.playingNow,
           offset: offset,
+          now: now,
         ),
         _Section(
           title: 'Available',
@@ -465,6 +478,7 @@ class _Sections extends ConsumerWidget {
           emptyKey: who.nobodyCheckedIn ? const Key('who-empty') : null,
           rows: who.available,
           offset: offset,
+          now: now,
         ),
         if (showRest) ...[
           _Section(
@@ -473,6 +487,7 @@ class _Sections extends ConsumerWidget {
             empty: 'Nobody later',
             rows: who.maybeLater,
             offset: offset,
+            now: now,
           ),
           _Section(
             title: 'Offline',
@@ -480,6 +495,7 @@ class _Sections extends ConsumerWidget {
             empty: 'Nobody offline',
             rows: who.offline,
             offset: offset,
+            now: now,
           ),
         ],
         TextButton(
@@ -504,6 +520,7 @@ class _Section extends StatelessWidget {
     required this.empty,
     required this.rows,
     required this.offset,
+    required this.now,
     this.emptyKey,
     this.hideEmpty = false,
   });
@@ -515,6 +532,7 @@ class _Section extends StatelessWidget {
   final bool hideEmpty;
   final List<WhoRow> rows;
   final Duration offset;
+  final DateTime now;
 
   @override
   Widget build(BuildContext context) {
@@ -533,10 +551,10 @@ class _Section extends StatelessWidget {
           else if (rows.isNotEmpty)
             for (final row in rows)
               Semantics(
-                label: whoSpokenLine(row, localOffset: offset),
+                label: whoSpokenLine(row, localOffset: offset, now: now),
                 excludeSemantics: true,
                 child: Text(
-                  '${row.displayName} · ${whoStatusLine(row, localOffset: offset)}',
+                  '${row.displayName} · ${whoStatusLine(row, localOffset: offset, now: now)}',
                   key: Key('who-${row.userId}'),
                 ),
               ),

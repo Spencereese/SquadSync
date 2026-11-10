@@ -11,6 +11,7 @@ import 'package:squadsync/features/availability/ui/availability_screen.dart';
 import 'package:squadsync/features/availability/ui/who_can_play_panel.dart';
 import 'package:squadsync/features/spot/ui/spot_controller.dart';
 import 'package:squadsync/features/invite/ui/invite_screen.dart';
+import 'package:squadsync/features/presence/ui/app_presence_controller.dart';
 import 'package:squadsync/features/chat/domain/chat_message.dart';
 import 'package:squadsync/features/chat/domain/messenger.dart';
 import 'package:squadsync/features/chat/ui/message_bubble.dart';
@@ -50,9 +51,12 @@ class SquadChatScreen extends ConsumerStatefulWidget {
 
 class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
     with WidgetsBindingObserver {
+  AppPresenceController? _presence;
+
   @override
   void initState() {
     super.initState();
+    _presence = ref.read(appPresenceControllerProvider.notifier);
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -62,12 +66,20 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
 
   @override
   void dispose() {
+    final presence = _presence;
+    _presence = null;
+    if (presence != null) unawaited(presence.leave());
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    final presence = ref.read(appPresenceControllerProvider.notifier);
+    if (state == AppLifecycleState.hidden ||
+        state == AppLifecycleState.paused) {
+      unawaited(presence.leave());
+    }
     if (state != AppLifecycleState.resumed || !mounted) return;
     unawaited(
       ref.read(squadChatControllerProvider.notifier).refreshFromRoster(),
@@ -75,13 +87,24 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
     unawaited(ref.read(availabilityControllerProvider.notifier).refresh());
     unawaited(ref.read(spotHomeProvider.notifier).refresh());
     ref.read(sessionRefreshProvider.notifier).bump();
+    final chat = ref.read(squadChatControllerProvider);
+    final squad = chat.squad;
+    if (squad != null) {
+      unawaited(presence.open(squadId: squad.id, userId: chat.meId));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     ref.listen(squadChatControllerProvider, (previous, next) {
       final id = next.squad?.id;
-      if (id == null || id == previous?.squad?.id) return;
+      final presence = ref.read(appPresenceControllerProvider.notifier);
+      if (id == null) {
+        if (previous?.squad != null) unawaited(presence.leave());
+        return;
+      }
+      if (id == previous?.squad?.id) return;
+      unawaited(presence.open(squadId: id, userId: next.meId));
       unawaited(ref.read(spotHomeProvider.notifier).open(id));
     });
     ref.listen(squadHomeViewProvider, (previous, next) {

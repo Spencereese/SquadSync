@@ -272,4 +272,34 @@ void main() {
     );
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('the thread shows before a quote lookup finishes', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    final chats = FakeChatRepository(
+      messages: [
+        _fromAlex('m1', 'want to play', 1),
+        ChatMessage(
+          id: 'm2',
+          chatId: 'squad',
+          senderId: 'spencer',
+          text: 'on my way',
+          sentAt: DateTime.utc(2026, 11, 10, 20, 2),
+          replyToId: 'm1',
+        ),
+      ],
+    )..holdQuotes = gate.future;
+    await _open(tester, chats: chats);
+    await tester.tap(find.text('Chat'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('on my way'), findsOneWidget);
+    expect(find.byKey(const Key('quote-m2')), findsNothing);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('quote-m2')), findsOneWidget);
+    expect(find.text('want to play'), findsWidgets);
+  });
 }

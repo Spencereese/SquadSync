@@ -170,6 +170,7 @@ class SquadChatController extends Notifier<SquadChatState> {
       );
       await _listenTyping(chats, squad.chatId);
       await _listenRoster();
+      unawaited(_fillQuotes(chats, squad.chatId, _epoch));
     } on RepositoryFailure catch (error) {
       if (!ref.mounted) return;
       state = state.copyWith(error: error.message);
@@ -324,6 +325,9 @@ class SquadChatController extends Notifier<SquadChatState> {
         hasOlder: page.hasOlder,
         clearError: true,
       );
+      unawaited(
+        _fillQuotes(ref.read(chatRepositoryProvider), squad.chatId, _epoch),
+      );
     } on RepositoryFailure catch (error) {
       if (!ref.mounted) return;
       state = state.copyWith(error: error.message);
@@ -374,6 +378,7 @@ class SquadChatController extends Notifier<SquadChatState> {
         linkDown: false,
         clearError: true,
       );
+      unawaited(_fillQuotes(chats, chatId, epoch));
     } on RepositoryFailure catch (error) {
       if (!ref.mounted) return;
       state = state.copyWith(error: error.message, linkDown: true);
@@ -538,6 +543,47 @@ class SquadChatController extends Notifier<SquadChatState> {
       messages: ChatThread(state.messages)
           .mergeEcho(remote, meId: state.meId)
           .messages,
+    );
+    final chatId = state.squad?.chatId;
+    if (chatId != null) {
+      unawaited(_fillQuotes(ref.read(chatRepositoryProvider), chatId, _epoch));
+    }
+  }
+
+  Future<void> _fillQuotes(
+    ChatRepository chats,
+    String chatId,
+    int epoch,
+  ) async {
+    final ids = [
+      for (final message in state.messages)
+        if (message.replyToId != null &&
+            (message.replyText == null || message.replyText!.isEmpty))
+          message.replyToId!,
+    ];
+    if (ids.isEmpty) return;
+    final quotes = await chats.quoteBodies(ids);
+    if (!ref.mounted || _epoch != epoch || state.squad?.chatId != chatId) {
+      return;
+    }
+    state = state.copyWith(
+      messages: [
+        for (final message in state.messages)
+          ChatMessage(
+            id: message.id,
+            chatId: message.chatId,
+            senderId: message.senderId,
+            text: message.text,
+            sentAt: message.sentAt,
+            delivery: message.delivery,
+            replyToId: message.replyToId,
+            replyText: resolvedQuoteText(
+              replyToId: message.replyToId,
+              current: message.replyText,
+              quotes: quotes,
+            ),
+          ),
+      ],
     );
   }
 }

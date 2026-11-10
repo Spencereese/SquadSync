@@ -89,10 +89,6 @@ void main() {
       find.textContaining('Friend · Maybe later until 10:30 PM'),
       findsOneWidget,
     );
-    expect(
-      find.textContaining('Does not turn into available now'),
-      findsOneWidget,
-    );
     expect(find.textContaining('Spencer · Not checked in'), findsOneWidget);
     expect(find.textContaining('Steam'), findsNothing);
     expect(find.textContaining('Xbox'), findsNothing);
@@ -252,6 +248,50 @@ void main() {
       ),
       findsOneWidget,
     );
+  });
+
+  testWidgets('maybe later becomes playing now when the time arrives', (
+    tester,
+  ) async {
+    final clock = ManualSquadClock(DateTime.utc(2026, 11, 8, 20));
+    final repo = FakeAvailabilityRepository(
+      clock: clock,
+      seed: [
+        StoredCheckIn(
+          userId: 'friend',
+          squadId: 'squad',
+          kind: CheckInKind.availableLater,
+          checkedAt: DateTime.utc(2026, 11, 8, 18),
+          until: DateTime.utc(2026, 11, 8, 21),
+        ),
+      ],
+    );
+    await _pump(
+      tester,
+      repo: repo,
+      clock: clock,
+      tick: const Duration(seconds: 1),
+    );
+    expect(find.text('0 of 8 available'), findsOneWidget);
+    expect(find.textContaining('Maybe later until 9:00 PM'), findsOneWidget);
+
+    clock.set(DateTime.utc(2026, 11, 8, 21));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.text('1 of 8 available'), findsOneWidget);
+    expect(
+      find.textContaining(
+        'Friend · Available since 9:00 PM · Halo · checked in, not detected',
+      ),
+      findsOneWidget,
+    );
+    expect(repo.rows.single.kind, CheckInKind.availableLater);
+
+    clock.set(DateTime.utc(2026, 11, 8, 22));
+    await tester.pump(const Duration(seconds: 1));
+
+    expect(find.text('0 of 8 available'), findsOneWidget);
+    expect(find.textContaining('Friend · Last seen'), findsOneWidget);
   });
 
   testWidgets('Maybe later asks for a time', (tester) async {

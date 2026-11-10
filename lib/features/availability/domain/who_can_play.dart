@@ -88,10 +88,13 @@ String whoStatusLine(WhoRow row, {required Duration localOffset}) {
   final checkIn = row.person.checkIn;
   switch (row.person.effect) {
     case AvailabilityEffect.availableNow:
-      final until = checkIn?.until;
-      final clock = until == null
+      final promoted = checkIn?.kind == CheckInKind.availableLater;
+      final when = checkIn?.until;
+      final clock = when == null
           ? ''
-          : 'until ${formatLocalClock(until, localOffset)}';
+          : promoted
+          ? 'Available since ${formatLocalClock(when, localOffset)}'
+          : 'until ${formatLocalClock(when, localOffset)}';
       if (row.group == WhoGroup.playingNow) {
         return [
           if (clock.isNotEmpty) clock,
@@ -99,13 +102,13 @@ String whoStatusLine(WhoRow row, {required Duration localOffset}) {
           'checked in, not detected',
         ].join(' · ');
       }
-      return clock.isEmpty ? 'Available' : 'Available $clock';
+      return clock.isEmpty ? 'Available' : clock;
     case AvailabilityEffect.availableLater:
       final until = checkIn?.until;
       final when = until == null
           ? 'time not set'
           : 'until ${formatLocalClock(until, localOffset)}';
-      return 'Maybe later $when. Does not turn into available now.';
+      return 'Maybe later $when.';
     case AvailabilityEffect.unavailable:
       return "Can't";
     case AvailabilityEffect.notCheckedIn:

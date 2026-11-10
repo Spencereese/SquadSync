@@ -90,11 +90,7 @@ void main() {
     );
     expect(
       whoStatusLine(who.maybeLater.single, localOffset: Duration.zero),
-      contains('until 10:30 PM'),
-    );
-    expect(
-      whoStatusLine(who.maybeLater.single, localOffset: Duration.zero),
-      contains('Does not turn into available now'),
+      'Maybe later until 10:30 PM.',
     );
     expect(
       whoStatusLine(
@@ -158,6 +154,52 @@ void main() {
     expect(who.availableCount, 0);
     expect(who.playingNow, isEmpty);
     expect(who.offline.single.person.effect, AvailabilityEffect.expired);
+  });
+
+  test('maybe later moves to playing now at the chosen time', () {
+    const playing = Member(
+      id: 'play',
+      displayName: 'Play',
+      defaultGame: 'Call of Duty',
+    );
+    final start = DateTime.utc(2026, 11, 8, 21);
+    final stored = StoredCheckIn(
+      userId: 'play',
+      squadId: 'squad',
+      kind: CheckInKind.availableLater,
+      checkedAt: DateTime.utc(2026, 11, 8, 18),
+      until: start,
+    );
+    WhoCanPlay at(DateTime clock) {
+      return WhoCanPlay.group(
+        board: AvailabilityBoard.compose(
+          members: const [playing],
+          squadId: 'squad',
+          clock: clock,
+          rows: [stored],
+        ),
+        members: const [playing],
+      );
+    }
+
+    final waiting = at(start.subtract(const Duration(minutes: 1)));
+    expect(waiting.maybeLater, hasLength(1));
+    expect(waiting.availableCount, 0);
+
+    final due = at(start);
+    expect(due.playingNow, hasLength(1));
+    expect(due.summary, '1 of 8 available');
+    expect(
+      whoStatusLine(due.playingNow.single, localOffset: Duration.zero),
+      'Available since 9:00 PM · Call of Duty · checked in, not detected',
+    );
+
+    final ended = at(start.add(availableNowWindow));
+    expect(ended.availableCount, 0);
+    expect(
+      whoStatusLine(ended.offline.single, localOffset: Duration.zero),
+      'Last seen 6:00 PM',
+    );
   });
 
   test('nobody checked in is the empty answer', () {

@@ -276,6 +276,13 @@ void main() {
     await tester.pump();
 
     expect(find.text('0 available later'), findsOneWidget);
+    expect(find.text('1 available now'), findsOneWidget);
+    expect(find.textContaining('Available since'), findsOneWidget);
+
+    clock.advance(availableNowWindow);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+
     expect(find.text('0 available now'), findsOneWidget);
     expect(find.textContaining('Not available now'), findsOneWidget);
   });

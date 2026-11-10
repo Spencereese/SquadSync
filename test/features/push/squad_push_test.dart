@@ -141,4 +141,96 @@ void main() {
     expect(find.byKey(const Key('notifications-off')), findsOneWidget);
     expect(find.byKey(const Key('push-opened-chat')), findsNothing);
   });
+
+  testWidgets('a missing Firebase config says it is not set up', (
+    tester,
+  ) async {
+    final tokens = MemoryPushTokenRepository();
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          pushNotificationsProvider.overrideWithValue(
+            const UnconfiguredPushNotifications(setupMissing: true),
+          ),
+          pushTokenRepositoryProvider.overrideWithValue(tokens),
+          availabilityTickProvider.overrideWithValue(Duration.zero),
+        ],
+        child: const SquadSyncApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tokens.token, isNull);
+    expect(find.byKey(const Key('notifications-not-set-up')), findsOneWidget);
+    expect(find.byKey(const Key('notifications-off')), findsNothing);
+  });
+
+  testWidgets('a refreshed token is registered again', (tester) async {
+    final tokens = MemoryPushTokenRepository();
+    final pushes = FakePushNotifications(
+      availabilityResult: const PushAvailability.on(
+        token: 'device-token',
+        platform: 'ios',
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          pushNotificationsProvider.overrideWithValue(pushes),
+          pushTokenRepositoryProvider.overrideWithValue(tokens),
+          availabilityTickProvider.overrideWithValue(Duration.zero),
+        ],
+        child: const SquadSyncApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tokens.token, 'device-token');
+
+    pushes.refreshToken(
+      const PushAvailability.on(token: 'next-token', platform: 'android'),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tokens.token, 'next-token');
+    expect(tokens.platform, 'android');
+  });
+
+  testWidgets('sign-in registers the token and sign-out removes it', (
+    tester,
+  ) async {
+    final tokens = MemoryPushTokenRepository();
+    final auth = FakeAuthRepository();
+    final pushes = FakePushNotifications(
+      availabilityResult: const PushAvailability.on(
+        token: 'device-token',
+        platform: 'ios',
+      ),
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          appLinkProvider.overrideWithValue(AppLink.live),
+          authRepositoryProvider.overrideWithValue(auth),
+          pushNotificationsProvider.overrideWithValue(pushes),
+          pushTokenRepositoryProvider.overrideWithValue(tokens),
+          availabilityTickProvider.overrideWithValue(Duration.zero),
+        ],
+        child: const SquadSyncApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tokens.token, isNull);
+
+    auth.restore(const AuthUser(id: 'spencer', email: 'spencer@example.com'));
+    await tester.pumpAndSettle();
+    expect(tokens.token, 'device-token');
+    expect(tokens.platform, 'ios');
+
+    await tester.tap(find.byKey(const Key('sign-out')));
+    await tester.pumpAndSettle();
+
+    expect(tokens.removedToken, 'device-token');
+    expect(tokens.token, isNull);
+    expect(pushes.deletedLocal, isTrue);
+  });
 }

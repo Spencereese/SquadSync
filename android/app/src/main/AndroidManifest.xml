@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <application
         android:label="SquadSync"
         android:name="${applicationName}"
@@ -30,6 +31,13 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
+        <!-- The Firebase SDK auto-starts from a missing google-services.json
+             and crashes the process. Dart initializes Firebase only when the
+             config files exist. -->
+        <provider
+            android:name="com.google.firebase.provider.FirebaseInitProvider"
+            android:authorities="${applicationId}.firebaseinitprovider"
+            tools:node="remove" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

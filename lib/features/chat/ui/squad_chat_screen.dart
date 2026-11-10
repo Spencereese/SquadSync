@@ -148,9 +148,7 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
           : Column(
               children: [
                 Flexible(
-                  flex: MediaQuery.textScalerOf(context).scale(1) > 1.5
-                      ? 8
-                      : 3,
+                  flex: MediaQuery.textScalerOf(context).scale(1) > 1.5 ? 8 : 3,
                   child: RefreshIndicator(
                     key: const Key('refresh-chat'),
                     onRefresh: _refreshHome,

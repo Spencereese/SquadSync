@@ -87,6 +87,50 @@ $$;
 revoke all on function public.sq8_register_device_token(text, text) from public, anon;
 grant execute on function public.sq8_register_device_token(text, text) to authenticated;
 
+-- The signed-in person drops only their own copy of a token. Sign-out uses this.
+create or replace function public.sq8_unregister_device_token(device_token text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  me uuid := (select auth.uid());
+begin
+  if me is null then
+    raise exception 'sq8_device_token_signed_out' using errcode = '42501';
+  end if;
+  if device_token is null or char_length(btrim(device_token)) = 0 then
+    raise exception 'sq8_device_token_blank' using errcode = '22023';
+  end if;
+  delete from public.sq8_device_tokens
+  where user_id = me
+    and token = btrim(device_token);
+end;
+$$;
+
+revoke all on function public.sq8_unregister_device_token(text) from public, anon;
+grant execute on function public.sq8_unregister_device_token(text) to authenticated;
+
+-- FCM said this token is dead. The service role deletes every copy of it.
+create or replace function public.sq8_drop_device_token(device_token text)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if device_token is null or char_length(btrim(device_token)) = 0 then
+    raise exception 'sq8_device_token_blank' using errcode = '22023';
+  end if;
+  delete from public.sq8_device_tokens
+  where token = btrim(device_token);
+end;
+$$;
+
+revoke all on function public.sq8_drop_device_token(text)
+  from public, anon, authenticated;
+
 create or replace function sq8.message_push_targets(
   squad uuid,
   sender uuid
@@ -130,5 +174,6 @@ do $$
 begin
   if exists (select 1 from pg_roles where rolname = 'service_role') then
     execute 'grant execute on function public.sq8_message_push_targets(uuid, uuid) to service_role';
+    execute 'grant execute on function public.sq8_drop_device_token(text) to service_role';
   end if;
 end $$;

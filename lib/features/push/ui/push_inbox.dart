@@ -12,22 +12,26 @@ import 'package:squadsync/features/push/domain/squad_push.dart';
 class PushInboxState {
   const PushInboxState({
     this.notificationsOn = false,
+    this.setupMissing = false,
     this.route,
     this.messageId,
   });
 
   final bool notificationsOn;
+  final bool setupMissing;
   final SquadPushRoute? route;
   final String? messageId;
 
   PushInboxState copyWith({
     bool? notificationsOn,
+    bool? setupMissing,
     SquadPushRoute? route,
     String? messageId,
     bool clearRoute = false,
   }) {
     return PushInboxState(
       notificationsOn: notificationsOn ?? this.notificationsOn,
+      setupMissing: setupMissing ?? this.setupMissing,
       route: clearRoute ? null : (route ?? this.route),
       messageId: clearRoute ? null : (messageId ?? this.messageId),
     );
@@ -41,7 +45,10 @@ class PushInbox extends Notifier<PushInboxState> {
   PushInboxState build() => const PushInboxState();
 
   void noteAvailability(PushAvailability availability) {
-    state = state.copyWith(notificationsOn: availability.on);
+    state = state.copyWith(
+      notificationsOn: availability.on,
+      setupMissing: availability.setupMissing,
+    );
   }
 
   void ingest(SquadPush push) {
@@ -94,7 +101,12 @@ class NotificationsStatus extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (!inbox.notificationsOn)
+        if (!inbox.notificationsOn && inbox.setupMissing)
+          const Text(
+            'Notifications off: not set up yet',
+            key: Key('notifications-not-set-up'),
+          ),
+        if (!inbox.notificationsOn && !inbox.setupMissing)
           const Text('Notifications off', key: Key('notifications-off')),
         if (inbox.route == SquadPushRoute.openChat)
           const Text('Opened the squad chat.', key: Key('push-opened-chat')),
@@ -118,7 +130,7 @@ class PushListener extends ConsumerStatefulWidget {
 
 class _PushListenerState extends ConsumerState<PushListener> {
   StreamSubscription<SquadPush>? _taps;
-  var _registered = false;
+  StreamSubscription<PushAvailability>? _tokens;
 
   @override
   void initState() {
@@ -129,9 +141,24 @@ class _PushListenerState extends ConsumerState<PushListener> {
   @override
   void dispose() {
     final taps = _taps;
+    final tokens = _tokens;
     _taps = null;
+    _tokens = null;
     if (taps != null) unawaited(taps.cancel());
+    if (tokens != null) unawaited(tokens.cancel());
     super.dispose();
+  }
+
+  bool _shouldRegister() {
+    if (ref.read(appLinkProvider) == AppLink.demo) return true;
+    return ref.read(authRepositoryProvider).currentUser != null;
+  }
+
+  Future<void> _register(PushAvailability availability) async {
+    if (!availability.on || !_shouldRegister()) return;
+    await ref
+        .read(pushTokenRepositoryProvider)
+        .register(token: availability.token!, platform: availability.platform!);
   }
 
   Future<void> _start() async {
@@ -140,21 +167,17 @@ class _PushListenerState extends ConsumerState<PushListener> {
     final availability = await pushes.availability();
     if (!mounted) return;
     ref.read(pushInboxProvider.notifier).noteAvailability(availability);
-    if (availability.on && !_registered) {
-      _registered = true;
-      await ref
-          .read(pushTokenRepositoryProvider)
-          .register(
-            token: availability.token!,
-            platform: availability.platform!,
-          );
-    }
+    await _register(availability);
     final launch = pushes.consumeLaunch();
     if (launch != null) {
       ref.read(pushInboxProvider.notifier).ingest(launch);
     }
     _taps = pushes.taps.listen((push) {
       ref.read(pushInboxProvider.notifier).ingest(push);
+    });
+    _tokens = pushes.tokenChanges.listen((next) {
+      ref.read(pushInboxProvider.notifier).noteAvailability(next);
+      unawaited(_register(next));
     });
   }
 
@@ -166,7 +189,18 @@ class _PushListenerState extends ConsumerState<PushListener> {
     });
     ref.listen(pushSessionProvider, (previous, next) {
       ref.read(pushInboxProvider.notifier).flush();
+      final user = next.asData?.value;
+      if (user == null) return;
+      unawaited(_registerFromSession());
     });
     return const SizedBox.shrink();
+  }
+
+  Future<void> _registerFromSession() async {
+    final availability = await ref
+        .read(pushNotificationsProvider)
+        .availability();
+    if (!mounted) return;
+    await _register(availability);
   }
 }

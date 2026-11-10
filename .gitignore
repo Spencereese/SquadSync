@@ -55,6 +55,7 @@ env.json
 !env.json.example
 **/GoogleService-Info.plist
 **/google-services.json
+**/firebase_options.dart
 *.p8
 *.p12
 *.pem

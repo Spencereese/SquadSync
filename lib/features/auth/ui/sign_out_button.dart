@@ -12,6 +12,14 @@ class SignOutButton extends ConsumerWidget {
       key: const Key('sign-out'),
       tooltip: 'Sign out',
       onPressed: () async {
+        final pushes = ref.read(pushNotificationsProvider);
+        final availability = await pushes.availability();
+        if (availability.on) {
+          await ref
+              .read(pushTokenRepositoryProvider)
+              .unregister(token: availability.token!);
+          await pushes.deleteLocalToken();
+        }
         ref.read(squadChatControllerProvider.notifier).abandon();
         await ref.read(authRepositoryProvider).signOut();
       },

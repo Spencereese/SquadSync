@@ -154,3 +154,47 @@ begin
     raise exception 'sender was included in their own push targets';
   end if;
 end $$;
+
+select set_config(
+  'request.jwt.claim.sub',
+  'c5000000-0000-4000-8000-000000000002',
+  false
+);
+set role authenticated;
+
+select public.sq8_unregister_device_token('mate-phone');
+
+do $$
+declare
+  n integer;
+begin
+  select count(*) into n
+  from public.sq8_device_tokens
+  where token = 'mate-phone';
+  if n <> 0 then
+    raise exception 'unregister left the mate token';
+  end if;
+end $$;
+
+do $$
+begin
+  perform public.sq8_drop_device_token('owner-phone');
+  raise exception 'authenticated dropped someone else''s token';
+exception
+  when insufficient_privilege then
+    null;
+end $$;
+
+reset role;
+
+select public.sq8_drop_device_token('owner-phone');
+
+do $$
+declare
+  n integer;
+begin
+  select count(*) into n from public.sq8_device_tokens where token = 'owner-phone';
+  if n <> 0 then
+    raise exception 'service drop left the owner token';
+  end if;
+end $$;

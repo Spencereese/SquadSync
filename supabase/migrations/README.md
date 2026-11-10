@@ -52,6 +52,8 @@ Run these in reverse order. This deletes the slice 2 rows. It does not touch the
 -- 12 only.
 drop function if exists public.sq8_message_push_targets(uuid, uuid);
 drop function if exists sq8.message_push_targets(uuid, uuid);
+drop function if exists public.sq8_drop_device_token(text);
+drop function if exists public.sq8_unregister_device_token(text);
 drop function if exists public.sq8_register_device_token(text, text);
 drop table if exists public.sq8_device_tokens;
 

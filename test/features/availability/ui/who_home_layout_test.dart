@@ -145,8 +145,7 @@ void main() {
       nodes
           .where(
             (node) =>
-                node.flagsCollection.isHeader &&
-                node.label == 'Playing now',
+                node.flagsCollection.isHeader && node.label == 'Playing now',
           )
           .length,
       1,

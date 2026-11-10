@@ -120,15 +120,15 @@ void main() {
   testWidgets(
     'the profile links a SteamID64 and says when Steam is not set up',
     (tester) async {
-    final steam = FakeSteamRepository(acceptsLinks: true);
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: [steamRepositoryProvider.overrideWithValue(steam)],
-        child: const MaterialApp(home: Scaffold(body: SteamLinkField())),
-      ),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Steam not linked'), findsOneWidget);
+      final steam = FakeSteamRepository(acceptsLinks: true);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [steamRepositoryProvider.overrideWithValue(steam)],
+          child: const MaterialApp(home: Scaffold(body: SteamLinkField())),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Steam not linked'), findsOneWidget);
 
       await tester.enterText(
         find.byKey(const Key('steam-link')),

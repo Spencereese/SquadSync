@@ -18,6 +18,10 @@ import 'package:squadsync/features/steam/data/fake_steam_repository.dart';
 import 'package:squadsync/features/steam/data/steam_repository.dart';
 import 'package:squadsync/features/steam/data/supabase_steam_repository.dart';
 import 'package:squadsync/features/steam/domain/steam_presence.dart';
+import 'package:squadsync/features/session/data/calendar_export.dart';
+import 'package:squadsync/features/session/data/fake_session_repository.dart';
+import 'package:squadsync/features/session/data/session_repository.dart';
+import 'package:squadsync/features/session/data/supabase_session_repository.dart';
 import 'package:squadsync/features/push/data/push_token_repository.dart';
 import 'package:squadsync/features/invite/data/fake_invite_repository.dart';
 import 'package:squadsync/features/invite/data/invite_repository.dart';
@@ -119,6 +123,16 @@ final steamRepositoryProvider = Provider<SteamRepository>((ref) {
 final steamBoardProvider = FutureProvider<SteamBoard>((ref) {
   return ref.watch(steamRepositoryProvider).presence();
 });
+
+final sessionRepositoryProvider = Provider<SessionRepository>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  if (client == null) return FakeSessionRepository();
+  return SupabaseSessionRepository(client);
+});
+
+final calendarExportProvider = Provider<CalendarExport>(
+  (ref) => PlatformCalendarExport(),
+);
 
 /// No push SDK in this install. Tests override this when they deliver a tap.
 final pushNotificationsProvider = Provider<PushNotifications>(

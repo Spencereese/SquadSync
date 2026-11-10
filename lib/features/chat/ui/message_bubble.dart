@@ -55,11 +55,28 @@ class MessageBubble extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       if (message.replyText != null &&
-                          message.replyText!.isNotEmpty)
-                        Text(
-                          message.replyText!,
-                          key: Key('quote-${message.id}'),
+                          message.replyText!.isNotEmpty) ...[
+                        DecoratedBox(
+                          key: Key('quote-box-${message.id}'),
+                          decoration: BoxDecoration(
+                            color: scheme.surface,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border(
+                              left: BorderSide(color: scheme.primary, width: 3),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+                            child: Text(
+                              message.replyText!,
+                              key: Key('quote-${message.id}'),
+                              style: Theme.of(context).textTheme.bodySmall
+                                  ?.copyWith(color: scheme.onSurface),
+                            ),
+                          ),
                         ),
+                        const SizedBox(height: 4),
+                      ],
                       Text(message.text),
                     ],
                   ),

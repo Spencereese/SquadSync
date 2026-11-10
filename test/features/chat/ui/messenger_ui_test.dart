@@ -9,6 +9,7 @@ import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/features/availability/domain/check_in.dart';
 import 'package:squadsync/features/chat/data/fake_chat_repository.dart';
 import 'package:squadsync/features/chat/domain/chat_message.dart';
+import 'package:squadsync/features/chat/ui/message_bubble.dart';
 import 'package:squadsync/features/chat/domain/messenger.dart';
 import 'package:squadsync/features/chat/domain/unread.dart';
 import 'package:squadsync/features/squad/data/fake_squad_repository.dart';
@@ -236,6 +237,57 @@ void main() {
     await tester.longPress(find.byKey(const Key('message-m1')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('pick-👍')), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a quote is smaller than the reply and fits at double text', (
+    tester,
+  ) async {
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.binding.setSurfaceSize(const Size(402, 874));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: MessageBubble(
+            message: ChatMessage(
+              id: 'reply-1',
+              chatId: 'squad',
+              senderId: 'spencer',
+              text: 'yes I can play tonight after work',
+              sentAt: DateTime.utc(2026, 11, 10, 20),
+              replyToId: 'm1',
+              replyText: 'want to play a long game of Halo tonight',
+            ),
+            mine: true,
+            onRetry: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final scheme = Theme.of(tester.element(find.byType(MessageBubble)))
+        .colorScheme;
+    final quote = tester.widget<Text>(find.byKey(const Key('quote-reply-1')));
+    final replyStyle = DefaultTextStyle.of(
+      tester.element(find.text('yes I can play tonight after work')),
+    ).style;
+    final box = tester.widget<DecoratedBox>(
+      find.byKey(const Key('quote-box-reply-1')),
+    );
+    final decoration = box.decoration as BoxDecoration;
+    final border = decoration.border! as Border;
+
+    expect(quote.style!.fontSize!, lessThan(replyStyle.fontSize!));
+    expect(quote.style?.color, scheme.onSurface);
+    expect(decoration.color, scheme.surface);
+    expect(border.left.width, 3);
+    expect(
+      find.text('want to play a long game of Halo tonight'),
+      findsOneWidget,
+    );
     expect(tester.takeException(), isNull);
   });
 }

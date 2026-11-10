@@ -108,7 +108,6 @@ class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const NotificationsStatus(),
             if (widget.demo && widget.showDemoLine)
               const Text(
                 'Demo. Check-ins stay on this phone.',
@@ -130,6 +129,7 @@ class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
                   : null,
               onGame: _saveGame,
             ),
+            const NotificationsStatus(),
             const SizedBox(height: 4),
             _Sections(showRest: _rest, onToggle: _toggleRest),
           ],

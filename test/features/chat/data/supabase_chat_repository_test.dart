@@ -1,9 +1,17 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+// http is transitive through supabase_flutter. This test throws the real type.
+// ignore: depend_on_referenced_packages
+import 'package:http/http.dart';
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/core/sq8_database.dart';
+import 'package:squadsync/core/sq8_rows.dart';
 import 'package:squadsync/features/chat/data/supabase_chat_repository.dart';
 import 'package:squadsync/features/chat/domain/chat_message.dart';
 import 'package:squadsync/features/chat/domain/send_machine.dart';
+import 'package:squadsync/features/chat/domain/typing.dart';
 import 'package:squadsync/features/chat/domain/unread.dart';
 
 import '../../../core/mock_sq8_database.dart';
@@ -135,4 +143,172 @@ void main() {
     expect(db.cursorWrites, 1);
     expect(db.cursor?.lastReadId, 'm1');
   });
+
+  test('a server row with reply_to_id keeps its quote after reload', () async {
+    final original = messageFromRow({
+      'id': 'm1',
+      'squad_id': 'squad',
+      'sender_id': 'alex',
+      'body': 'be on in five',
+      'sent_at': '2026-11-02T12:00:00.000Z',
+    });
+    final reply = messageFromRow({
+      'id': 'm2',
+      'squad_id': 'squad',
+      'sender_id': 'user-1',
+      'body': 'on my way',
+      'sent_at': '2026-11-02T12:01:00.000Z',
+      'reply_to_id': 'm1',
+    });
+    expect(reply.replyToId, 'm1');
+    final db = MockSq8Database()..messages = [reply, original];
+    final repo = SupabaseChatRepository(db);
+
+    final page = await repo.newest('squad');
+    final loaded = page.messages.last;
+    expect(loaded.id, 'm2');
+    expect(loaded.replyToId, 'm1');
+    expect(loaded.replyText, isNull);
+    expect(await repo.quoteBodies(['m1']), {'m1': 'be on in five'});
+
+    db.messages = [reply];
+    final gone = await repo.newest('squad');
+    expect(gone.messages.single.replyToId, 'm1');
+    expect(gone.messages.single.replyText, isNull);
+    expect(await repo.quoteBodies(['m1']), isEmpty);
+    expect(
+      resolvedQuoteText(replyToId: 'm1', current: null, quotes: const {}),
+      'Original message unavailable',
+    );
+  });
+
+  test('a failed quote lookup still loads the thread', () async {
+    final plain = messageFromRow({
+      'id': 'm1',
+      'squad_id': 'squad',
+      'sender_id': 'alex',
+      'body': 'hello',
+      'sent_at': '2026-11-02T12:00:00.000Z',
+    });
+    final reply = messageFromRow({
+      'id': 'm2',
+      'squad_id': 'squad',
+      'sender_id': 'user-1',
+      'body': 'on my way',
+      'sent_at': '2026-11-02T12:01:00.000Z',
+      'reply_to_id': 'm1',
+    });
+    final db = MockSq8Database()
+      ..messages = [reply, plain]
+      ..bodiesError = const RepositoryFailure('500');
+    final repo = SupabaseChatRepository(db);
+
+    final page = await repo.newest('squad');
+
+    expect(page.messages.map((message) => message.text), [
+      'hello',
+      'on my way',
+    ]);
+    expect(page.messages.first.replyText, isNull);
+    expect(page.messages.last.replyToId, 'm1');
+    expect(page.messages.last.replyText, isNull);
+    expect(await repo.quoteBodies(['m1']), isEmpty);
+
+    final seen = <List<ChatMessage>>[];
+    final errors = <Object>[];
+    final sub = repo.watch('squad').listen(seen.add, onError: errors.add);
+    db.emit(reply);
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    await sub.cancel();
+
+    expect(errors, isEmpty);
+    expect(seen.single.single.text, 'on my way');
+    expect(seen.single.single.replyText, isNull);
+  });
+
+  test(
+    'a network failure during quote lookup still loads the thread',
+    () async {
+      final plain = messageFromRow({
+        'id': 'm1',
+        'squad_id': 'squad',
+        'sender_id': 'alex',
+        'body': 'hello',
+        'sent_at': '2026-11-02T12:00:00.000Z',
+      });
+      final reply = messageFromRow({
+        'id': 'm2',
+        'squad_id': 'squad',
+        'sender_id': 'user-1',
+        'body': 'on my way',
+        'sent_at': '2026-11-02T12:01:00.000Z',
+        'reply_to_id': 'm1',
+      });
+      final failures = <Object>[
+        const SocketException('failed host lookup'),
+        ClientException('connection closed'),
+        TimeoutException('quote lookup'),
+      ];
+
+      for (final failure in failures) {
+        final db = MockSq8Database()
+          ..messages = [reply, plain]
+          ..bodiesError = failure;
+        final repo = SupabaseChatRepository(db);
+
+        final page = await repo.newest('squad');
+
+        expect(page.messages.map((message) => message.text), [
+          'hello',
+          'on my way',
+        ]);
+        expect(page.messages.last.replyToId, 'm1');
+        expect(page.messages.last.replyText, isNull);
+        expect(await repo.quoteBodies(['m1']), isEmpty);
+      }
+    },
+  );
+
+  test(
+    'an aborted request or a TLS handshake failure still loads the thread',
+    () async {
+      final plain = messageFromRow({
+        'id': 'm1',
+        'squad_id': 'squad',
+        'sender_id': 'alex',
+        'body': 'hello',
+        'sent_at': '2026-11-02T12:00:00.000Z',
+      });
+      final reply = messageFromRow({
+        'id': 'm2',
+        'squad_id': 'squad',
+        'sender_id': 'user-1',
+        'body': 'on my way',
+        'sent_at': '2026-11-02T12:01:00.000Z',
+        'reply_to_id': 'm1',
+      });
+      final failures = <Object>[
+        RequestAbortedException(Uri.parse('https://example.supabase.co')),
+        const HandshakeException('handshake failed'),
+      ];
+
+      for (final failure in failures) {
+        expect(failure.runtimeType.toString(), isNot('ClientException'));
+        final db = MockSq8Database()
+          ..messages = [reply, plain]
+          ..bodiesError = failure;
+        final repo = SupabaseChatRepository(db);
+
+        final page = await repo.newest('squad');
+
+        expect(page.messages.map((message) => message.text), [
+          'hello',
+          'on my way',
+        ]);
+        expect(page.messages.last.replyText, isNull);
+        expect(await repo.quoteBodies(['m1']), isEmpty);
+      }
+    },
+  );
 }

@@ -42,12 +42,14 @@ Sq8Message messageFromRow(Map<String, dynamic> row) {
   if (body is! String) {
     throw const RepositoryFailure('message row is missing a body');
   }
+  final reply = row['reply_to_id'];
   return Sq8Message(
     id: id,
     squadId: squadId,
     senderId: senderId,
     body: body,
     sentAt: _time(row['sent_at']),
+    replyToId: reply is String && reply.isNotEmpty ? reply : null,
   );
 }
 

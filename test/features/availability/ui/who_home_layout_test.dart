@@ -45,7 +45,8 @@ void main() {
     _expectOnScreen(tester, find.byKey(const Key('status-available')));
     _expectOnScreen(tester, find.byKey(const Key('status-later')));
     _expectOnScreen(tester, find.byKey(const Key('status-cant')));
-    _expectOnScreen(tester, find.byKey(const Key('section-playing')));
+    expect(find.byKey(const Key('section-playing')), findsNothing);
+    expect(find.text('Playing now'), findsNothing);
     _expectOnScreen(tester, find.byKey(const Key('section-available')));
     expect(find.text('0 of 8 available'), findsOneWidget);
     expect(find.byKey(const Key('who-empty')), findsOneWidget);
@@ -305,5 +306,41 @@ void main() {
     expect(find.byKey(const Key('message-list')), findsOneWidget);
     expect(find.byKey(const Key('composer')), findsOneWidget);
     expect(find.byKey(const Key('section-playing')), findsNothing);
+  });
+
+  testWidgets('AX5 keeps Who\'s on on one line and the hint readable', (
+    tester,
+  ) async {
+    tester.platformDispatcher.textScaleFactorTestValue = 3.12;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await _openPhone(tester);
+
+    final who = tester.renderObject<RenderParagraph>(
+      find.byKey(const Key('view-who')),
+    );
+    final whoBoxes = who.getBoxesForSelection(
+      TextSelection(baseOffset: 0, extentOffset: who.text.toPlainText().length),
+    );
+    expect(whoBoxes.map((box) => box.top).toSet().length, 1);
+    expect(who.didExceedMaxLines, isFalse);
+    expect(find.bySemanticsLabel("Who's on"), findsOneWidget);
+    expect(tester.takeException(), isNull);
+
+    await tester.tap(find.byKey(const Key('view-chat')));
+    await tester.pumpAndSettle();
+    final hint = tester.renderObject<RenderParagraph>(
+      find.text('Message the squad'),
+    );
+    expect(hint.text.toPlainText(), 'Message the squad');
+    expect(hint.didExceedMaxLines, isFalse);
+    expect(find.bySemanticsLabel('Message the squad'), findsOneWidget);
+    final hintBoxes = hint.getBoxesForSelection(
+      TextSelection(
+        baseOffset: 0,
+        extentOffset: hint.text.toPlainText().length,
+      ),
+    );
+    expect(hintBoxes.map((box) => box.top).toSet().length, 1);
+    expect(tester.takeException(), isNull);
   });
 }

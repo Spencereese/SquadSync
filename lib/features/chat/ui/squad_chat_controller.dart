@@ -6,7 +6,9 @@ import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/chat/data/chat_repository.dart';
 import 'package:squadsync/features/chat/domain/chat_message.dart';
 import 'package:squadsync/features/chat/domain/message_history.dart';
+import 'package:squadsync/features/chat/domain/messenger.dart';
 import 'package:squadsync/features/chat/domain/send_machine.dart';
+import 'package:squadsync/features/chat/domain/typing.dart';
 import 'package:squadsync/features/chat/domain/unread.dart';
 import 'package:squadsync/core/sq8_database.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
@@ -19,6 +21,12 @@ class SquadChatState {
     this.messages = const [],
     this.hasOlder = false,
     this.unread = const UnreadBook(),
+    this.readThroughId,
+    this.messenger = MessengerBoard.disabled,
+    this.messengerError,
+    this.typing = const {},
+    this.replyToId,
+    this.replyText,
     this.error,
     this.linkDown = false,
   });
@@ -28,6 +36,15 @@ class SquadChatState {
   final List<ChatMessage> messages;
   final bool hasOlder;
   final UnreadBook unread;
+  final String? readThroughId;
+  final MessengerBoard messenger;
+
+  /// Set when reactions or receipts failed for a reason other than a missing
+  /// table. The message list still shows.
+  final String? messengerError;
+  final Set<String> typing;
+  final String? replyToId;
+  final String? replyText;
   final String? error;
   final bool linkDown;
 
@@ -38,6 +55,14 @@ class SquadChatState {
     List<ChatMessage>? messages,
     bool? hasOlder,
     UnreadBook? unread,
+    String? readThroughId,
+    MessengerBoard? messenger,
+    String? messengerError,
+    bool clearMessengerError = false,
+    Set<String>? typing,
+    String? replyToId,
+    String? replyText,
+    bool clearReply = false,
     String? error,
     bool clearError = false,
     bool? linkDown,
@@ -48,6 +73,14 @@ class SquadChatState {
       messages: messages ?? this.messages,
       hasOlder: hasOlder ?? this.hasOlder,
       unread: unread ?? this.unread,
+      readThroughId: readThroughId ?? this.readThroughId,
+      messenger: messenger ?? this.messenger,
+      messengerError: clearMessengerError
+          ? null
+          : (messengerError ?? this.messengerError),
+      typing: typing ?? this.typing,
+      replyToId: clearReply ? null : (replyToId ?? this.replyToId),
+      replyText: clearReply ? null : (replyText ?? this.replyText),
       error: clearError ? null : (error ?? this.error),
       linkDown: linkDown ?? this.linkDown,
     );
@@ -60,6 +93,9 @@ final squadChatControllerProvider =
     );
 
 const removedFromSquadMessage = "You're no longer in this squad";
+
+const couldNotLoadMessenger =
+    "Couldn't load reactions or seen-by. Messages are still here.";
 
 class RemovedNotice extends Notifier<String?> {
   @override
@@ -78,7 +114,11 @@ final removedNoticeProvider = NotifierProvider<RemovedNotice, String?>(
 class SquadChatController extends Notifier<SquadChatState> {
   StreamSubscription<List<ChatMessage>>? _echo;
   StreamSubscription<RosterSignal>? _roster;
+  StreamSubscription<Set<String>>? _typing;
+  String? _typingChat;
+  final _typingKeys = TypingThrottle();
   var _started = false;
+  var _chatVisible = false;
   var _loadingOlder = false;
   var _epoch = 0;
 
@@ -91,6 +131,11 @@ class SquadChatController extends Notifier<SquadChatState> {
       final roster = _roster;
       _roster = null;
       if (roster != null) unawaited(roster.cancel());
+      final typing = _typing;
+      _typing = null;
+      _typingChat = null;
+      if (typing != null) unawaited(typing.cancel());
+      _typingKeys.stop();
     });
     return const SquadChatState();
   }
@@ -107,8 +152,9 @@ class SquadChatController extends Notifier<SquadChatState> {
       if (!ref.mounted) return;
       final unread = await chats.unread();
       if (!ref.mounted) return;
-      final cleared = unread.opened(squad.chatId);
-      await chats.saveUnread(cleared);
+      final through = await chats.readThrough(squad.chatId);
+      if (!ref.mounted) return;
+      final reactions = await _reactions(chats, squad.chatId);
       if (!ref.mounted) return;
       await _listen(chats, squad.chatId);
       final signedIn = ref.read(authRepositoryProvider).currentUser?.id;
@@ -117,9 +163,14 @@ class SquadChatController extends Notifier<SquadChatState> {
         meId: signedIn == null || signedIn.isEmpty ? squad.ownerId : signedIn,
         messages: page.messages,
         hasOlder: page.hasOlder,
-        unread: cleared,
+        unread: unread,
+        readThroughId: through,
+        messenger: reactions.board,
+        messengerError: reactions.error,
       );
+      await _listenTyping(chats, squad.chatId);
       await _listenRoster();
+      unawaited(_fillQuotes(chats, squad.chatId, _epoch));
     } on RepositoryFailure catch (error) {
       if (!ref.mounted) return;
       state = state.copyWith(error: error.message);
@@ -146,7 +197,107 @@ class SquadChatController extends Notifier<SquadChatState> {
     final roster = _roster;
     _roster = null;
     if (roster != null) unawaited(roster.cancel());
+    final typing = _typing;
+    _typing = null;
+    _typingChat = null;
+    final chatId = state.squad?.chatId;
+    final stop = _typingKeys.stop();
+    if (stop && chatId != null) {
+      unawaited(_stopTyping(chatId, typing));
+    } else if (typing != null) {
+      unawaited(typing.cancel());
+    }
     state = const SquadChatState();
+  }
+
+  /// Sends the stop on the channel that is already open, then closes it.
+  /// A stop after close would subscribe a new channel and leave it behind.
+  Future<void> _stopTyping(
+    String chatId,
+    StreamSubscription<Set<String>>? typing,
+  ) async {
+    await ref.read(chatRepositoryProvider).setTyping(chatId, typing: false);
+    if (typing != null) await typing.cancel();
+  }
+
+  void setChatVisible(bool visible) {
+    _chatVisible = visible;
+  }
+
+  void quote(ChatMessage message) {
+    if (!ref.mounted) return;
+    state = state.copyWith(replyToId: message.id, replyText: message.text);
+  }
+
+  void clearQuote() {
+    if (!ref.mounted) return;
+    state = state.copyWith(clearReply: true);
+  }
+
+  Future<void> react(String messageId, String emoji) async {
+    final squad = state.squad;
+    if (squad == null || !state.messenger.enabled) return;
+    final me = state.meId;
+    final next = toggleReaction(
+      state.messenger.reactions,
+      messageId: messageId,
+      userId: me,
+      emoji: emoji,
+    );
+    state = state.copyWith(
+      messenger: MessengerBoard(
+        enabled: true,
+        reactions: next,
+        reads: state.messenger.reads,
+      ),
+    );
+    await ref
+        .read(chatRepositoryProvider)
+        .toggleReaction(
+          chatId: squad.chatId,
+          messageId: messageId,
+          emoji: emoji,
+        );
+  }
+
+  /// The person has seen the thread. The badge for this squad goes to zero.
+  Future<void> catchUp() async {
+    final squad = state.squad;
+    if (squad == null) return;
+    final newest = state.messages.isEmpty ? null : state.messages.last;
+    final cleared = state.unread.opened(squad.chatId);
+    state = state.copyWith(
+      unread: cleared,
+      readThroughId: newest?.id ?? state.readThroughId,
+    );
+    await ref.read(chatRepositoryProvider).saveUnread(cleared);
+    if (newest != null && state.messenger.enabled) {
+      await ref
+          .read(chatRepositoryProvider)
+          .saveReadReceipt(
+            chatId: squad.chatId,
+            messageId: newest.id,
+            readAt: newest.sentAt,
+          );
+    }
+  }
+
+  Future<void> setTyping(bool typing) async {
+    final squad = state.squad;
+    if (squad == null) return;
+    final chatId = squad.chatId;
+    final send = _typingKeys.key(
+      typing: typing,
+      onIdle: () {
+        final current = state.squad?.chatId;
+        if (current == null) return;
+        unawaited(
+          ref.read(chatRepositoryProvider).setTyping(current, typing: false),
+        );
+      },
+    );
+    if (send == null) return;
+    await ref.read(chatRepositoryProvider).setTyping(chatId, typing: send);
   }
 
   Future<void> loadOlder() async {
@@ -174,6 +325,9 @@ class SquadChatController extends Notifier<SquadChatState> {
         hasOlder: page.hasOlder,
         clearError: true,
       );
+      unawaited(
+        _fillQuotes(ref.read(chatRepositoryProvider), squad.chatId, _epoch),
+      );
     } on RepositoryFailure catch (error) {
       if (!ref.mounted) return;
       state = state.copyWith(error: error.message);
@@ -200,12 +354,15 @@ class SquadChatController extends Notifier<SquadChatState> {
       if (!_reloadCurrent(epoch, chatId)) return;
       final unread = await chats.unread();
       if (!_reloadCurrent(epoch, chatId)) return;
-      final cleared = unread.opened(chatId);
-      await chats.saveUnread(cleared);
+      final through = await chats.readThrough(chatId);
+      if (!_reloadCurrent(epoch, chatId)) return;
+      final reactions = await _reactions(chats, chatId);
       if (!_reloadCurrent(epoch, chatId)) return;
       await _listen(chats, chatId);
       if (!_reloadCurrent(epoch, chatId)) return;
       await _listenRoster();
+      if (!_reloadCurrent(epoch, chatId)) return;
+      await _listenTyping(chats, chatId);
       if (!_reloadCurrent(epoch, chatId)) return;
       // Merge after the awaits so a row that arrived while they ran stays.
       final merged = ChatThread(state.messages)
@@ -213,10 +370,15 @@ class SquadChatController extends Notifier<SquadChatState> {
       state = state.copyWith(
         messages: merged.messages,
         hasOlder: page.hasOlder,
-        unread: cleared,
+        unread: unread,
+        readThroughId: through,
+        messenger: reactions.board,
+        messengerError: reactions.error,
+        clearMessengerError: reactions.error == null,
         linkDown: false,
         clearError: true,
       );
+      unawaited(_fillQuotes(chats, chatId, epoch));
     } on RepositoryFailure catch (error) {
       if (!ref.mounted) return;
       state = state.copyWith(error: error.message, linkDown: true);
@@ -236,10 +398,14 @@ class SquadChatController extends Notifier<SquadChatState> {
       text: body,
       sentAt: DateTime.now().toUtc(),
       delivery: Delivery.sending,
+      replyToId: current.replyToId,
+      replyText: current.replyText,
     );
     state = current.copyWith(
       messages: ChatThread(current.messages).start(outgoing).messages,
+      clearReply: true,
     );
+    unawaited(setTyping(false));
     await _finish(id, outgoing);
   }
 
@@ -332,13 +498,92 @@ class SquadChatController extends Notifier<SquadChatState> {
     unawaited(_confirmSeat());
   }
 
+  Future<({MessengerBoard board, String? error})> _reactions(
+    ChatRepository chats,
+    String chatId,
+  ) async {
+    try {
+      return (board: await chats.messenger(chatId), error: null);
+    } on RepositoryFailure {
+      return (board: MessengerBoard.disabled, error: couldNotLoadMessenger);
+    }
+  }
+
+  Future<void> _listenTyping(ChatRepository chats, String chatId) async {
+    if (_typingChat == chatId && _typing != null) return;
+    final next = chats.watchTyping(chatId).listen((ids) {
+      if (!ref.mounted) return;
+      state = state.copyWith(typing: ids);
+    });
+    final previous = _typing;
+    _typing = next;
+    _typingChat = chatId;
+    if (previous != null) unawaited(previous.cancel());
+  }
+
   void _onEcho(List<ChatMessage> remote) {
     if (!ref.mounted || state.squad == null) return;
+    final known = {for (final message in state.messages) message.id};
+    final arrivals = [
+      for (final message in remote)
+        if (!known.contains(message.id)) message.senderId,
+    ];
+    var unread = state.unread;
+    if (!_chatVisible) {
+      final added = unreadArrivals(
+        senderIds: arrivals,
+        currentUserId: state.meId,
+        chatIsOpen: false,
+      );
+      if (added > 0) unread = unread.add(state.squad!.chatId, added);
+    }
     state = state.copyWith(
       linkDown: false,
+      unread: unread,
       messages: ChatThread(state.messages)
           .mergeEcho(remote, meId: state.meId)
           .messages,
+    );
+    final chatId = state.squad?.chatId;
+    if (chatId != null) {
+      unawaited(_fillQuotes(ref.read(chatRepositoryProvider), chatId, _epoch));
+    }
+  }
+
+  Future<void> _fillQuotes(
+    ChatRepository chats,
+    String chatId,
+    int epoch,
+  ) async {
+    final ids = [
+      for (final message in state.messages)
+        if (message.replyToId != null &&
+            (message.replyText == null || message.replyText!.isEmpty))
+          message.replyToId!,
+    ];
+    if (ids.isEmpty) return;
+    final quotes = await chats.quoteBodies(ids);
+    if (!ref.mounted || _epoch != epoch || state.squad?.chatId != chatId) {
+      return;
+    }
+    state = state.copyWith(
+      messages: [
+        for (final message in state.messages)
+          ChatMessage(
+            id: message.id,
+            chatId: message.chatId,
+            senderId: message.senderId,
+            text: message.text,
+            sentAt: message.sentAt,
+            delivery: message.delivery,
+            replyToId: message.replyToId,
+            replyText: resolvedQuoteText(
+              replyToId: message.replyToId,
+              current: message.replyText,
+              quotes: quotes,
+            ),
+          ),
+      ],
     );
   }
 }

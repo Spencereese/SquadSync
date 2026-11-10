@@ -26,6 +26,7 @@ class Sq8Message {
     required this.senderId,
     required this.body,
     required this.sentAt,
+    this.replyToId,
   });
 
   final String id;
@@ -33,6 +34,7 @@ class Sq8Message {
   final String senderId;
   final String body;
   final DateTime sentAt;
+  final String? replyToId;
 }
 
 class Sq8Cursor {
@@ -101,6 +103,9 @@ abstract class Sq8Database {
   });
 
   Future<void> insertMessage(Sq8Message message);
+
+  /// Bodies for these ids. An id that is gone is omitted.
+  Future<Map<String, String>> messageBodies(Iterable<String> ids);
 
   Stream<Sq8Message> watchInserts(String squadId);
 

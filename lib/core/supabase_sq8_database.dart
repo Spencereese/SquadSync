@@ -19,7 +19,7 @@ Exception mapPostgrest(PostgrestException error) {
   if (error.message.contains('sq8_owner_protected')) {
     return const Sq8OwnerProtected();
   }
-  return RepositoryFailure(error.message);
+  return RepositoryFailure(error.message, code: error.code);
 }
 
 class SupabaseSq8Database implements Sq8Database {
@@ -214,6 +214,29 @@ class SupabaseSq8Database implements Sq8Database {
   }
 
   @override
+  Future<Map<String, String>> messageBodies(Iterable<String> ids) async {
+    final wanted = [
+      for (final id in ids)
+        if (id.isNotEmpty) id,
+    ];
+    if (wanted.isEmpty) return const {};
+    // The history query keeps PostgREST's retries. This lookup does not:
+    // those retries hold a dead socket for about 7 seconds (1s + 2s + 4s).
+    final rows = await _guardValue(
+      () => _client
+          .from('sq8_messages')
+          .select('id, body')
+          .inFilter('id', wanted)
+          .retry(enabled: false),
+    );
+    return {
+      for (final row in rows)
+        if (row['id'] is String && row['body'] is String)
+          row['id'] as String: row['body'] as String,
+    };
+  }
+
+  @override
   Future<void> insertMessage(Sq8Message message) {
     return _guard(
       () => _client.from('sq8_messages').insert({
@@ -222,6 +245,7 @@ class SupabaseSq8Database implements Sq8Database {
         'sender_id': message.senderId,
         'body': message.body,
         'sent_at': message.sentAt.toUtc().toIso8601String(),
+        if (message.replyToId != null) 'reply_to_id': message.replyToId,
       }),
     );
   }

@@ -35,7 +35,20 @@ void main() {
 
     expect(find.byKey(const Key('sign-in-email')), findsNothing);
     expect(find.byKey(const Key('demo-banner')), findsOneWidget);
+    expect(
+      find.text('Demo mode: messages clear when you close the app.'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('stay on this phone'), findsNothing);
     expect(find.text('Spencer · Call of Duty'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('view-chat')));
+    await tester.pumpAndSettle();
+    expect(find.text('No messages yet'), findsOneWidget);
+    expect(
+      find.text('Demo mode: messages clear when you close the app.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('a code sign-in is shown only when config is present', (

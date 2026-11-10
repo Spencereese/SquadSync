@@ -2,7 +2,7 @@
 
 A private chat for one squad of eight friends, on iPhone and Android.
 
-This tree is a fresh start. The previous app is not the base of this branch. Without a Supabase URL and anon key the app is a labeled demo: messages stay on the phone. With both values it uses the live project. A URL without a running client shows "Not connected" and does not fall back to the demo.
+This tree is a fresh start. The previous app is not the base of this branch. Without a Supabase URL and anon key the app is a labeled demo: messages clear when you close the app. With both values it uses the live project. A URL without a running client shows "Not connected" and does not fall back to the demo.
 
 Bundle id: `com.spencereese.squadsync`.
 
@@ -56,6 +56,7 @@ iOS and Android only. There is no web or desktop target.
 | Invite code | The owner can make or replace an 8-character code. A friend can join with it. The same squad is a no-op. An empty squad they own is removed first. A squad they own with other people, or a squad they only belong to, is refused. A missing invite table says invites are not enabled. Migration `20261109_0008_invites.sql` is not applied. File 7 records the owner select policy and is idempotent |
 | Live OTP on a phone | Not verified. No device sign-in and no two-client session were run. The email template was not read or changed in this run |
 | Spot call | Not live. Someone calls a game and a start time. Members RSVP in or out for five minutes, stamped by the database. Starters are people who are available now, or available later whose time has arrived and is still inside the next hour. The caller can cancel before lock. The owner or the caller can lock, and either can end a locked call. A locked call also ends when the next call finds it more than six hours past the lock. Migration `20261110_0013_spot_calls.sql` is not applied. |
+| Chat reactions, receipts, unread, typing, and replies | On the phone now. A long press picks one of six emoji and toggles it. "Seen by" uses a shared per-member cursor. The Chat segment keeps an unread count until you jump to the first unread message. Typing is a realtime broadcast with no table. A reply quotes the message and still sends on the same client id. Migration `20261110_0014_chat_messenger.sql` is not applied. Without that file the phone hides reactions and receipts and does not error |
 | Push to the squad chat | Not live. Without `google-services.json` and `GoogleService-Info.plist` the phone says "Notifications off: not set up yet" and does not register a token. With those files it registers on sign-in and removes the token on sign-out. Migration `20261110_0012_device_tokens.sql` is not applied. `supabase/functions/sq8-notify-message` is not deployed. It sends through FCM HTTP v1 with a service-account JSON, not a legacy server key. Spencer's secrets and console steps are in `supabase/functions/sq8-notify-message/README.md`. |
 | App Store / TestFlight | Not done |
 

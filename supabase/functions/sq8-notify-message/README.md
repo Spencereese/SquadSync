@@ -54,3 +54,9 @@ Android needs `google-services.json`. iOS needs `GoogleService-Info.plist`. Both
 6. Deploy only when those secrets exist: `supabase functions deploy sq8-notify-message --no-verify-jwt`. The webhook is authenticated by `SQ8_PUSH_WEBHOOK_SECRET`, not by a user JWT.
 7. In the Supabase dashboard, add a Database Webhook on `public.sq8_messages` INSERT. Point it at the function URL. Header: `x-sq8-webhook-secret: <the same secret>`.
 8. Put the two Firebase config files on the iOS and Android build machines. Until they are present, the phone stays on "Notifications off: not set up yet". After they are present, sign-in asks for permission, reads the FCM token, and calls `sq8_register_device_token`. Sign-out calls `sq8_unregister_device_token` and deletes the local token.
+
+## Spot nudges, design only
+
+Do not build this until file 12 is applied and `sq8-notify-message` is deployed with FCM. No table, function, or client change belongs to this note.
+
+When someone calls a spot (`sq8_spot_calls` insert, status `open`), notify the members of that squad who are not starters and who have no RSVP row yet. The caller is not notified. A starter is already in, so they are not notified. A member who has already answered in or out is not notified. Send once, at the moment the call is created. Do not send again for an RSVP, a lock, an end, or a cancel. The payload type is `spot_call`, with `squad_id` and the call id, on the same FCM HTTP v1 path as a squad message.

@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:squadsync/core/app.dart';
 import 'package:squadsync/core/client_id.dart';
 import 'package:squadsync/core/dependencies.dart';
+import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/availability/data/fake_availability_repository.dart';
 import 'package:squadsync/features/availability/domain/check_in.dart';
 import 'package:squadsync/features/chat/data/fake_chat_repository.dart';
@@ -42,6 +43,37 @@ Future<void> _pump(
 }
 
 void main() {
+  testWidgets('a messenger failure leaves the messages on screen', (
+    tester,
+  ) async {
+    final chats =
+        FakeChatRepository(
+            messages: [
+              ChatMessage(
+                id: 'm1',
+                chatId: 'squad',
+                senderId: 'friend',
+                text: 'hello',
+                sentAt: DateTime.utc(2026, 11, 2),
+              ),
+            ],
+          )
+          ..messengerFailure = const RepositoryFailure(
+            'permission denied for table sq8_message_reads',
+            code: '42501',
+          );
+    await _pump(tester, chats: chats);
+
+    expect(find.text('hello'), findsOneWidget);
+    expect(
+      find.text("Couldn't load reactions or seen-by. Messages are still here."),
+      findsOneWidget,
+    );
+    expect(find.textContaining('permission denied'), findsNothing);
+    expect(find.textContaining('sq8_message_reads'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'send shows a clock until the repository confirms, then a check',
     (tester) async {

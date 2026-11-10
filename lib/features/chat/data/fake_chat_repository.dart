@@ -4,6 +4,8 @@ import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/chat/data/chat_repository.dart';
 import 'package:squadsync/features/chat/domain/chat_message.dart';
 import 'package:squadsync/features/chat/domain/message_history.dart';
+import 'package:squadsync/features/chat/domain/messenger.dart';
+import 'package:squadsync/features/chat/domain/messenger.dart' as board;
 import 'package:squadsync/features/chat/domain/send_machine.dart';
 import 'package:squadsync/features/chat/domain/unread.dart';
 
@@ -16,8 +18,14 @@ class FakeChatRepository implements ChatRepository {
     this.fail = false,
     this.holdSends,
     this.holdUnread,
+    this.messengerEnabled = true,
+    this.readThroughId,
+    List<MessageReaction>? reactions,
+    List<MemberRead>? reads,
   }) : _messages = List<ChatMessage>.of(messages ?? const []),
-       _unread = unread ?? const UnreadBook();
+       _unread = unread ?? const UnreadBook(),
+       _reactions = List<MessageReaction>.of(reactions ?? const []),
+       _reads = List<MemberRead>.of(reads ?? const []);
 
   final List<ChatMessage> _messages;
   UnreadBook _unread;
@@ -25,15 +33,46 @@ class FakeChatRepository implements ChatRepository {
   final List<StreamController<List<ChatMessage>>> _watches = [];
 
   bool fail;
+  bool messengerEnabled;
+  String? readThroughId;
+  final List<MessageReaction> _reactions;
+  final List<MemberRead> _reads;
+  final Set<String> _typing = {};
+  final List<StreamController<Set<String>>> _typingWatches = [];
+  final typingSends = <bool>[];
+  var typingWatches = 0;
+
+  /// A stop that arrived after the watch was already closed. That used to
+  /// open a channel and leave it.
+  var channelsOpenedAfterClose = 0;
+
+  int get openTypingWatches => _typingWatches.length;
+
+  /// When set, [messenger] throws this instead of returning a board.
+  Object? messengerFailure;
   Future<void>? holdSends;
 
   /// Pauses [unread] so a test can deliver a row while reload is waiting.
   Future<void>? holdUnread;
 
+  /// Pauses [quoteBodies] so the thread can paint before a quote arrives.
+  Future<void>? holdQuotes;
+
   @override
   Future<HistoryPage> newest(String chatId, {int limit = openPageSize}) async {
     _guard('newest');
     return newestPage(_for(chatId), limit: limit);
+  }
+
+  @override
+  Future<Map<String, String>> quoteBodies(Iterable<String> ids) async {
+    final hold = holdQuotes;
+    if (hold != null) await hold;
+    final wanted = ids.toSet();
+    return {
+      for (final message in _messages)
+        if (wanted.contains(message.id)) message.id: message.text,
+    };
   }
 
   @override
@@ -62,6 +101,8 @@ class FakeChatRepository implements ChatRepository {
       text: message.text,
       sentAt: message.sentAt,
       delivery: Delivery.sent,
+      replyToId: message.replyToId,
+      replyText: message.replyText,
     );
     _messages.add(stored);
     _emit([stored]);
@@ -138,6 +179,104 @@ class FakeChatRepository implements ChatRepository {
   Future<void> saveUnread(UnreadBook book) async {
     _guard('saveUnread');
     _unread = book;
+  }
+
+  @override
+  Future<String?> readThrough(String chatId) async {
+    _guard('readThrough');
+    return readThroughId;
+  }
+
+  @override
+  Future<MessengerBoard> messenger(String chatId) async {
+    final failure = messengerFailure;
+    if (failure != null) throw failure;
+    _guard('messenger');
+    if (!messengerEnabled) return MessengerBoard.disabled;
+    return MessengerBoard(
+      enabled: true,
+      reactions: List<MessageReaction>.of(_reactions),
+      reads: List<MemberRead>.of(_reads),
+    );
+  }
+
+  @override
+  Future<void> toggleReaction({
+    required String chatId,
+    required String messageId,
+    required String emoji,
+  }) async {
+    _guard('toggleReaction');
+    if (!messengerEnabled) return;
+    final next = board.toggleReaction(
+      _reactions,
+      messageId: messageId,
+      userId: 'spencer',
+      emoji: emoji,
+    );
+    _reactions
+      ..clear()
+      ..addAll(next);
+  }
+
+  @override
+  Future<void> saveReadReceipt({
+    required String chatId,
+    required String messageId,
+    required DateTime readAt,
+  }) async {
+    _guard('saveReadReceipt');
+    if (!messengerEnabled) return;
+    _reads.removeWhere((row) => row.userId == 'spencer');
+    _reads.add(
+      MemberRead(userId: 'spencer', messageId: messageId, readAt: readAt),
+    );
+  }
+
+  @override
+  Stream<Set<String>> watchTyping(String chatId) {
+    typingWatches += 1;
+    late StreamController<Set<String>> controller;
+    controller = StreamController<Set<String>>.broadcast(
+      onListen: () {
+        if (!controller.isClosed) controller.add(Set<String>.of(_typing));
+      },
+      onCancel: () => _typingWatches.remove(controller),
+    );
+    _typingWatches.add(controller);
+    return controller.stream;
+  }
+
+  @override
+  Future<void> setTyping(String chatId, {required bool typing}) async {
+    if (_typingWatches.isEmpty) {
+      channelsOpenedAfterClose += 1;
+      return;
+    }
+    typingSends.add(typing);
+    if (typing) {
+      _typing.add('spencer');
+    } else {
+      _typing.remove('spencer');
+    }
+    _emitTyping();
+  }
+
+  /// Another person's typing broadcast. Not stored.
+  void deliverTyping(Set<String> names) {
+    _typing
+      ..clear()
+      ..addAll(names);
+    _emitTyping();
+  }
+
+  void _emitTyping() {
+    final snapshot = Set<String>.of(_typing);
+    for (final controller in List<StreamController<Set<String>>>.of(
+      _typingWatches,
+    )) {
+      if (!controller.isClosed) controller.add(snapshot);
+    }
   }
 
   List<ChatMessage> get rows => List.unmodifiable(_messages);

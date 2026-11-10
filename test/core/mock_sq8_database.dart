@@ -166,6 +166,18 @@ class MockSq8Database implements Sq8Database {
   }
 
   Object? insertError;
+  Object? bodiesError;
+
+  @override
+  Future<Map<String, String>> messageBodies(Iterable<String> ids) async {
+    final error = bodiesError;
+    if (error != null) throw error;
+    final wanted = ids.toSet();
+    return {
+      for (final message in messages)
+        if (wanted.contains(message.id)) message.id: message.body,
+    };
+  }
 
   @override
   Future<void> insertMessage(Sq8Message message) async {

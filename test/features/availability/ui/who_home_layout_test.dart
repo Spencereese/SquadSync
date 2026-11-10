@@ -72,10 +72,9 @@ void main() {
         .first;
     await tester.scrollUntilVisible(
       find.byKey(const Key('who-expand')),
-      120,
+      80,
       scrollable: page,
     );
-    await tester.drag(page, const Offset(0, -80));
     await tester.pumpAndSettle();
     expect(
       find.byKey(const Key('who-expand')).hitTestable(at: Alignment.topCenter),

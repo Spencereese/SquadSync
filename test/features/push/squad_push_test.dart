@@ -88,7 +88,14 @@ void main() {
 
     expect(find.byKey(const Key('push-opened-chat')), findsOneWidget);
     expect(find.byKey(const Key('composer')), findsOneWidget);
+    expect(find.byKey(const Key('message-list')), findsOneWidget);
+    expect(find.byKey(const Key('section-playing')), findsNothing);
+
+    await tester.tap(find.text("Who's on"));
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('notifications-off')), findsOneWidget);
+    await tester.tap(find.text('Chat'));
+    await tester.pumpAndSettle();
 
     pushes.deliver(const SquadPush(squadId: 'other', messageId: 'msg-10'));
     await tester.pumpAndSettle();

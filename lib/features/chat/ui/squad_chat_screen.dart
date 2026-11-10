@@ -15,6 +15,7 @@ import 'package:squadsync/features/chat/domain/chat_message.dart';
 import 'package:squadsync/features/chat/domain/messenger.dart';
 import 'package:squadsync/features/chat/ui/message_bubble.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
+import 'package:squadsync/features/steam/ui/steam_link_field.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
 import 'package:squadsync/features/squad/ui/member_strip.dart';
@@ -350,6 +351,8 @@ class _ProfileDialogState extends ConsumerState<_ProfileDialog> {
             controller: _game,
             decoration: const InputDecoration(labelText: 'Default game'),
           ),
+          const SizedBox(height: 12),
+          const SteamLinkField(),
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(

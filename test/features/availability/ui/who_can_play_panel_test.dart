@@ -93,7 +93,8 @@ void main() {
       findsOneWidget,
     );
     expect(find.textContaining('Spencer · Not checked in'), findsOneWidget);
-    expect(find.textContaining('Steam'), findsNothing);
+    expect(find.text('Steam presence not set up yet'), findsOneWidget);
+    expect(find.textContaining('via Steam'), findsNothing);
     expect(find.textContaining('Xbox'), findsNothing);
     expect(find.textContaining('PlayStation'), findsNothing);
     expect(

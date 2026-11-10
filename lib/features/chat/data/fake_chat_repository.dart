@@ -39,6 +39,13 @@ class FakeChatRepository implements ChatRepository {
   final List<MemberRead> _reads;
   final Set<String> _typing = {};
   final List<StreamController<Set<String>>> _typingWatches = [];
+  final typingSends = <bool>[];
+  var typingWatches = 0;
+
+  int get openTypingWatches => _typingWatches.length;
+
+  /// When set, [messenger] throws this instead of returning a board.
+  Object? messengerFailure;
   Future<void>? holdSends;
 
   /// Pauses [unread] so a test can deliver a row while reload is waiting.
@@ -164,6 +171,8 @@ class FakeChatRepository implements ChatRepository {
 
   @override
   Future<MessengerBoard> messenger(String chatId) async {
+    final failure = messengerFailure;
+    if (failure != null) throw failure;
     _guard('messenger');
     if (!messengerEnabled) return MessengerBoard.disabled;
     return MessengerBoard(
@@ -208,6 +217,7 @@ class FakeChatRepository implements ChatRepository {
 
   @override
   Stream<Set<String>> watchTyping(String chatId) {
+    typingWatches += 1;
     late StreamController<Set<String>> controller;
     controller = StreamController<Set<String>>.broadcast(
       onListen: () {
@@ -221,6 +231,7 @@ class FakeChatRepository implements ChatRepository {
 
   @override
   Future<void> setTyping(String chatId, {required bool typing}) async {
+    typingSends.add(typing);
     if (typing) {
       _typing.add('spencer');
     } else {

@@ -97,7 +97,16 @@ void main() {
   test('a missing messenger table is not a chat error', () {
     expect(messengerTableMissing('42P01', ''), isTrue);
     expect(messengerTableMissing('PGRST205', ''), isTrue);
-    expect(messengerTableMissing('42703', 'reply_to_id'), isTrue);
+    expect(messengerTableMissing('42703', ''), isTrue);
+    expect(messengerTableMissing('PGRST204', ''), isTrue);
+    expect(
+      messengerTableMissing(
+        '42501',
+        'permission denied for table sq8_message_reads',
+      ),
+      isFalse,
+    );
+    expect(messengerTableMissing(null, 'reply_to_id'), isFalse);
     expect(messengerTableMissing('23505', 'duplicate'), isFalse);
     expect(typingLine(const ['Alex']), 'Alex is typing');
   });

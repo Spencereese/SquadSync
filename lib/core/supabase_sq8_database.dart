@@ -19,7 +19,7 @@ Exception mapPostgrest(PostgrestException error) {
   if (error.message.contains('sq8_owner_protected')) {
     return const Sq8OwnerProtected();
   }
-  return RepositoryFailure(error.message);
+  return RepositoryFailure(error.message, code: error.code);
 }
 
 class SupabaseSq8Database implements Sq8Database {
@@ -211,6 +211,26 @@ class SupabaseSq8Database implements Sq8Database {
         .order('id', ascending: false)
         .limit(limit);
     return [for (final row in rows) messageFromRow(row)];
+  }
+
+  @override
+  Future<Map<String, String>> messageBodies(Iterable<String> ids) async {
+    final wanted = [
+      for (final id in ids)
+        if (id.isNotEmpty) id,
+    ];
+    if (wanted.isEmpty) return const {};
+    final rows = await _guardValue(
+      () => _client
+          .from('sq8_messages')
+          .select('id, body')
+          .inFilter('id', wanted),
+    );
+    return {
+      for (final row in rows)
+        if (row['id'] is String && row['body'] is String)
+          row['id'] as String: row['body'] as String,
+    };
   }
 
   @override

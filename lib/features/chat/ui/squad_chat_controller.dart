@@ -8,6 +8,7 @@ import 'package:squadsync/features/chat/domain/chat_message.dart';
 import 'package:squadsync/features/chat/domain/message_history.dart';
 import 'package:squadsync/features/chat/domain/messenger.dart';
 import 'package:squadsync/features/chat/domain/send_machine.dart';
+import 'package:squadsync/features/chat/domain/typing.dart';
 import 'package:squadsync/features/chat/domain/unread.dart';
 import 'package:squadsync/core/sq8_database.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
@@ -22,6 +23,7 @@ class SquadChatState {
     this.unread = const UnreadBook(),
     this.readThroughId,
     this.messenger = MessengerBoard.disabled,
+    this.messengerError,
     this.typing = const {},
     this.replyToId,
     this.replyText,
@@ -36,6 +38,10 @@ class SquadChatState {
   final UnreadBook unread;
   final String? readThroughId;
   final MessengerBoard messenger;
+
+  /// Set when reactions or receipts failed for a reason other than a missing
+  /// table. The message list still shows.
+  final String? messengerError;
   final Set<String> typing;
   final String? replyToId;
   final String? replyText;
@@ -51,6 +57,8 @@ class SquadChatState {
     UnreadBook? unread,
     String? readThroughId,
     MessengerBoard? messenger,
+    String? messengerError,
+    bool clearMessengerError = false,
     Set<String>? typing,
     String? replyToId,
     String? replyText,
@@ -67,6 +75,9 @@ class SquadChatState {
       unread: unread ?? this.unread,
       readThroughId: readThroughId ?? this.readThroughId,
       messenger: messenger ?? this.messenger,
+      messengerError: clearMessengerError
+          ? null
+          : (messengerError ?? this.messengerError),
       typing: typing ?? this.typing,
       replyToId: clearReply ? null : (replyToId ?? this.replyToId),
       replyText: clearReply ? null : (replyText ?? this.replyText),
@@ -101,6 +112,8 @@ class SquadChatController extends Notifier<SquadChatState> {
   StreamSubscription<List<ChatMessage>>? _echo;
   StreamSubscription<RosterSignal>? _roster;
   StreamSubscription<Set<String>>? _typing;
+  String? _typingChat;
+  final _typingKeys = TypingThrottle();
   var _started = false;
   var _chatVisible = false;
   var _loadingOlder = false;
@@ -117,7 +130,9 @@ class SquadChatController extends Notifier<SquadChatState> {
       if (roster != null) unawaited(roster.cancel());
       final typing = _typing;
       _typing = null;
+      _typingChat = null;
       if (typing != null) unawaited(typing.cancel());
+      _typingKeys.stop();
     });
     return const SquadChatState();
   }
@@ -136,7 +151,7 @@ class SquadChatController extends Notifier<SquadChatState> {
       if (!ref.mounted) return;
       final through = await chats.readThrough(squad.chatId);
       if (!ref.mounted) return;
-      final board = await chats.messenger(squad.chatId);
+      final reactions = await _reactions(chats, squad.chatId);
       if (!ref.mounted) return;
       await _listen(chats, squad.chatId);
       final signedIn = ref.read(authRepositoryProvider).currentUser?.id;
@@ -147,7 +162,8 @@ class SquadChatController extends Notifier<SquadChatState> {
         hasOlder: page.hasOlder,
         unread: unread,
         readThroughId: through,
-        messenger: board,
+        messenger: reactions.board,
+        messengerError: reactions.error,
       );
       await _listenTyping(chats, squad.chatId);
       await _listenRoster();
@@ -179,7 +195,16 @@ class SquadChatController extends Notifier<SquadChatState> {
     if (roster != null) unawaited(roster.cancel());
     final typing = _typing;
     _typing = null;
+    _typingChat = null;
     if (typing != null) unawaited(typing.cancel());
+    if (_typingKeys.stop()) {
+      final chatId = state.squad?.chatId;
+      if (chatId != null) {
+        unawaited(
+          ref.read(chatRepositoryProvider).setTyping(chatId, typing: false),
+        );
+      }
+    }
     state = const SquadChatState();
   }
 
@@ -248,9 +273,19 @@ class SquadChatController extends Notifier<SquadChatState> {
   Future<void> setTyping(bool typing) async {
     final squad = state.squad;
     if (squad == null) return;
-    await ref
-        .read(chatRepositoryProvider)
-        .setTyping(squad.chatId, typing: typing);
+    final chatId = squad.chatId;
+    final send = _typingKeys.key(
+      typing: typing,
+      onIdle: () {
+        final current = state.squad?.chatId;
+        if (current == null) return;
+        unawaited(
+          ref.read(chatRepositoryProvider).setTyping(current, typing: false),
+        );
+      },
+    );
+    if (send == null) return;
+    await ref.read(chatRepositoryProvider).setTyping(chatId, typing: send);
   }
 
   Future<void> loadOlder() async {
@@ -306,7 +341,7 @@ class SquadChatController extends Notifier<SquadChatState> {
       if (!_reloadCurrent(epoch, chatId)) return;
       final through = await chats.readThrough(chatId);
       if (!_reloadCurrent(epoch, chatId)) return;
-      final board = await chats.messenger(chatId);
+      final reactions = await _reactions(chats, chatId);
       if (!_reloadCurrent(epoch, chatId)) return;
       await _listen(chats, chatId);
       if (!_reloadCurrent(epoch, chatId)) return;
@@ -322,7 +357,9 @@ class SquadChatController extends Notifier<SquadChatState> {
         hasOlder: page.hasOlder,
         unread: unread,
         readThroughId: through,
-        messenger: board,
+        messenger: reactions.board,
+        messengerError: reactions.error,
+        clearMessengerError: reactions.error == null,
         linkDown: false,
         clearError: true,
       );
@@ -445,12 +482,29 @@ class SquadChatController extends Notifier<SquadChatState> {
     unawaited(_confirmSeat());
   }
 
+  Future<({MessengerBoard board, String? error})> _reactions(
+    ChatRepository chats,
+    String chatId,
+  ) async {
+    try {
+      return (board: await chats.messenger(chatId), error: null);
+    } on RepositoryFailure catch (error) {
+      return (
+        board: MessengerBoard.disabled,
+        error: 'Reactions and read receipts are unavailable. ${error.message}',
+      );
+    }
+  }
+
   Future<void> _listenTyping(ChatRepository chats, String chatId) async {
-    final previous = _typing;
-    _typing = chats.watchTyping(chatId).listen((ids) {
+    if (_typingChat == chatId && _typing != null) return;
+    final next = chats.watchTyping(chatId).listen((ids) {
       if (!ref.mounted) return;
       state = state.copyWith(typing: ids);
     });
+    final previous = _typing;
+    _typing = next;
+    _typingChat = chatId;
     if (previous != null) unawaited(previous.cancel());
   }
 

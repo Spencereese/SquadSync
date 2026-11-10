@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squadsync/core/client_id.dart';
 import 'package:squadsync/core/dependencies.dart';
+import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/chat/data/fake_chat_repository.dart';
 import 'package:squadsync/features/chat/domain/chat_message.dart';
 import 'package:squadsync/features/chat/domain/unread.dart';
@@ -343,5 +344,58 @@ void main() {
 
     expect(state.messages, isEmpty);
     expect(state.error, isNull);
+  });
+
+  test('a messenger error still opens the messages', () async {
+    final chats =
+        FakeChatRepository(
+            messages: [
+              ChatMessage(
+                id: 'm1',
+                chatId: 'squad',
+                senderId: 'friend',
+                text: 'hello',
+                sentAt: DateTime.utc(2026, 11, 2),
+              ),
+            ],
+          )
+          ..messengerFailure = const RepositoryFailure(
+            'permission denied for table sq8_message_reads',
+            code: '42501',
+          );
+    final container = _container(chats: chats);
+    addTearDown(container.dispose);
+
+    await container.read(squadChatControllerProvider.notifier).open();
+    final state = container.read(squadChatControllerProvider);
+
+    expect(state.squad, isNotNull);
+    expect(state.messages.single.text, 'hello');
+    expect(state.messenger.enabled, isFalse);
+    expect(state.error, isNull);
+    expect(state.messengerError, contains('Reactions and read receipts'));
+    expect(state.messengerError, contains('permission denied'));
+  });
+
+  test('typing starts once per burst and the channel is not stacked', () async {
+    final chats = FakeChatRepository();
+    final container = _container(chats: chats);
+    final controller = container.read(squadChatControllerProvider.notifier);
+
+    await controller.open();
+    expect(chats.typingWatches, 1);
+    expect(chats.openTypingWatches, 1);
+
+    await controller.setTyping(true);
+    await controller.setTyping(true);
+    expect(chats.typingSends, [true]);
+
+    await controller.reload();
+    expect(chats.typingWatches, 1);
+    expect(chats.openTypingWatches, 1);
+
+    container.dispose();
+    await Future<void>.delayed(Duration.zero);
+    expect(chats.openTypingWatches, 0);
   });
 }

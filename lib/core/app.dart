@@ -4,6 +4,7 @@ import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/core/misconfigured_screen.dart';
 import 'package:squadsync/features/auth/ui/sign_in_gate.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_screen.dart';
+import 'package:squadsync/features/push/ui/push_inbox.dart';
 
 class SquadSyncApp extends ConsumerWidget {
   const SquadSyncApp({super.key});
@@ -22,7 +23,14 @@ class SquadSyncApp extends ConsumerWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF2457D6)),
         useMaterial3: true,
       ),
-      home: RepaintBoundary(key: const Key('app-frame'), child: home),
+      home: Column(
+        children: [
+          const PushListener(),
+          Expanded(
+            child: RepaintBoundary(key: const Key('app-frame'), child: home),
+          ),
+        ],
+      ),
     );
   }
 }

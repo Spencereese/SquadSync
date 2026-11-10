@@ -8,6 +8,7 @@ import 'package:squadsync/features/availability/domain/who_can_play.dart';
 import 'package:squadsync/features/availability/ui/availability_controller.dart';
 import 'package:squadsync/features/availability/ui/availability_screen.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
+import 'package:squadsync/features/push/ui/push_inbox.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
 
@@ -71,6 +72,7 @@ class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            const NotificationsStatus(),
             if (widget.demo)
               const Text(
                 'Demo. Check-ins stay on this phone.',

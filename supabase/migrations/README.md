@@ -30,6 +30,7 @@ Run these in order, in one project, as the migration role:
 9. `20261109_0009_realtime_roster.sql` — **not applied**. Adds `sq8_squad_members` and `sq8_check_ins` to `supabase_realtime`. `sq8_messages` is already there from file 3. Realtime still uses the select policies, so a non-member does not receive the rows. The app reloads on resume and pull-to-refresh even when this publication is missing.
 10. `20261109_0010_revoke_anon_invite_rpcs.sql` — **not applied**. Needs Spencer's approval. Revokes `EXECUTE` from `anon` and `public` on `public.sq8_join_with_code`, `public.sq8_create_invite`, and the `sq8` implementations. `authenticated` keeps the two public wrappers. Running it again is safe.
 11. `20261109_0011_invite_capacity_by_members.sql` — **not applied**. Apply after file 8. Files 9 and 10 may already be applied or not; this file does not depend on either. Preflight: `sq8.join_with_code(text)` and `public.sq8_invites` exist. It does not read the live project. Running it again is safe. It does not grant `anon` or `public`.
+12. `20261110_0012_device_tokens.sql` — **not applied**. Device tokens for the signed-in person, and `sq8.message_push_targets` for the service role only. Apply after files 1 and 2. Running it again is safe. It does not grant `anon` or `public`, and authenticated cannot list other people's tokens. The edge function in `supabase/functions/sq8-notify-message` is not deployed. Secrets and console steps are in that folder's README.
 
 ## What each file does
 
@@ -48,6 +49,12 @@ Run these in order, in one project, as the migration role:
 Run these in reverse order. This deletes the slice 2 rows. It does not touch the old tables.
 
 ```sql
+-- 12 only.
+drop function if exists public.sq8_message_push_targets(uuid, uuid);
+drop function if exists sq8.message_push_targets(uuid, uuid);
+drop function if exists public.sq8_register_device_token(text, text);
+drop table if exists public.sq8_device_tokens;
+
 -- 11 only. Re-applying file 8's function bodies would put the use cap back.
 -- Do not grant execute to anon or public.
 

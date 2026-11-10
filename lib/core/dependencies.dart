@@ -14,6 +14,10 @@ import 'package:squadsync/features/push/data/push_notifications.dart';
 import 'package:squadsync/features/spot/data/fake_spot_repository.dart';
 import 'package:squadsync/features/spot/data/spot_repository.dart';
 import 'package:squadsync/features/spot/data/supabase_spot_repository.dart';
+import 'package:squadsync/features/steam/data/fake_steam_repository.dart';
+import 'package:squadsync/features/steam/data/steam_repository.dart';
+import 'package:squadsync/features/steam/data/supabase_steam_repository.dart';
+import 'package:squadsync/features/steam/domain/steam_presence.dart';
 import 'package:squadsync/features/push/data/push_token_repository.dart';
 import 'package:squadsync/features/invite/data/fake_invite_repository.dart';
 import 'package:squadsync/features/invite/data/invite_repository.dart';
@@ -104,6 +108,16 @@ final spotRepositoryProvider = Provider<SpotRepository>((ref) {
     return FakeSpotRepository(clock: ref.watch(squadClockProvider));
   }
   return SupabaseSpotRepository(client);
+});
+
+final steamRepositoryProvider = Provider<SteamRepository>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  if (client == null) return FakeSteamRepository();
+  return SupabaseSteamRepository(client);
+});
+
+final steamBoardProvider = FutureProvider<SteamBoard>((ref) {
+  return ref.watch(steamRepositoryProvider).presence();
 });
 
 /// No push SDK in this install. Tests override this when they deliver a tap.

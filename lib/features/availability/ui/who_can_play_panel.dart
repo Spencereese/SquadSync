@@ -10,6 +10,7 @@ import 'package:squadsync/features/availability/ui/availability_screen.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
 import 'package:squadsync/features/push/ui/push_inbox.dart';
 import 'package:squadsync/features/spot/ui/spot_strip.dart';
+import 'package:squadsync/features/steam/ui/steam_presence_lines.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
 
@@ -133,6 +134,7 @@ class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
             const NotificationsStatus(),
             const SizedBox(height: 4),
             _Sections(showRest: _rest, onToggle: _toggleRest),
+            SteamPresenceLines(members: widget.squad.members),
             SpotStrip(
               squadId: widget.squad.id,
               meId: widget.meId,

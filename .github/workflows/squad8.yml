@@ -73,7 +73,7 @@ jobs:
           deno-version: v2.x
 
       - name: Payload and claim tests
-        run: deno test supabase/functions/sq8-notify-message
+        run: deno test supabase/functions/sq8-notify-message supabase/functions/sq8-steam-presence
 
   sql:
     name: SQL RLS tests

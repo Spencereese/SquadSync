@@ -42,7 +42,7 @@ void main() {
     await tester.tap(find.byKey(const Key('gate-retry')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('composer')), findsOneWidget);
+    expect(find.byKey(const Key('squad-home')), findsOneWidget);
     expect(find.byKey(const Key('gate-retry')), findsNothing);
   });
 
@@ -94,7 +94,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('composer')), findsOneWidget);
+    expect(find.byKey(const Key('squad-home')), findsOneWidget);
 
     squads.holdProfile = gate.future;
     auth.restore(const AuthUser(id: 'friend', email: 'friend@example.com'));
@@ -106,7 +106,7 @@ void main() {
 
     gate.complete();
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('composer')), findsOneWidget);
+    expect(find.byKey(const Key('squad-home')), findsOneWidget);
   });
 
   testWidgets('being seated while waiting opens the squad chat', (
@@ -150,7 +150,7 @@ void main() {
     squads.notifyRoster();
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('composer')), findsOneWidget);
+    expect(find.byKey(const Key('squad-home')), findsOneWidget);
     expect(find.text('Start the squad'), findsNothing);
   });
 
@@ -184,7 +184,7 @@ void main() {
     await refresh.onRefresh();
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('composer')), findsOneWidget);
+    expect(find.byKey(const Key('squad-home')), findsOneWidget);
   });
 
   testWidgets('reload leaves after the seat is gone with no delete event', (

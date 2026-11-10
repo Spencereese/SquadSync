@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/auth/ui/sign_out_button.dart';
+import 'package:squadsync/features/availability/domain/who_can_play.dart';
 import 'package:squadsync/features/availability/ui/availability_controller.dart';
 import 'package:squadsync/features/availability/ui/availability_screen.dart';
 import 'package:squadsync/features/availability/ui/who_can_play_panel.dart';
@@ -14,6 +15,25 @@ import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
 import 'package:squadsync/features/squad/ui/member_strip.dart';
+
+enum SquadHomeView { who, chat }
+
+/// Who's on until a thread is opened. A squad-message tap calls [openThread].
+class SquadHomeViewController extends Notifier<SquadHomeView> {
+  @override
+  SquadHomeView build() => SquadHomeView.who;
+
+  void openThread() => state = SquadHomeView.chat;
+
+  void showWho() => state = SquadHomeView.who;
+
+  void show(SquadHomeView view) => state = view;
+}
+
+final squadHomeViewProvider =
+    NotifierProvider<SquadHomeViewController, SquadHomeView>(
+      SquadHomeViewController.new,
+    );
 
 class SquadChatScreen extends ConsumerStatefulWidget {
   const SquadChatScreen({this.demo = false, super.key});
@@ -26,8 +46,6 @@ class SquadChatScreen extends ConsumerStatefulWidget {
 
 class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
     with WidgetsBindingObserver {
-  var _boardOpen = false;
-
   @override
   void initState() {
     super.initState();
@@ -119,86 +137,84 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
                   ? const CircularProgressIndicator()
                   : Text(error),
             )
-          : _boardOpen
-          ? Column(
-              children: [
-                Expanded(
-                  child: RefreshIndicator(
-                    key: const Key('refresh-chat'),
-                    onRefresh: _refreshHome,
-                    child: ListView(
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      children: [
-                        if (widget.demo) const _DemoBanner(),
-                        if (state.linkDown) const _LinkDownBanner(),
-                        if (error != null)
-                          Padding(
-                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                            child: Text(error, key: const Key('earlier-error')),
-                          ),
-                        _who(squad, state.meId),
-                        MemberStrip(members: squad.members),
-                      ],
-                    ),
-                  ),
-                ),
-                const _Composer(),
-              ],
-            )
-          : Column(
-              children: [
-                Expanded(
-                  child: RefreshIndicator(
-                    key: const Key('refresh-chat'),
-                    onRefresh: _refreshHome,
-                    child: CustomScrollView(
-                      key: const Key('home-scroll'),
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      slivers: [
-                        SliverToBoxAdapter(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              if (widget.demo) const _DemoBanner(),
-                              if (state.linkDown) const _LinkDownBanner(),
-                              if (error != null)
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(
-                                    16,
-                                    8,
-                                    16,
-                                    0,
-                                  ),
-                                  child: Text(
-                                    error,
-                                    key: const Key('earlier-error'),
-                                  ),
-                                ),
-                              _who(squad, state.meId),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                MemberStrip(members: squad.members),
-                if (state.hasOlder)
-                  TextButton(
-                    key: const Key('earlier'),
-                    onPressed: () {
-                      unawaited(
-                        ref
-                            .read(squadChatControllerProvider.notifier)
-                            .loadOlder(),
-                      );
-                    },
-                    child: const Text('Earlier messages'),
-                  ),
-                const SizedBox(height: 88, child: _MessageList()),
-                const _Composer(),
-              ],
+          : KeyedSubtree(
+              key: const Key('squad-home'),
+              child: _views(squad, state, error),
             ),
+    );
+  }
+
+  Widget _views(Squad squad, SquadChatState state, String? error) {
+    final view = ref.watch(squadHomeViewProvider);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+          child: SegmentedButton<SquadHomeView>(
+            segments: const [
+              ButtonSegment(
+                value: SquadHomeView.who,
+                label: Text("Who's on", key: Key('view-who')),
+              ),
+              ButtonSegment(
+                value: SquadHomeView.chat,
+                label: Text('Chat', key: Key('view-chat')),
+              ),
+            ],
+            selected: {view},
+            showSelectedIcon: false,
+            onSelectionChanged: (next) {
+              ref.read(squadHomeViewProvider.notifier).show(next.first);
+            },
+          ),
+        ),
+        if (widget.demo) const _DemoBanner(),
+        if (state.linkDown) const _LinkDownBanner(),
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(error, key: const Key('earlier-error')),
+          ),
+        if (view == SquadHomeView.who)
+          Expanded(
+            child: RefreshIndicator(
+              key: const Key('refresh-chat'),
+              onRefresh: _refreshHome,
+              child: ListView(
+                key: const Key('home-scroll'),
+                physics: const AlwaysScrollableScrollPhysics(),
+                children: [
+                  _who(squad, state.meId),
+                  MemberStrip(members: squad.members),
+                ],
+              ),
+            ),
+          )
+        else ...[
+          _ChatSummary(
+            onTap: () => ref.read(squadHomeViewProvider.notifier).showWho(),
+          ),
+          if (state.hasOlder)
+            TextButton(
+              key: const Key('earlier'),
+              onPressed: () {
+                unawaited(
+                  ref.read(squadChatControllerProvider.notifier).loadOlder(),
+                );
+              },
+              child: const Text('Earlier messages'),
+            ),
+          Expanded(
+            child: RefreshIndicator(
+              key: const Key('refresh-chat'),
+              onRefresh: _refreshHome,
+              child: const _MessageList(),
+            ),
+          ),
+          const _Composer(),
+        ],
+      ],
     );
   }
 
@@ -209,11 +225,6 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
       meId: meId,
       demo: widget.demo,
       showDemoLine: false,
-      showRest: _boardOpen,
-      onShowRest: (open) {
-        if (!mounted) return;
-        setState(() => _boardOpen = open);
-      },
     );
   }
 
@@ -336,6 +347,30 @@ class _ProfileDialogState extends ConsumerState<_ProfileDialog> {
   }
 }
 
+class _ChatSummary extends ConsumerWidget {
+  const _ChatSummary({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(availabilityControllerProvider);
+    final board = state.board;
+    final squad = state.squad;
+    final summary = board == null || squad == null
+        ? null
+        : WhoCanPlay.group(board: board, members: squad.members).summary;
+    return InkWell(
+      key: const Key('chat-who-summary'),
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+        child: Text(summary ?? 'Who can play'),
+      ),
+    );
+  }
+}
+
 class _DemoBanner extends StatelessWidget {
   const _DemoBanner();
 
@@ -380,12 +415,21 @@ class _MessageList extends ConsumerWidget {
     final state = ref.watch(squadChatControllerProvider);
     final messages = state.messages;
     if (messages.isEmpty) {
-      return ListView(
-        key: const Key('message-list'),
-        physics: const AlwaysScrollableScrollPhysics(),
-        children: const [
-          SizedBox(height: 240, child: Center(child: Text('No messages yet'))),
-        ],
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          return ListView(
+            key: const Key('message-list'),
+            physics: const AlwaysScrollableScrollPhysics(),
+            children: [
+              SizedBox(
+                height: constraints.maxHeight,
+                child: const Center(
+                  child: Text('No messages yet', key: Key('no-messages')),
+                ),
+              ),
+            ],
+          );
+        },
       );
     }
     return ListView.builder(

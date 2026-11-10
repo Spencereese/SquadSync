@@ -22,6 +22,7 @@ import 'package:squadsync/features/presence/data/app_presence_source.dart';
 import 'package:squadsync/features/presence/data/fake_app_presence.dart';
 import 'package:squadsync/features/presence/data/supabase_app_presence.dart';
 import 'package:squadsync/features/session/data/calendar_export.dart';
+import 'package:squadsync/features/session/data/device_calendar.dart';
 import 'package:squadsync/features/session/data/fake_session_repository.dart';
 import 'package:squadsync/features/session/data/session_repository.dart';
 import 'package:squadsync/features/session/data/supabase_session_repository.dart';
@@ -154,6 +155,10 @@ final sessionRepositoryProvider = Provider<SessionRepository>((ref) {
 
 final calendarExportProvider = Provider<CalendarExport>(
   (ref) => PlatformCalendarExport(),
+);
+
+final deviceCalendarProvider = Provider<DeviceCalendar>(
+  (ref) => Add2CalendarDevice(),
 );
 
 /// No push SDK in this install. Tests override this when they deliver a tap.

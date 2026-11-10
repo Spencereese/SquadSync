@@ -13,6 +13,7 @@ import 'package:squadsync/features/push/ui/push_inbox.dart';
 import 'package:squadsync/features/spot/ui/spot_controller.dart';
 import 'package:squadsync/features/spot/ui/spot_strip.dart';
 import 'package:squadsync/features/steam/ui/steam_presence_lines.dart';
+import 'package:squadsync/features/session/domain/session_calendar.dart';
 import 'package:squadsync/features/session/ui/session_list.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
@@ -140,6 +141,7 @@ class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
             SteamPresenceLines(members: widget.squad.members),
             SessionList(
               squadId: widget.squad.id,
+              squadName: squadCalendarName(widget.squad),
               meId: widget.meId,
               ownerId: widget.squad.ownerId,
               onCallSpot: (game) {

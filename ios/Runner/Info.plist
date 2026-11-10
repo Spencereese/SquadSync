@@ -28,6 +28,14 @@
 	<true/>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<key>NSCalendarsUsageDescription</key>
+	<string>SquadSync adds a scheduled session to your calendar.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>SquadSync adds a scheduled session to your calendar.</string>
+	<key>NSCalendarsWriteOnlyAccessUsageDescription</key>
+	<string>SquadSync adds a scheduled session to your calendar.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>The calendar screen can suggest people. SquadSync does not read your contacts.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

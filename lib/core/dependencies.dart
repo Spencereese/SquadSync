@@ -10,6 +10,8 @@ import 'package:squadsync/features/availability/data/fake_availability_repositor
 import 'package:squadsync/features/availability/data/supabase_availability_repository.dart';
 import 'package:squadsync/features/availability/domain/check_in.dart';
 import 'package:squadsync/features/invite/data/code_share.dart';
+import 'package:squadsync/features/push/data/push_notifications.dart';
+import 'package:squadsync/features/push/data/push_token_repository.dart';
 import 'package:squadsync/features/invite/data/fake_invite_repository.dart';
 import 'package:squadsync/features/invite/data/invite_repository.dart';
 import 'package:squadsync/features/invite/data/supabase_invite_repository.dart';
@@ -92,6 +94,17 @@ final inviteRepositoryProvider = Provider<InviteRepository>((ref) {
 });
 
 final codeShareProvider = Provider<CodeShare>((ref) => PlatformCodeShare());
+
+/// No push SDK in this install. Tests override this when they deliver a tap.
+final pushNotificationsProvider = Provider<PushNotifications>(
+  (ref) => const UnconfiguredPushNotifications(),
+);
+
+final pushTokenRepositoryProvider = Provider<PushTokenRepository>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  if (client == null) return const NoopPushTokenRepository();
+  return SupabasePushTokenRepository(client);
+});
 
 final clientIdFactoryProvider = Provider<ClientIdFactory>(
   (ref) => RandomClientIdFactory(),

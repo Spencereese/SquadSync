@@ -59,6 +59,22 @@ jobs:
       - name: Build debug APK
         run: flutter build apk --debug
 
+  fcm-payload:
+    name: FCM payload tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+
+      - name: Payload and claim tests
+        run: deno test supabase/functions/sq8-notify-message
+
   sql:
     name: SQL RLS tests
     runs-on: ubuntu-latest

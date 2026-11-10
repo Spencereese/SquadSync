@@ -3,13 +3,18 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squadsync/core/app.dart';
 import 'package:squadsync/core/config.dart';
 import 'package:squadsync/core/dependencies.dart';
+import 'package:squadsync/features/push/data/firebase_push.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
   final config = SquadSyncConfig.fromEnvironment();
-  final overrides = [squadSyncConfigProvider.overrideWithValue(config)];
+  final pushes = await openPushNotifications();
+  final overrides = [
+    squadSyncConfigProvider.overrideWithValue(config),
+    pushNotificationsProvider.overrideWithValue(pushes),
+  ];
   if (config.isPresent) {
-    WidgetsFlutterBinding.ensureInitialized();
     await Supabase.initialize(
       url: config.url,
       publishableKey: config.anonKey,

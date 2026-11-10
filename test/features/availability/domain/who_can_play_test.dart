@@ -206,6 +206,35 @@ void main() {
     );
   });
 
+  test('a promoted later check-in with no game says available since', () {
+    const free = Member(id: 'free', displayName: 'Free', defaultGame: ' ');
+    final start = DateTime.utc(2026, 11, 8, 21);
+    final who = WhoCanPlay.group(
+      board: AvailabilityBoard.compose(
+        members: const [free],
+        squadId: 'squad',
+        clock: start,
+        rows: [
+          StoredCheckIn(
+            userId: 'free',
+            squadId: 'squad',
+            kind: CheckInKind.availableLater,
+            checkedAt: start.subtract(const Duration(hours: 2)),
+            until: start,
+          ),
+        ],
+      ),
+      members: const [free],
+    );
+
+    expect(who.available, hasLength(1));
+    expect(who.playingNow, isEmpty);
+    expect(
+      whoSpokenLine(who.available.single, localOffset: Duration.zero),
+      'Free, available since 9:00 PM',
+    );
+  });
+
   test('nobody checked in is the empty answer', () {
     final board = AvailabilityBoard.compose(
       members: const [spencer],

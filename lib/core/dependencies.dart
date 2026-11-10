@@ -18,6 +18,9 @@ import 'package:squadsync/features/steam/data/fake_steam_repository.dart';
 import 'package:squadsync/features/steam/data/steam_repository.dart';
 import 'package:squadsync/features/steam/data/supabase_steam_repository.dart';
 import 'package:squadsync/features/steam/domain/steam_presence.dart';
+import 'package:squadsync/features/presence/data/app_presence_source.dart';
+import 'package:squadsync/features/presence/data/fake_app_presence.dart';
+import 'package:squadsync/features/presence/data/supabase_app_presence.dart';
 import 'package:squadsync/features/session/data/calendar_export.dart';
 import 'package:squadsync/features/session/data/fake_session_repository.dart';
 import 'package:squadsync/features/session/data/session_repository.dart';
@@ -118,6 +121,12 @@ final steamRepositoryProvider = Provider<SteamRepository>((ref) {
   final client = ref.watch(supabaseClientProvider);
   if (client == null) return FakeSteamRepository();
   return SupabaseSteamRepository(client);
+});
+
+final appPresenceSourceProvider = Provider<AppPresenceSource>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  if (client == null) return FakeAppPresence();
+  return SupabaseAppPresence(client);
 });
 
 final steamBoardProvider = FutureProvider<SteamBoard>((ref) {

@@ -29,7 +29,7 @@ class SupabaseChatRepository implements ChatRepository {
   @override
   Future<HistoryPage> newest(String chatId, {int limit = openPageSize}) async {
     final rows = await _db.newestMessages(chatId, limit: limit + 1);
-    return _page(rows, limit, await _quoteBodies(rows));
+    return _page(rows, limit, null);
   }
 
   @override
@@ -44,7 +44,7 @@ class SupabaseChatRepository implements ChatRepository {
       beforeId: cursor.id,
       limit: limit + 1,
     );
-    return _page(rows, limit, await _quoteBodies(rows));
+    return _page(rows, limit, null);
   }
 
   @override
@@ -80,10 +80,7 @@ class SupabaseChatRepository implements ChatRepository {
 
   @override
   Stream<List<ChatMessage>> watch(String chatId) {
-    return _db.watchInserts(chatId).asyncMap((row) async {
-      final quotes = await _quoteBodies([row]);
-      return [_toMessage(row, quotes)];
-    });
+    return _db.watchInserts(chatId).map((row) => [_toMessage(row, null)]);
   }
 
   @override
@@ -387,14 +384,15 @@ class SupabaseChatRepository implements ChatRepository {
     return channel;
   }
 
-  Future<Map<String, String>> _quoteBodies(List<Sq8Message> rows) async {
-    final ids = [
-      for (final row in rows)
-        if (row.replyToId != null) row.replyToId!,
+  @override
+  Future<Map<String, String>> quoteBodies(Iterable<String> ids) async {
+    final wanted = [
+      for (final id in ids)
+        if (id.isNotEmpty) id,
     ];
-    if (ids.isEmpty) return const {};
+    if (wanted.isEmpty) return const {};
     try {
-      return await _db.messageBodies(ids);
+      return await _db.messageBodies(wanted);
     } on RepositoryFailure {
       // A PostgREST refusal must not drop the thread. Each reply falls back.
       return const {};
@@ -414,7 +412,7 @@ class SupabaseChatRepository implements ChatRepository {
   HistoryPage _page(
     List<Sq8Message> newestFirst,
     int limit,
-    Map<String, String> quotes,
+    Map<String, String>? quotes,
   ) {
     final hasOlder = newestFirst.length > limit;
     final window = newestFirst.take(limit).toList().reversed;
@@ -424,7 +422,7 @@ class SupabaseChatRepository implements ChatRepository {
     );
   }
 
-  ChatMessage _toMessage(Sq8Message row, Map<String, String> quotes) {
+  ChatMessage _toMessage(Sq8Message row, Map<String, String>? quotes) {
     final mine = row.senderId == _db.userId;
     final replyId = row.replyToId;
     return ChatMessage(
@@ -435,9 +433,11 @@ class SupabaseChatRepository implements ChatRepository {
       sentAt: row.sentAt,
       delivery: mine ? Delivery.sent : null,
       replyToId: replyId,
-      replyText: replyId == null
-          ? null
-          : (quotes[replyId] ?? originalMessageUnavailable),
+      replyText: resolvedQuoteText(
+        replyToId: replyId,
+        current: null,
+        quotes: quotes,
+      ),
     );
   }
 }

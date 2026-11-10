@@ -113,6 +113,20 @@ class TypingThrottle {
 
 const originalMessageUnavailable = 'Original message unavailable';
 
+/// A reply keeps [current] when it already has a quote. [quotes] null means
+/// the lookup has not finished, so the thread can render without it. A
+/// finished lookup that missed the id says the original is unavailable.
+String? resolvedQuoteText({
+  required String? replyToId,
+  required String? current,
+  required Map<String, String>? quotes,
+}) {
+  if (replyToId == null) return null;
+  if (current != null && current.isNotEmpty) return current;
+  if (quotes == null) return null;
+  return quotes[replyToId] ?? originalMessageUnavailable;
+}
+
 class _Later {
   _Later(this._injected);
 

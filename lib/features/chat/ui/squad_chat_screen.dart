@@ -465,7 +465,7 @@ class _DemoBanner extends StatelessWidget {
       child: Padding(
         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         child: Text(
-          'Demo. Not connected. Messages stay on this phone.',
+          'Demo mode: messages clear when you close the app.',
           key: Key('demo-banner'),
         ),
       ),

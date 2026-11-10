@@ -260,4 +260,45 @@ void main() {
       }
     },
   );
+
+  test(
+    'an aborted request or a TLS handshake failure still loads the thread',
+    () async {
+      final plain = messageFromRow({
+        'id': 'm1',
+        'squad_id': 'squad',
+        'sender_id': 'alex',
+        'body': 'hello',
+        'sent_at': '2026-11-02T12:00:00.000Z',
+      });
+      final reply = messageFromRow({
+        'id': 'm2',
+        'squad_id': 'squad',
+        'sender_id': 'user-1',
+        'body': 'on my way',
+        'sent_at': '2026-11-02T12:01:00.000Z',
+        'reply_to_id': 'm1',
+      });
+      final failures = <Object>[
+        RequestAbortedException(Uri.parse('https://example.supabase.co')),
+        const HandshakeException('handshake failed'),
+      ];
+
+      for (final failure in failures) {
+        expect(failure.runtimeType.toString(), isNot('ClientException'));
+        final db = MockSq8Database()
+          ..messages = [reply, plain]
+          ..bodiesError = failure;
+        final repo = SupabaseChatRepository(db);
+
+        final page = await repo.newest('squad');
+
+        expect(page.messages.map((message) => message.text), [
+          'hello',
+          'on my way',
+        ]);
+        expect(page.messages.last.replyText, 'Original message unavailable');
+      }
+    },
+  );
 }

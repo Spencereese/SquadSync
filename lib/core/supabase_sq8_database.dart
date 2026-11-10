@@ -220,11 +220,14 @@ class SupabaseSq8Database implements Sq8Database {
         if (id.isNotEmpty) id,
     ];
     if (wanted.isEmpty) return const {};
+    // The history query keeps PostgREST's retries. This lookup does not:
+    // those retries hold a dead socket for about 7 seconds (1s + 2s + 4s).
     final rows = await _guardValue(
       () => _client
           .from('sq8_messages')
           .select('id, body')
-          .inFilter('id', wanted),
+          .inFilter('id', wanted)
+          .retry(enabled: false),
     );
     return {
       for (final row in rows)

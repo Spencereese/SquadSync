@@ -64,7 +64,7 @@ void main() {
     expect(row.kind, CheckInKind.availableNow);
   });
 
-  test('a due later check-in does not become available now', () {
+  test('a due later check-in becomes available for 60 minutes', () {
     final until = start.add(const Duration(hours: 4));
     final row = _row(
       kind: CheckInKind.availableLater,
@@ -91,9 +91,18 @@ void main() {
       clock: until,
     );
     expect(due.laterCount, 0);
-    expect(due.availableNowCount, 0);
-    expect(due.person('spencer')!.effect, AvailabilityEffect.expired);
+    expect(due.availableNowCount, 1);
+    expect(due.person('spencer')!.effect, AvailabilityEffect.availableNow);
     expect(row.kind, CheckInKind.availableLater);
+
+    final ended = AvailabilityBoard.compose(
+      members: _squad().members,
+      rows: [row],
+      squadId: 'squad',
+      clock: until.add(availableNowWindow),
+    );
+    expect(ended.availableNowCount, 0);
+    expect(ended.person('spencer')!.effect, AvailabilityEffect.expired);
   });
 
   test('unavailable is not available, and not the same as missing', () {

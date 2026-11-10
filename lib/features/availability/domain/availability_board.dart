@@ -80,14 +80,19 @@ String availabilitySentence(
       final at = formatLocalDateTime(checkIn!.checkedAt, localOffset);
       return 'Unavailable. Self check-in at $at.';
     case AvailabilityEffect.availableNow:
-      final until = formatLocalDateTime(checkIn!.until!, localOffset);
-      final at = formatLocalDateTime(checkIn.checkedAt, localOffset);
+      final at = formatLocalDateTime(checkIn!.checkedAt, localOffset);
+      if (checkIn.kind == CheckInKind.availableLater) {
+        final since = formatLocalDateTime(checkIn.until!, localOffset);
+        return 'Available since $since. Self check-in at $at. '
+            'The 60 minute window started then.';
+      }
+      final until = formatLocalDateTime(checkIn.until!, localOffset);
       return 'Available now until $until. Self check-in at $at.';
     case AvailabilityEffect.availableLater:
       final until = formatLocalDateTime(checkIn!.until!, localOffset);
       final at = formatLocalDateTime(checkIn.checkedAt, localOffset);
       return 'Available later at $until. Self check-in at $at. '
-          'This does not turn into available now.';
+          'Becomes available then for 60 minutes.';
     case AvailabilityEffect.expired:
       final until = checkIn?.until;
       final when = until == null

@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:squadsync/core/app.dart';
 import 'package:squadsync/core/client_id.dart';
 import 'package:squadsync/core/dependencies.dart';
+import 'package:squadsync/features/availability/data/fake_availability_repository.dart';
+import 'package:squadsync/features/availability/domain/check_in.dart';
 import 'package:squadsync/features/chat/data/fake_chat_repository.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_screen.dart';
@@ -20,6 +22,7 @@ Future<void> _pump(
   SquadRepository? squads,
   FakeChatRepository? chats,
   ClientIdFactory? ids,
+  bool chat = true,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -32,6 +35,10 @@ Future<void> _pump(
     ),
   );
   await tester.pumpAndSettle();
+  if (chat) {
+    await tester.tap(find.text('Chat'));
+    await tester.pumpAndSettle();
+  }
 }
 
 void main() {
@@ -46,8 +53,8 @@ void main() {
         ids: SequenceClientIdFactory(['msg-1']),
       );
 
-      expect(find.text('Spencer · Call of Duty'), findsOneWidget);
-      expect(find.text('1 of 8'), findsOneWidget);
+      expect(find.text('0 of 8 available'), findsOneWidget);
+      expect(find.byKey(const Key('squad-home')), findsOneWidget);
 
       await tester.enterText(find.byKey(const Key('composer')), 'hello squad');
       await tester.tap(find.byKey(const Key('send-button')));
@@ -155,7 +162,7 @@ void main() {
       isA<AddMemberRejected>(),
     );
 
-    await _pump(tester, squads: FakeSquadRepository(seed: squad));
+    await _pump(tester, squads: FakeSquadRepository(seed: squad), chat: false);
 
     expect(find.text('8 of 8'), findsOneWidget);
     expect(find.text('Spencer · Call of Duty'), findsOneWidget);
@@ -260,7 +267,11 @@ void main() {
     squads.notifyRoster();
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text("Who's on"));
+    await tester.pumpAndSettle();
     expect(find.byKey(const Key('member-friend')), findsOneWidget);
+    await tester.tap(find.text('Chat'));
+    await tester.pumpAndSettle();
 
     chats.deliver(
       ChatMessage(
@@ -329,7 +340,7 @@ void main() {
     tester,
   ) async {
     final squads = FakeSquadRepository();
-    await _pump(tester, squads: squads);
+    await _pump(tester, squads: squads, chat: false);
     expect(find.text('1 of 8'), findsOneWidget);
 
     await squads.addMember(
@@ -350,6 +361,44 @@ void main() {
     expect(find.text('2 of 8'), findsOneWidget);
     expect(find.byKey(const Key('member-other')), findsNothing);
     expect(find.byKey(const Key('member-friend')), findsOneWidget);
-    expect(find.byKey(const Key('composer')), findsOneWidget);
+    expect(find.byKey(const Key('squad-home')), findsOneWidget);
+  });
+
+  testWidgets('pull to refresh loads a check-in realtime missed', (
+    tester,
+  ) async {
+    final clock = ManualSquadClock(DateTime.utc(2026, 11, 8, 20));
+    final availability = FakeAvailabilityRepository(clock: clock);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          squadClockProvider.overrideWithValue(clock),
+          localOffsetProvider.overrideWithValue(Duration.zero),
+          availabilityTickProvider.overrideWithValue(Duration.zero),
+          availabilityRepositoryProvider.overrideWithValue(availability),
+        ],
+        child: const SquadSyncApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('0 of 8 available'), findsOneWidget);
+
+    availability.store(
+      StoredCheckIn(
+        userId: 'spencer',
+        squadId: 'squad',
+        kind: CheckInKind.availableNow,
+        checkedAt: clock.now(),
+        until: clock.now().add(const Duration(minutes: 60)),
+      ),
+    );
+    final refresh = tester.widget<RefreshIndicator>(
+      find.byKey(const Key('refresh-chat')),
+    );
+    await refresh.onRefresh();
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 of 8 available'), findsOneWidget);
+    expect(find.textContaining('checked in, not detected'), findsOneWidget);
   });
 }

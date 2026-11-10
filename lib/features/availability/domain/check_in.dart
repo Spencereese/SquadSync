@@ -3,8 +3,8 @@
 const Duration availableNowWindow = Duration(minutes: 60);
 
 /// "Available later" must be strictly after this lead, and no further out
-/// than [laterMaximumLead]. When that instant arrives the row expires.
-/// It is not rewritten to "available now".
+/// than [laterMaximumLead]. When that instant arrives the phone treats the
+/// person as available for [availableNowWindow]. The stored kind stays later.
 const Duration laterMinimumLead = Duration(minutes: 1);
 const Duration laterMaximumLead = Duration(days: 7);
 
@@ -89,8 +89,10 @@ class ManualSquadClock implements SquadClock {
 }
 
 /// Classifies [row] at [clock]. A missing row is [AvailabilityEffect.notCheckedIn].
-/// An explicit unavailable stays unavailable. A passed "now" or "later"
-/// instant is [AvailabilityEffect.expired], never available.
+/// An explicit unavailable stays unavailable. "Available now" expires at its
+/// until instant. "Available later" stays later until that instant, then
+/// counts as available for [availableNowWindow], then expires. The row's kind
+/// is not rewritten.
 AvailabilityEffect effectAt(StoredCheckIn? row, DateTime clock) {
   if (row == null) return AvailabilityEffect.notCheckedIn;
   final at = clock.toUtc();
@@ -98,14 +100,19 @@ AvailabilityEffect effectAt(StoredCheckIn? row, DateTime clock) {
     case CheckInKind.unavailable:
       return AvailabilityEffect.unavailable;
     case CheckInKind.availableNow:
-    case CheckInKind.availableLater:
       final until = row.until;
       if (until == null || !at.isBefore(until.toUtc())) {
         return AvailabilityEffect.expired;
       }
-      return row.kind == CheckInKind.availableNow
-          ? AvailabilityEffect.availableNow
-          : AvailabilityEffect.availableLater;
+      return AvailabilityEffect.availableNow;
+    case CheckInKind.availableLater:
+      final start = row.until?.toUtc();
+      if (start == null) return AvailabilityEffect.expired;
+      if (at.isBefore(start)) return AvailabilityEffect.availableLater;
+      if (at.isBefore(start.add(availableNowWindow))) {
+        return AvailabilityEffect.availableNow;
+      }
+      return AvailabilityEffect.expired;
   }
 }
 
@@ -167,6 +174,16 @@ DateTime localSelectionToUtc({
     minute,
   );
   return wall.subtract(localOffset);
+}
+
+/// Clock only, for example `10:30 PM`. The date stays off this label.
+String formatLocalClock(DateTime utc, Duration offset) {
+  final local = utc.toUtc().add(offset);
+  final hour24 = local.hour;
+  final hour = hour24 % 12 == 0 ? 12 : hour24 % 12;
+  final suffix = hour24 >= 12 ? 'PM' : 'AM';
+  final minute = local.minute.toString().padLeft(2, '0');
+  return '$hour:$minute $suffix';
 }
 
 String formatLocalDateTime(DateTime utc, Duration offset) {

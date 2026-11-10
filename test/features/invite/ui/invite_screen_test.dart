@@ -218,7 +218,7 @@ void main() {
     await tester.tap(find.byKey(const Key('join-submit')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('composer')), findsOneWidget);
+    expect(find.byKey(const Key('squad-home')), findsOneWidget);
     expect(find.byKey(const Key('join-dialog')), findsNothing);
   });
 
@@ -260,7 +260,7 @@ void main() {
     await tester.tap(find.byKey(const Key('start-squad')));
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const Key('composer')), findsOneWidget);
+    expect(find.byKey(const Key('squad-home')), findsOneWidget);
   });
 }
 

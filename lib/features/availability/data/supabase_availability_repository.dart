@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/availability/data/availability_repository.dart';
 import 'package:squadsync/features/availability/data/check_in_row.dart';
@@ -76,5 +78,54 @@ class SupabaseAvailabilityRepository implements AvailabilityRepository {
     } on PostgrestException catch (error) {
       throw mapCheckInWriteError(error);
     }
+  }
+
+  @override
+  Stream<CheckInChange> watch({required String squadId}) {
+    final channel = _client.channel('sq8-checkins-$squadId');
+    final controller = StreamController<CheckInChange>.broadcast();
+    var disposed = false;
+    void emit(CheckInChange change) {
+      if (disposed || controller.isClosed) return;
+      controller.add(change);
+    }
+
+    // Inserts and updates include squad_id, so they stay filtered.
+    for (final event in [
+      PostgresChangeEvent.insert,
+      PostgresChangeEvent.update,
+    ]) {
+      channel.onPostgresChanges(
+        event: event,
+        schema: 'public',
+        table: 'sq8_check_ins',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'squad_id',
+          value: squadId,
+        ),
+        callback: (_) => emit(const CheckInChange()),
+      );
+    }
+    // Deletes are not filtered. A DELETE payload only has the primary key
+    // (user_id), so a squad_id filter never matches and the event is dropped.
+    // The listener reloads when that user is already on this board.
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.delete,
+      schema: 'public',
+      table: 'sq8_check_ins',
+      callback: (payload) {
+        final id = payload.oldRecord['user_id']?.toString();
+        emit(CheckInChange(deletedUserId: id));
+      },
+    );
+    // subscribe() can be called once. A missing publication just stops live
+    // rows. Resume and pull-to-refresh still load the board.
+    channel.subscribe();
+    controller.onCancel = () {
+      disposed = true;
+      unawaited(_client.removeChannel(channel));
+    };
+    return controller.stream;
   }
 }

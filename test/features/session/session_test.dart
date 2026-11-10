@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,10 +7,12 @@ import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/session/data/session_repository.dart';
 import 'package:squadsync/features/availability/domain/check_in.dart';
-import 'package:squadsync/features/session/data/calendar_export.dart';
+import 'package:squadsync/features/session/data/device_calendar.dart';
 import 'package:squadsync/features/session/data/fake_session_repository.dart';
+import 'package:squadsync/features/session/domain/session_calendar.dart';
 import 'package:squadsync/features/session/domain/session_ics.dart';
 import 'package:squadsync/features/session/domain/squad_session.dart';
+import 'package:squadsync/features/squad/domain/squad.dart';
 import 'package:squadsync/features/session/ui/session_list.dart';
 
 SquadSession _session({
@@ -31,16 +35,17 @@ SquadSession _session({
 Future<void> _pump(
   WidgetTester tester, {
   required FakeSessionRepository sessions,
-  required MemoryCalendarExport calendar,
+  required MemoryDeviceCalendar calendar,
   required DateTime clock,
   Duration offset = Duration.zero,
+  String squadName = 'SquadSync',
   void Function(String game)? onCall,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
         sessionRepositoryProvider.overrideWithValue(sessions),
-        calendarExportProvider.overrideWithValue(calendar),
+        deviceCalendarProvider.overrideWithValue(calendar),
         squadClockProvider.overrideWithValue(ManualSquadClock(clock)),
         localOffsetProvider.overrideWithValue(offset),
         availabilityTickProvider.overrideWithValue(Duration.zero),
@@ -51,6 +56,7 @@ Future<void> _pump(
             squadId: 'squad',
             meId: 'spencer',
             ownerId: 'spencer',
+            squadName: squadName,
             onCallSpot: onCall ?? (_) {},
           ),
         ),
@@ -103,7 +109,7 @@ void main() {
     await _pump(
       tester,
       sessions: sessions,
-      calendar: MemoryCalendarExport(),
+      calendar: MemoryDeviceCalendar(),
       clock: DateTime.utc(2026, 11, 10, 20),
     );
     expect(find.text('Tonight 9:00 PM · 0 in'), findsOneWidget);
@@ -114,39 +120,71 @@ void main() {
     expect(find.byKey(const Key('session-call-session-1')), findsNothing);
   });
 
-  testWidgets(
-    'add to calendar shares the ics and the spot opens when it starts',
-    (tester) async {
-      final calendar = MemoryCalendarExport();
-      String? called;
-      final sessions = FakeSessionRepository(
-        enabled: true,
-        sessions: [
-          _session(
-            game: 'Halo, Infinite',
-            note: 'bring mics',
-            startsAt: DateTime.utc(2026, 11, 10, 21),
-          ),
-        ],
-      );
-      await _pump(
-        tester,
-        sessions: sessions,
-        calendar: calendar,
-        clock: DateTime.utc(2026, 11, 10, 21),
-        onCall: (game) => called = game,
-      );
-      await tester.tap(find.byKey(const Key('session-calendar-session-1')));
-      await tester.pumpAndSettle();
-      expect(calendar.filename, 'squad-session.ics');
-      expect(calendar.body, contains('DTSTART:20261110T210000Z'));
-      expect(calendar.body, contains('SUMMARY:Halo\\, Infinite'));
+  test('a calendar request uses the game, the window, and the squad name', () {
+    final session = _session(
+      game: 'Halo',
+      note: 'bring mics',
+      startsAt: DateTime.utc(2026, 11, 10, 21),
+    );
+    final request = sessionCalendarRequest(
+      session: session,
+      squadName: "Spencer's squad",
+    );
+    expect(request.title, 'Halo');
+    expect(request.start, DateTime.utc(2026, 11, 10, 21));
+    expect(request.end, DateTime.utc(2026, 11, 10, 24));
+    expect(request.notes, "Spencer's squad\nbring mics");
+    expect(squadCalendarName(Squad.seed()), "Spencer's squad");
+  });
 
-      await tester.tap(find.byKey(const Key('session-call-session-1')));
-      await tester.pumpAndSettle();
-      expect(called, 'Halo, Infinite');
-    },
-  );
+  testWidgets('add to calendar writes the session and says when it cannot', (
+    tester,
+  ) async {
+    final calendar = MemoryDeviceCalendar();
+    String? called;
+    final sessions = FakeSessionRepository(
+      enabled: true,
+      sessions: [
+        _session(
+          game: 'Halo, Infinite',
+          note: 'bring mics',
+          startsAt: DateTime.utc(2026, 11, 10, 21),
+        ),
+      ],
+    );
+    await _pump(
+      tester,
+      sessions: sessions,
+      calendar: calendar,
+      clock: DateTime.utc(2026, 11, 10, 21),
+      onCall: (game) => called = game,
+      squadName: "Spencer's squad",
+    );
+    await tester.tap(find.byKey(const Key('session-calendar-session-1')));
+    await tester.pumpAndSettle();
+    expect(calendar.last?.title, 'Halo, Infinite');
+    expect(calendar.last?.start, DateTime.utc(2026, 11, 10, 21));
+    expect(calendar.last?.end, DateTime.utc(2026, 11, 11));
+    expect(calendar.last?.notes, "Spencer's squad\nbring mics");
+    expect(find.text('Added to your calendar.'), findsOneWidget);
+
+    calendar.next = CalendarAddStatus.denied;
+    await tester.tap(find.byKey(const Key('session-calendar-session-1')));
+    await tester.pumpAndSettle();
+    expect(find.text('Calendar permission was denied.'), findsOneWidget);
+
+    calendar.next = CalendarAddStatus.unavailable;
+    await tester.tap(find.byKey(const Key('session-calendar-session-1')));
+    await tester.pumpAndSettle();
+    expect(
+      find.text("The calendar isn't available on this phone."),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const Key('session-call-session-1')));
+    await tester.pumpAndSettle();
+    expect(called, 'Halo, Infinite');
+  });
 
   testWidgets('cancel asks first and only the creator or owner sees it', (
     tester,
@@ -169,7 +207,7 @@ void main() {
       ProviderScope(
         overrides: [
           sessionRepositoryProvider.overrideWithValue(sessions),
-          calendarExportProvider.overrideWithValue(MemoryCalendarExport()),
+          deviceCalendarProvider.overrideWithValue(MemoryDeviceCalendar()),
           squadClockProvider.overrideWithValue(
             ManualSquadClock(DateTime.utc(2026, 11, 10, 20)),
           ),
@@ -196,7 +234,7 @@ void main() {
       ProviderScope(
         overrides: [
           sessionRepositoryProvider.overrideWithValue(sessions),
-          calendarExportProvider.overrideWithValue(MemoryCalendarExport()),
+          deviceCalendarProvider.overrideWithValue(MemoryDeviceCalendar()),
           squadClockProvider.overrideWithValue(
             ManualSquadClock(DateTime.utc(2026, 11, 10, 20)),
           ),
@@ -222,6 +260,7 @@ void main() {
     await tester.tap(find.byKey(const Key('session-cancel-confirm')));
     await tester.pumpAndSettle();
     expect(find.text('No sessions scheduled.'), findsOneWidget);
+    expect(find.byKey(const Key('session-calendar-session-1')), findsNothing);
   });
 
   testWidgets('schedule uses tonight and edit asks before it saves', (
@@ -234,7 +273,7 @@ void main() {
     await _pump(
       tester,
       sessions: sessions,
-      calendar: MemoryCalendarExport(),
+      calendar: MemoryDeviceCalendar(),
       clock: DateTime.utc(2026, 11, 10, 20),
     );
     await tester.tap(find.byKey(const Key('session-schedule')));
@@ -262,11 +301,12 @@ void main() {
     await _pump(
       tester,
       sessions: FakeSessionRepository(),
-      calendar: MemoryCalendarExport(),
+      calendar: MemoryDeviceCalendar(),
       clock: DateTime.utc(2026, 11, 10, 20),
     );
     expect(find.text('Sessions are not set up yet.'), findsOneWidget);
     expect(find.byKey(const Key('session-schedule')), findsNothing);
+    expect(find.byKey(const Key('session-calendar-session-1')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -293,7 +333,7 @@ void main() {
     await _pump(
       tester,
       sessions: sessions,
-      calendar: MemoryCalendarExport(),
+      calendar: MemoryDeviceCalendar(),
       clock: DateTime.utc(2026, 11, 10, 20),
     );
     expect(find.byKey(const Key('session-error')), findsOneWidget);
@@ -310,7 +350,7 @@ void main() {
     await _pump(
       tester,
       sessions: sessions,
-      calendar: MemoryCalendarExport(),
+      calendar: MemoryDeviceCalendar(),
       clock: DateTime.utc(2026, 11, 10, 20),
     );
     final loads = sessions.loads;
@@ -320,6 +360,103 @@ void main() {
         .bump();
     await tester.pumpAndSettle();
     expect(sessions.loads, loads + 1);
+  });
+
+  testWidgets('sessions say they are loading before the list arrives', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sessionRepositoryProvider.overrideWithValue(
+            FakeSessionRepository(enabled: true, sessions: [_session()]),
+          ),
+          deviceCalendarProvider.overrideWithValue(MemoryDeviceCalendar()),
+          squadClockProvider.overrideWithValue(
+            ManualSquadClock(DateTime.utc(2026, 11, 10, 20)),
+          ),
+          availabilityTickProvider.overrideWithValue(Duration.zero),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SessionList(
+              squadId: 'squad',
+              meId: 'spencer',
+              ownerId: 'spencer',
+              onCallSpot: _ignore,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Loading sessions.'), findsOneWidget);
+    await tester.pumpAndSettle();
+    expect(find.text('Loading sessions.'), findsNothing);
+    expect(find.text('Tonight 9:00 PM · 0 in'), findsOneWidget);
+  });
+
+  testWidgets('adding to the calendar can wait, and large text still fits', (
+    tester,
+  ) async {
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await tester.binding.setSurfaceSize(const Size(402, 874));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final gate = Completer<void>();
+    final calendar = MemoryDeviceCalendar()..hold = gate.future;
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          sessionRepositoryProvider.overrideWithValue(
+            FakeSessionRepository(enabled: true, sessions: [_session()]),
+          ),
+          deviceCalendarProvider.overrideWithValue(calendar),
+          squadClockProvider.overrideWithValue(
+            ManualSquadClock(DateTime.utc(2026, 11, 10, 20)),
+          ),
+          localOffsetProvider.overrideWithValue(Duration.zero),
+          availabilityTickProvider.overrideWithValue(Duration.zero),
+        ],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: SessionList(
+                squadId: 'squad',
+                meId: 'spencer',
+                ownerId: 'spencer',
+                squadName: "Spencer's squad",
+                onCallSpot: _ignore,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const Key('session-calendar-session-1')));
+    await tester.pump();
+    expect(find.text('Adding to calendar…'), findsOneWidget);
+    expect(find.text('Added to your calendar.'), findsNothing);
+    expect(
+      tester
+          .getSize(find.byKey(const Key('session-calendar-session-1')))
+          .height,
+      greaterThanOrEqualTo(44),
+    );
+    expect(tester.takeException(), isNull);
+
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('Added to your calendar.'), findsOneWidget);
+    expect(calendar.last?.notes, "Spencer's squad");
+    expect(tester.takeException(), isNull);
+  });
+
+  test('a missing calendar plugin does not throw', () async {
+    final status = await Add2CalendarDevice().add(
+      sessionCalendarRequest(session: _session(), squadName: "Spencer's squad"),
+    );
+    expect(status, CalendarAddStatus.unavailable);
   });
 }
 

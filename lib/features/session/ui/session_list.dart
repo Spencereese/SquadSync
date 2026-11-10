@@ -5,7 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/session/data/session_repository.dart';
-import 'package:squadsync/features/session/domain/session_ics.dart';
+import 'package:squadsync/features/session/domain/session_calendar.dart';
 import 'package:squadsync/features/session/domain/squad_session.dart';
 
 /// Upcoming sessions on Who's on. One column, no nested scroll.
@@ -15,12 +15,14 @@ class SessionList extends ConsumerStatefulWidget {
     required this.meId,
     required this.ownerId,
     required this.onCallSpot,
+    this.squadName = 'SquadSync',
     super.key,
   });
 
   final String squadId;
   final String meId;
   final String ownerId;
+  final String squadName;
   final ValueChanged<String> onCallSpot;
 
   @override
@@ -30,6 +32,8 @@ class SessionList extends ConsumerStatefulWidget {
 class _SessionListState extends ConsumerState<SessionList> {
   SessionBoard _board = SessionBoard.notEnabled;
   String? _error;
+  String? _calendarMessage;
+  String? _calendarBusy;
   StreamSubscription<SessionChange>? _live;
   var _settled = false;
 
@@ -85,7 +89,9 @@ class _SessionListState extends ConsumerState<SessionList> {
       if (previous == next) return;
       unawaited(_load());
     });
-    if (!_settled) return const SizedBox.shrink();
+    if (!_settled) {
+      return const Text('Loading sessions.', key: Key('session-loading'));
+    }
     if (_error != null && !_board.enabled) {
       return Text(_error!, key: const Key('session-error'));
     }
@@ -105,6 +111,8 @@ class _SessionListState extends ConsumerState<SessionList> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (_error != null) Text(_error!, key: const Key('session-error')),
+        if (_calendarMessage != null)
+          Text(_calendarMessage!, key: const Key('session-calendar-message')),
         if (upcoming.isEmpty && _error == null)
           const Text('No sessions scheduled.', key: Key('sessions-empty')),
         for (final session in upcoming)
@@ -141,9 +149,12 @@ class _SessionListState extends ConsumerState<SessionList> {
               _rsvp(session, SessionAnswer.maybe, 'Maybe'),
               _rsvp(session, SessionAnswer.out, 'Out'),
               _button(
-                'Add to calendar',
+                _calendarBusy == session.id
+                    ? 'Adding to calendar…'
+                    : 'Add to calendar',
                 Key('session-calendar-${session.id}'),
                 () => unawaited(_calendar(session)),
+                enabled: _calendarBusy == null,
               ),
               if (sessionCanCallSpot(session, clock))
                 _button(
@@ -185,11 +196,12 @@ class _SessionListState extends ConsumerState<SessionList> {
     Key key,
     VoidCallback onPressed, {
     bool selected = false,
+    bool enabled = true,
   }) {
     return FilledButton.tonal(
       key: key,
       style: FilledButton.styleFrom(minimumSize: const Size(44, 44)),
-      onPressed: selected ? null : onPressed,
+      onPressed: !enabled || selected ? null : onPressed,
       child: Text(label),
     );
   }
@@ -293,9 +305,20 @@ class _SessionListState extends ConsumerState<SessionList> {
   }
 
   Future<void> _calendar(SquadSession session) async {
-    await ref
-        .read(calendarExportProvider)
-        .shareIcs(filename: 'squad-session.ics', body: sessionIcs(session));
+    setState(() {
+      _calendarBusy = session.id;
+      _calendarMessage = null;
+    });
+    final status = await ref
+        .read(deviceCalendarProvider)
+        .add(
+          sessionCalendarRequest(session: session, squadName: widget.squadName),
+        );
+    if (!mounted) return;
+    setState(() {
+      _calendarBusy = null;
+      _calendarMessage = calendarAddMessage(status);
+    });
   }
 
   Future<_Draft?> _ask({

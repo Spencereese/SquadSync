@@ -222,6 +222,7 @@ class SupabaseSq8Database implements Sq8Database {
         'sender_id': message.senderId,
         'body': message.body,
         'sent_at': message.sentAt.toUtc().toIso8601String(),
+        if (message.replyToId != null) 'reply_to_id': message.replyToId,
       }),
     );
   }

@@ -11,6 +11,8 @@ import 'package:squadsync/features/availability/ui/availability_screen.dart';
 import 'package:squadsync/features/availability/ui/who_can_play_panel.dart';
 import 'package:squadsync/features/spot/ui/spot_controller.dart';
 import 'package:squadsync/features/invite/ui/invite_screen.dart';
+import 'package:squadsync/features/chat/domain/chat_message.dart';
+import 'package:squadsync/features/chat/domain/messenger.dart';
 import 'package:squadsync/features/chat/ui/message_bubble.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
@@ -79,6 +81,11 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
       final id = next.squad?.id;
       if (id == null || id == previous?.squad?.id) return;
       unawaited(ref.read(spotHomeProvider.notifier).open(id));
+    });
+    ref.listen(squadHomeViewProvider, (previous, next) {
+      ref
+          .read(squadChatControllerProvider.notifier)
+          .setChatVisible(next == SquadHomeView.chat);
     });
     final state = ref.watch(squadChatControllerProvider);
     final squad = state.squad;
@@ -159,14 +166,14 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
           child: SegmentedButton<SquadHomeView>(
-            segments: const [
-              ButtonSegment(
+            segments: [
+              const ButtonSegment(
                 value: SquadHomeView.who,
                 label: Text("Who's on", key: Key('view-who')),
               ),
               ButtonSegment(
                 value: SquadHomeView.chat,
-                label: Text('Chat', key: Key('view-chat')),
+                label: _ChatSegmentLabel(count: state.unread.of(squad.id)),
               ),
             ],
             selected: {view},
@@ -212,6 +219,12 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
               },
               child: const Text('Earlier messages'),
             ),
+          if (_firstUnread(state) != null)
+            TextButton(
+              key: const Key('jump-unread'),
+              onPressed: () => _jumpUnread(context, _firstUnread(state)!),
+              child: Text('${state.unread.of(squad.id)} unread'),
+            ),
           Expanded(
             child: RefreshIndicator(
               key: const Key('refresh-chat'),
@@ -223,6 +236,36 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
         ],
       ],
     );
+  }
+
+  String? _firstUnread(SquadChatState state) {
+    if (state.squad == null || state.unread.of(state.squad!.id) <= 0) {
+      return null;
+    }
+    return firstUnreadMessageId(
+      messages: state.messages,
+      meId: state.meId,
+      readThroughId: state.readThroughId,
+    );
+  }
+
+  void _jumpUnread(BuildContext context, String id) {
+    context.visitChildElements((element) {
+      _reveal(element, id);
+    });
+    unawaited(ref.read(squadChatControllerProvider.notifier).catchUp());
+  }
+
+  bool _reveal(Element element, String id) {
+    if (element.widget.key == Key('message-$id')) {
+      Scrollable.ensureVisible(element);
+      return true;
+    }
+    var found = false;
+    element.visitChildElements((child) {
+      if (!found) found = _reveal(child, id);
+    });
+    return found;
   }
 
   Widget _who(Squad squad, String meId) {
@@ -379,6 +422,31 @@ class _ChatSummary extends ConsumerWidget {
   }
 }
 
+class _ChatSegmentLabel extends StatelessWidget {
+  const _ChatSegmentLabel({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final label = count > 0 ? 'Chat, $count unread' : 'Chat';
+    return Semantics(
+      label: label,
+      excludeSemantics: true,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Chat', key: Key('view-chat')),
+          if (count > 0) ...[
+            const SizedBox(width: 6),
+            Text('$count', key: const Key('unread-count')),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
 class _DemoBanner extends StatelessWidget {
   const _DemoBanner();
 
@@ -440,6 +508,11 @@ class _MessageList extends ConsumerWidget {
         },
       );
     }
+    final lastMine = _lastMine(messages, state.meId);
+    final names = <String, String>{
+      for (final member in state.squad?.members ?? const <Member>[])
+        member.id: member.displayName,
+    };
     return ListView.builder(
       key: const Key('message-list'),
       reverse: true,
@@ -448,11 +521,46 @@ class _MessageList extends ConsumerWidget {
       itemCount: messages.length,
       itemBuilder: (context, index) {
         final message = messages[messages.length - 1 - index];
+        final mine = message.senderId == state.meId;
+        final seen = mine && message.id == lastMine
+            ? seenByLine(
+                seenByNames(
+                  message: message,
+                  thread: messages,
+                  reads: state.messenger.reads,
+                  names: names,
+                  meId: state.meId,
+                ),
+              )
+            : '';
         return Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: MessageBubble(
             message: message,
-            mine: message.senderId == state.meId,
+            mine: mine,
+            chips: state.messenger.enabled
+                ? reactionChips(
+                    messageId: message.id,
+                    reactions: state.messenger.reactions,
+                    names: names,
+                    meId: state.meId,
+                  )
+                : const [],
+            seen: state.messenger.enabled ? seen : '',
+            onLongPress: state.messenger.enabled
+                ? () => _openReactions(context, ref, message)
+                : () {
+                    ref
+                        .read(squadChatControllerProvider.notifier)
+                        .quote(message);
+                  },
+            onToggle: (emoji) {
+              unawaited(
+                ref
+                    .read(squadChatControllerProvider.notifier)
+                    .react(message.id, emoji),
+              );
+            },
             onRetry: (id) {
               unawaited(
                 ref.read(squadChatControllerProvider.notifier).retry(id),
@@ -462,6 +570,55 @@ class _MessageList extends ConsumerWidget {
         );
       },
     );
+  }
+
+  String? _lastMine(List<ChatMessage> messages, String meId) {
+    for (var i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].senderId == meId) return messages[i].id;
+    }
+    return null;
+  }
+
+  Future<void> _openReactions(
+    BuildContext context,
+    WidgetRef ref,
+    ChatMessage message,
+  ) async {
+    final emoji = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Wrap(
+            children: [
+              for (final emoji in quickReactions)
+                Semantics(
+                  button: true,
+                  label: 'React with ${reactionSpokenName[emoji]}',
+                  child: IconButton(
+                    key: Key('pick-$emoji'),
+                    tooltip: reactionSpokenName[emoji],
+                    onPressed: () => Navigator.of(context).pop(emoji),
+                    icon: Text(emoji),
+                  ),
+                ),
+              TextButton(
+                key: const Key('pick-reply'),
+                onPressed: () => Navigator.of(context).pop('reply'),
+                child: const Text('Reply'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+    if (emoji == null) return;
+    if (emoji == 'reply') {
+      ref.read(squadChatControllerProvider.notifier).quote(message);
+      return;
+    }
+    await ref
+        .read(squadChatControllerProvider.notifier)
+        .react(message.id, emoji);
   }
 }
 
@@ -483,29 +640,75 @@ class _ComposerState extends ConsumerState<_Composer> {
 
   @override
   Widget build(BuildContext context) {
+    final chat = ref.watch(squadChatControllerProvider);
+    final names = <String, String>{
+      for (final member in chat.squad?.members ?? const <Member>[])
+        member.id: member.displayName,
+    };
+    final typing = typingLine(<String>[
+      for (final id in chat.typing)
+        if (id != chat.meId) names[id] ?? 'Someone',
+    ]);
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
-        child: Row(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: TextField(
-                key: const Key('composer'),
-                controller: _controller,
-                decoration: const InputDecoration(
-                  hintText: 'Message the squad',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-                textInputAction: TextInputAction.send,
-                onSubmitted: _send,
+            if (typing.isNotEmpty)
+              Semantics(
+                liveRegion: true,
+                label: typing,
+                child: Text(typing, key: const Key('typing')),
               ),
-            ),
-            IconButton(
-              key: const Key('send-button'),
-              tooltip: 'Send',
-              onPressed: () => _send(_controller.text),
-              icon: const Icon(Icons.send),
+            if (chat.replyText != null)
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(chat.replyText!, key: const Key('replying-to')),
+                  ),
+                  IconButton(
+                    key: const Key('reply-clear'),
+                    tooltip: 'Cancel reply',
+                    onPressed: () {
+                      ref
+                          .read(squadChatControllerProvider.notifier)
+                          .clearQuote();
+                    },
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: const Key('composer'),
+                    controller: _controller,
+                    decoration: const InputDecoration(
+                      hintText: 'Message the squad',
+                      border: OutlineInputBorder(),
+                      isDense: true,
+                    ),
+                    textInputAction: TextInputAction.send,
+                    onChanged: (value) {
+                      unawaited(
+                        ref
+                            .read(squadChatControllerProvider.notifier)
+                            .setTyping(value.trim().isNotEmpty),
+                      );
+                    },
+                    onSubmitted: _send,
+                  ),
+                ),
+                IconButton(
+                  key: const Key('send-button'),
+                  tooltip: 'Send',
+                  onPressed: () => _send(_controller.text),
+                  icon: const Icon(Icons.send),
+                ),
+              ],
             ),
           ],
         ),

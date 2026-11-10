@@ -9,6 +9,8 @@ class ChatMessage {
     required this.text,
     required this.sentAt,
     this.delivery,
+    this.replyToId,
+    this.replyText,
   });
 
   final String id;
@@ -18,7 +20,17 @@ class ChatMessage {
   final DateTime sentAt;
   final Delivery? delivery;
 
-  ChatMessage copyWith({String? text, DateTime? sentAt, Delivery? delivery}) {
+  /// The message this one quotes. Null when it is not a reply.
+  final String? replyToId;
+  final String? replyText;
+
+  ChatMessage copyWith({
+    String? text,
+    DateTime? sentAt,
+    Delivery? delivery,
+    String? replyToId,
+    String? replyText,
+  }) {
     return ChatMessage(
       id: id,
       chatId: chatId,
@@ -26,6 +38,8 @@ class ChatMessage {
       text: text ?? this.text,
       sentAt: sentAt ?? this.sentAt,
       delivery: delivery ?? this.delivery,
+      replyToId: replyToId ?? this.replyToId,
+      replyText: replyText ?? this.replyText,
     );
   }
 }

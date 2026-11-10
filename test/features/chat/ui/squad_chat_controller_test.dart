@@ -39,7 +39,7 @@ ProviderContainer _container({
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('opening the squad chat clears only that chat', () async {
+  test('opening the squad keeps the unread count until catch up', () async {
     final chats = FakeChatRepository(
       unread: const UnreadBook({'squad': 4, 'other': 2}),
     );
@@ -47,12 +47,17 @@ void main() {
     addTearDown(container.dispose);
 
     await container.read(squadChatControllerProvider.notifier).open();
-    final state = container.read(squadChatControllerProvider);
+    final opened = container.read(squadChatControllerProvider);
 
-    expect(state.ready, isTrue);
-    expect(state.meId, 'spencer');
-    expect(state.unread.of('squad'), 0);
-    expect(state.unread.of('other'), 2);
+    expect(opened.ready, isTrue);
+    expect(opened.meId, 'spencer');
+    expect(opened.unread.of('squad'), 4);
+    expect(opened.unread.of('other'), 2);
+
+    await container.read(squadChatControllerProvider.notifier).catchUp();
+    final caught = container.read(squadChatControllerProvider);
+    expect(caught.unread.of('squad'), 0);
+    expect(caught.unread.of('other'), 2);
     expect((await chats.unread()).of('squad'), 0);
     expect((await chats.unread()).of('other'), 2);
   });

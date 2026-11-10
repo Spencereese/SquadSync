@@ -129,6 +129,8 @@ ChatMessage _echoRow(ChatMessage incoming, String meId) {
       text: incoming.text,
       sentAt: incoming.sentAt,
       delivery: Delivery.sent,
+      replyToId: incoming.replyToId,
+      replyText: incoming.replyText,
     );
   }
   return ChatMessage(
@@ -137,6 +139,8 @@ ChatMessage _echoRow(ChatMessage incoming, String meId) {
     senderId: incoming.senderId,
     text: incoming.text,
     sentAt: incoming.sentAt,
+    replyToId: incoming.replyToId,
+    replyText: incoming.replyText,
   );
 }
 
@@ -152,5 +156,7 @@ ChatMessage _confirm(ChatMessage local, ChatMessage remote, String meId) {
     text: remote.text,
     sentAt: remote.sentAt,
     delivery: mine ? Delivery.sent : null,
+    replyToId: remote.replyToId ?? local.replyToId,
+    replyText: remote.replyText ?? local.replyText,
   );
 }

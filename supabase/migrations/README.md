@@ -32,6 +32,7 @@ Run these in order, in one project, as the migration role:
 11. `20261109_0011_invite_capacity_by_members.sql` — live per Grok Bot report (~4:13 AM CT Nov 9, matches `33a26ab`). This checkout did not query the project. Apply after file 8 if a project does not have it yet. Files 9 and 10 may already be applied or not; this file does not depend on either. Preflight: `sq8.join_with_code(text)` and `public.sq8_invites` exist. Running it again is safe. It does not grant `anon` or `public`.
 12. `20261110_0012_device_tokens.sql` — **not applied**. Device tokens for the signed-in person, and `sq8.message_push_targets` for the service role only. Apply after files 1 and 2. Running it again is safe. It does not grant `anon` or `public`, and authenticated cannot list other people's tokens. The edge function in `supabase/functions/sq8-notify-message` is not deployed. Secrets and console steps are in that folder's README.
 13. `20261110_0013_spot_calls.sql` — **not applied**. A squad spot call, RSVPs, a lock, cancel, and end. The join window is five minutes on the database clock. A starter is available now, or available later from `until_at` through the next 60 minutes. The caller can cancel before lock. The caller or the owner can end a locked call. A locked call older than 6 hours ends when the next call is made. Apply after files 1, 2, and 6. Running it again is safe. It does not grant `anon` or `public`. `authenticated` gets the public wrappers only. Lock order is the squad row, then the call. `sq8_spot_calls` and `sq8_spot_rsvps` are added to `supabase_realtime` when that publication exists or is created here.
+14. `20261110_0014_chat_messenger.sql` — **not applied**. Reactions, a shared read cursor, and `reply_to_id` on `sq8_messages`. Typing is not a table. Apply after files 1, 2, and 3. Running it again is safe. It does not grant `anon` or `public`. Members of the squad can read. A person writes only their own reaction and their own cursor. Both tables are added to `supabase_realtime` when that publication is missing them.
 
 ## What each file does
 
@@ -50,6 +51,30 @@ Run these in order, in one project, as the migration role:
 Run these in reverse order. This deletes the slice 2 rows. It does not touch the old tables.
 
 ```sql
+-- 14 only.
+alter table public.sq8_messages drop column if exists reply_to_id;
+do $$
+begin
+  if exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'sq8_message_reads'
+  ) then
+    alter publication supabase_realtime drop table public.sq8_message_reads;
+  end if;
+  if exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'public'
+      and tablename = 'sq8_message_reactions'
+  ) then
+    alter publication supabase_realtime drop table public.sq8_message_reactions;
+  end if;
+end $$;
+drop table if exists public.sq8_message_reads;
+drop table if exists public.sq8_message_reactions;
+
 -- 13 only.
 do $$
 begin

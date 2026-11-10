@@ -1,14 +1,22 @@
+import 'dart:async';
+
+import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/core/sq8_database.dart';
 import 'package:squadsync/features/chat/data/chat_repository.dart';
 import 'package:squadsync/features/chat/domain/chat_message.dart';
 import 'package:squadsync/features/chat/domain/message_history.dart';
+import 'package:squadsync/features/chat/domain/messenger.dart';
 import 'package:squadsync/features/chat/domain/send_machine.dart';
 import 'package:squadsync/features/chat/domain/unread.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 class SupabaseChatRepository implements ChatRepository {
-  SupabaseChatRepository(this._db);
+  SupabaseChatRepository(this._db, [this._client]);
 
   final Sq8Database _db;
+  final SupabaseClient? _client;
+  var _messengerOff = false;
+  final Map<String, RealtimeChannel> _typingChannels = {};
 
   @override
   Future<HistoryPage> newest(String chatId, {int limit = openPageSize}) async {
@@ -34,19 +42,32 @@ class SupabaseChatRepository implements ChatRepository {
   @override
   Future<SendOutcome> send(ChatMessage message) async {
     try {
-      await _db.insertMessage(
-        Sq8Message(
-          id: message.id,
-          squadId: message.chatId,
-          senderId: message.senderId,
-          body: message.text,
-          sentAt: message.sentAt,
-        ),
-      );
+      await _insert(message, withReply: message.replyToId != null);
     } on Sq8DuplicateRow {
       return SendConflict(message.id);
+    } on RepositoryFailure catch (error) {
+      if (message.replyToId != null &&
+          messengerTableMissing(null, error.message)) {
+        _messengerOff = true;
+        await _insert(message, withReply: false);
+        return SendConfirmed(message.id);
+      }
+      rethrow;
     }
     return SendConfirmed(message.id);
+  }
+
+  Future<void> _insert(ChatMessage message, {required bool withReply}) {
+    return _db.insertMessage(
+      Sq8Message(
+        id: message.id,
+        squadId: message.chatId,
+        senderId: message.senderId,
+        body: message.text,
+        sentAt: message.sentAt,
+        replyToId: withReply ? message.replyToId : null,
+      ),
+    );
   }
 
   @override
@@ -75,6 +96,173 @@ class SupabaseChatRepository implements ChatRepository {
       lastReadAt: message?.sentAt ?? DateTime.now().toUtc(),
       lastReadId: message?.id,
     );
+  }
+
+  @override
+  Future<String?> readThrough(String chatId) async {
+    final cursor = await _db.readCursor(chatId);
+    return cursor?.lastReadId;
+  }
+
+  @override
+  Future<MessengerBoard> messenger(String chatId) async {
+    final client = _client;
+    if (client == null || _messengerOff) return MessengerBoard.disabled;
+    try {
+      final reactionRows = await client
+          .from('sq8_message_reactions')
+          .select('message_id, user_id, emoji')
+          .eq('squad_id', chatId);
+      final readRows = await client
+          .from('sq8_message_reads')
+          .select('user_id, last_read_at, last_read_id')
+          .eq('squad_id', chatId);
+      return MessengerBoard(
+        enabled: true,
+        reactions: [
+          for (final row in reactionRows)
+            MessageReaction(
+              messageId: row['message_id'] as String,
+              userId: row['user_id'] as String,
+              emoji: row['emoji'] as String,
+            ),
+        ],
+        reads: [
+          for (final row in readRows)
+            MemberRead(
+              userId: row['user_id'] as String,
+              readAt: DateTime.parse(row['last_read_at'] as String),
+              messageId: row['last_read_id'] as String?,
+            ),
+        ],
+      );
+    } on PostgrestException catch (error) {
+      if (messengerTableMissing(error.code, error.message)) {
+        _messengerOff = true;
+        return MessengerBoard.disabled;
+      }
+      throw RepositoryFailure(error.message);
+    }
+  }
+
+  @override
+  Future<void> toggleReaction({
+    required String chatId,
+    required String messageId,
+    required String emoji,
+  }) async {
+    final client = _client;
+    final me = _db.userId;
+    if (client == null || me == null || _messengerOff) return;
+    if (!isQuickReaction(emoji)) return;
+    try {
+      final existing = await client
+          .from('sq8_message_reactions')
+          .select('emoji')
+          .eq('message_id', messageId)
+          .eq('user_id', me)
+          .eq('emoji', emoji)
+          .maybeSingle();
+      if (existing == null) {
+        await client.from('sq8_message_reactions').insert({
+          'message_id': messageId,
+          'squad_id': chatId,
+          'user_id': me,
+          'emoji': emoji,
+        });
+      } else {
+        await client
+            .from('sq8_message_reactions')
+            .delete()
+            .eq('message_id', messageId)
+            .eq('user_id', me)
+            .eq('emoji', emoji);
+      }
+    } on PostgrestException catch (error) {
+      if (messengerTableMissing(error.code, error.message)) {
+        _messengerOff = true;
+        return;
+      }
+      throw RepositoryFailure(error.message);
+    }
+  }
+
+  @override
+  Future<void> saveReadReceipt({
+    required String chatId,
+    required String messageId,
+    required DateTime readAt,
+  }) async {
+    final client = _client;
+    final me = _db.userId;
+    if (client == null || me == null || _messengerOff) return;
+    try {
+      await client.from('sq8_message_reads').upsert({
+        'user_id': me,
+        'squad_id': chatId,
+        'last_read_at': readAt.toUtc().toIso8601String(),
+        'last_read_id': messageId,
+      }, onConflict: 'user_id,squad_id');
+    } on PostgrestException catch (error) {
+      if (messengerTableMissing(error.code, error.message)) {
+        _messengerOff = true;
+        return;
+      }
+      throw RepositoryFailure(error.message);
+    }
+  }
+
+  @override
+  Stream<Set<String>> watchTyping(String chatId) {
+    final client = _client;
+    final me = _db.userId;
+    if (client == null) return const Stream.empty();
+    final channel = _typingChannel(chatId);
+    final controller = StreamController<Set<String>>.broadcast();
+    final typing = <String, DateTime>{};
+    void emit() {
+      final now = DateTime.now().toUtc();
+      typing.removeWhere(
+        (_, at) => now.difference(at) > const Duration(seconds: 4),
+      );
+      if (!controller.isClosed) controller.add(typing.keys.toSet());
+    }
+
+    channel.onBroadcast(
+      event: 'typing',
+      callback: (payload) {
+        final id = payload['user_id']?.toString() ?? '';
+        if (id.isEmpty || id == me) return;
+        if (payload['typing'] == true) {
+          typing[id] = DateTime.now().toUtc();
+        } else {
+          typing.remove(id);
+        }
+        emit();
+      },
+    );
+    return controller.stream;
+  }
+
+  @override
+  Future<void> setTyping(String chatId, {required bool typing}) async {
+    final client = _client;
+    final me = _db.userId;
+    if (client == null || me == null) return;
+    await _typingChannel(chatId).sendBroadcastMessage(
+      event: 'typing',
+      payload: {'user_id': me, 'typing': typing},
+    );
+  }
+
+  RealtimeChannel _typingChannel(String chatId) {
+    final client = _client!;
+    final existing = _typingChannels[chatId];
+    if (existing != null) return existing;
+    final channel = client.channel('sq8-typing-$chatId');
+    channel.subscribe();
+    _typingChannels[chatId] = channel;
+    return channel;
   }
 
   HistoryPage _page(List<Sq8Message> newestFirst, int limit) {

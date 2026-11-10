@@ -60,7 +60,7 @@ final squadRepositoryProvider = Provider<SquadRepository>((ref) {
 final chatRepositoryProvider = Provider<ChatRepository>((ref) {
   final client = ref.watch(supabaseClientProvider);
   if (client == null) return FakeChatRepository();
-  return SupabaseChatRepository(SupabaseSq8Database(client));
+  return SupabaseChatRepository(SupabaseSq8Database(client), client);
 });
 
 final squadClockProvider = Provider<SquadClock>(

@@ -26,6 +26,7 @@ class Sq8Message {
     required this.senderId,
     required this.body,
     required this.sentAt,
+    this.replyToId,
   });
 
   final String id;
@@ -33,6 +34,7 @@ class Sq8Message {
   final String senderId;
   final String body;
   final DateTime sentAt;
+  final String? replyToId;
 }
 
 class Sq8Cursor {

@@ -1,17 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:squadsync/features/chat/domain/chat_message.dart';
+import 'package:squadsync/features/chat/domain/messenger.dart';
 
 class MessageBubble extends StatelessWidget {
   const MessageBubble({
     required this.message,
     required this.mine,
     required this.onRetry,
+    this.chips = const [],
+    this.seen = '',
+    this.onLongPress,
+    this.onToggle,
     super.key,
   });
 
   final ChatMessage message;
   final bool mine;
   final ValueChanged<String> onRetry;
+  final List<ReactionChip> chips;
+  final String seen;
+  final VoidCallback? onLongPress;
+  final ValueChanged<String>? onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -22,6 +31,7 @@ class MessageBubble extends StatelessWidget {
       child: GestureDetector(
         key: Key('message-${message.id}'),
         onTap: failed ? () => onRetry(message.id) : null,
+        onLongPress: onLongPress,
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 320),
           child: Column(
@@ -41,10 +51,46 @@ class MessageBubble extends StatelessWidget {
                     horizontal: 12,
                     vertical: 8,
                   ),
-                  child: Text(message.text),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (message.replyText != null &&
+                          message.replyText!.isNotEmpty)
+                        Text(
+                          message.replyText!,
+                          key: Key('quote-${message.id}'),
+                        ),
+                      Text(message.text),
+                    ],
+                  ),
                 ),
               ),
+              if (chips.isNotEmpty)
+                Wrap(
+                  spacing: 4,
+                  children: [
+                    for (final chip in chips)
+                      Semantics(
+                        button: true,
+                        label: chip.spoken,
+                        excludeSemantics: true,
+                        child: TextButton(
+                          key: Key('reaction-${message.id}-${chip.emoji}'),
+                          onPressed: onToggle == null
+                              ? null
+                              : () => onToggle!(chip.emoji),
+                          child: Text('${chip.emoji} ${chip.count}'),
+                        ),
+                      ),
+                  ],
+                ),
               if (mine) _Status(message: message),
+              if (seen.isNotEmpty)
+                Semantics(
+                  label: seen,
+                  excludeSemantics: true,
+                  child: Text(seen, key: Key('seen-${message.id}')),
+                ),
             ],
           ),
         ),

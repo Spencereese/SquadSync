@@ -109,6 +109,8 @@ void main() {
     await _pump(tester, repo: repo, clock: clock);
 
     expect(find.byKey(const Key('who-empty')), findsOneWidget);
+    expect(find.byKey(const Key('section-playing')), findsNothing);
+    expect(find.text('Playing now'), findsNothing);
     expect(find.byKey(const Key('who-summary')), findsOneWidget);
     expect(find.text('0 of 8 available'), findsOneWidget);
     expect(repo.rows, isEmpty);

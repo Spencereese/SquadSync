@@ -1,6 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 
+// http is already required by supabase_flutter. Naming ClientException here
+// avoids a runtimeType string match, which misses subtypes and obfuscation.
+// ignore: depend_on_referenced_packages
+import 'package:http/http.dart';
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/core/sq8_database.dart';
 import 'package:squadsync/features/chat/data/chat_repository.dart';
@@ -394,17 +398,16 @@ class SupabaseChatRepository implements ChatRepository {
     } on RepositoryFailure {
       // A PostgREST refusal must not drop the thread. Each reply falls back.
       return const {};
-    } catch (error) {
-      // SocketException, package:http ClientException, and TimeoutException
-      // are the network failures. PostgREST already arrived as
-      // RepositoryFailure above. http stays transitive, so ClientException
-      // is matched by type name.
-      if (error is SocketException ||
-          error is TimeoutException ||
-          error.runtimeType.toString() == 'ClientException') {
-        return const {};
-      }
-      rethrow;
+    } on SocketException {
+      return const {};
+    } on TlsException {
+      // HandshakeException is a TlsException. A failed handshake is not a bad row.
+      return const {};
+    } on ClientException {
+      // Includes RequestAbortedException, whose runtime type is not ClientException.
+      return const {};
+    } on TimeoutException {
+      return const {};
     }
   }
 

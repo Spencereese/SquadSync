@@ -11,6 +11,9 @@ import 'package:squadsync/features/availability/data/supabase_availability_repos
 import 'package:squadsync/features/availability/domain/check_in.dart';
 import 'package:squadsync/features/invite/data/code_share.dart';
 import 'package:squadsync/features/push/data/push_notifications.dart';
+import 'package:squadsync/features/spot/data/fake_spot_repository.dart';
+import 'package:squadsync/features/spot/data/spot_repository.dart';
+import 'package:squadsync/features/spot/data/supabase_spot_repository.dart';
 import 'package:squadsync/features/push/data/push_token_repository.dart';
 import 'package:squadsync/features/invite/data/fake_invite_repository.dart';
 import 'package:squadsync/features/invite/data/invite_repository.dart';
@@ -94,6 +97,14 @@ final inviteRepositoryProvider = Provider<InviteRepository>((ref) {
 });
 
 final codeShareProvider = Provider<CodeShare>((ref) => PlatformCodeShare());
+
+final spotRepositoryProvider = Provider<SpotRepository>((ref) {
+  final client = ref.watch(supabaseClientProvider);
+  if (client == null) {
+    return FakeSpotRepository(clock: ref.watch(squadClockProvider));
+  }
+  return SupabaseSpotRepository(client);
+});
 
 /// No push SDK in this install. Tests override this when they deliver a tap.
 final pushNotificationsProvider = Provider<PushNotifications>(

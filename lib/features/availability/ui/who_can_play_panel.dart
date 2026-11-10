@@ -9,6 +9,7 @@ import 'package:squadsync/features/availability/ui/availability_controller.dart'
 import 'package:squadsync/features/availability/ui/availability_screen.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
 import 'package:squadsync/features/push/ui/push_inbox.dart';
+import 'package:squadsync/features/spot/ui/spot_strip.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
 
@@ -132,6 +133,12 @@ class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
             const NotificationsStatus(),
             const SizedBox(height: 4),
             _Sections(showRest: _rest, onToggle: _toggleRest),
+            SpotStrip(
+              squadId: widget.squad.id,
+              meId: widget.meId,
+              canLock: widget.squad.ownerId == widget.meId,
+              members: widget.squad.members,
+            ),
           ],
         ),
       ),

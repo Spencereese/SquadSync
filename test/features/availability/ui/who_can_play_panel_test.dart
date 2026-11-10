@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:squadsync/core/dependencies.dart';
+import 'package:squadsync/features/availability/data/availability_repository.dart';
 import 'package:squadsync/features/availability/data/fake_availability_repository.dart';
 import 'package:squadsync/features/availability/domain/check_in.dart';
 import 'package:squadsync/features/availability/ui/who_can_play_panel.dart';
@@ -31,6 +32,7 @@ Future<void> _pump(
   required SquadClock clock,
   Duration tick = Duration.zero,
   bool demo = false,
+  FakeSquadRepository? squads,
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -40,7 +42,7 @@ Future<void> _pump(
         availabilityTickProvider.overrideWithValue(tick),
         availabilityRepositoryProvider.overrideWithValue(repo),
         squadRepositoryProvider.overrideWithValue(
-          FakeSquadRepository(seed: _home()),
+          squads ?? FakeSquadRepository(seed: _home()),
         ),
       ],
       child: MaterialApp(
@@ -50,6 +52,7 @@ Future<void> _pump(
               squad: _home(),
               meId: spencer.id,
               demo: demo,
+              showRest: true,
             ),
           ),
         ),
@@ -86,7 +89,7 @@ void main() {
     expect(find.byKey(const Key('section-later')), findsOneWidget);
     expect(find.byKey(const Key('section-offline')), findsOneWidget);
     expect(
-      find.textContaining('Friend · Maybe later until 10:30 PM'),
+      find.textContaining('Friend · Maybe later from 10:30 PM'),
       findsOneWidget,
     );
     expect(find.textContaining('Spencer · Not checked in'), findsOneWidget);
@@ -273,7 +276,7 @@ void main() {
       tick: const Duration(seconds: 1),
     );
     expect(find.text('0 of 8 available'), findsOneWidget);
-    expect(find.textContaining('Maybe later until 9:00 PM'), findsOneWidget);
+    expect(find.textContaining('Maybe later from 9:00 PM'), findsOneWidget);
 
     clock.set(DateTime.utc(2026, 11, 8, 21));
     await tester.pump(const Duration(seconds: 1));
@@ -303,5 +306,174 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('later-dialog')), findsOneWidget);
+    expect(
+      find.textContaining(
+        "You'll show as available from that time for an hour.",
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(
+        'This does not mark you available now when that time comes.',
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('Not set clears my check-in back to not checked in', (
+    tester,
+  ) async {
+    final clock = ManualSquadClock(DateTime.utc(2026, 11, 8, 20));
+    final repo = FakeAvailabilityRepository(clock: clock);
+    await _pump(tester, repo: repo, clock: clock);
+    expect(find.byKey(const Key('status-clear')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('status-available')));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('1 of 8 available'), findsOneWidget);
+    expect(find.byKey(const Key('status-clear')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('status-clear')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(repo.rows, isEmpty);
+    expect(find.text('0 of 8 available'), findsOneWidget);
+    expect(find.textContaining('Spencer · Not checked in'), findsOneWidget);
+    expect(find.textContaining('checked in, not detected'), findsNothing);
+    expect(find.byKey(const Key('status-clear')), findsNothing);
+  });
+
+  test('a delete reloads only when that person is on the board', () {
+    expect(
+      reloadAfterCheckInDelete(
+        knownUserIds: const ['alex'],
+        deletedUserId: 'alex',
+      ),
+      isTrue,
+    );
+    expect(
+      reloadAfterCheckInDelete(
+        knownUserIds: const ['alex'],
+        deletedUserId: 'other',
+      ),
+      isFalse,
+    );
+    expect(
+      reloadAfterCheckInDelete(
+        knownUserIds: const ['alex'],
+        deletedUserId: null,
+      ),
+      isTrue,
+    );
+  });
+
+  testWidgets('an edited game commits on Available and on leaving the field', (
+    tester,
+  ) async {
+    final clock = ManualSquadClock(DateTime.utc(2026, 11, 8, 20));
+    final repo = FakeAvailabilityRepository(clock: clock);
+    final squads = FakeSquadRepository(seed: _home());
+    await _pump(tester, repo: repo, clock: clock, squads: squads);
+
+    await tester.enterText(
+      find.byKey(const Key('status-game')),
+      'Halo Infinite',
+    );
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pump();
+
+    expect(
+      squads.snapshot.members
+          .firstWhere((member) => member.id == spencer.id)
+          .defaultGame,
+      'Halo Infinite',
+    );
+    expect(repo.rows, isEmpty);
+
+    await tester.enterText(find.byKey(const Key('status-game')), 'Warzone');
+    await tester.tap(find.byKey(const Key('status-available')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      squads.snapshot.members
+          .firstWhere((member) => member.id == spencer.id)
+          .defaultGame,
+      'Warzone',
+    );
+    expect(find.textContaining('Warzone'), findsWidgets);
+    expect(repo.rows.single.kind, CheckInKind.availableNow);
+  });
+
+  testWidgets('a delete for another squad does not reload this board', (
+    tester,
+  ) async {
+    const alex = Member(
+      id: 'alex',
+      displayName: 'Alex',
+      defaultGame: 'Call of Duty',
+    );
+    final home = Squad(
+      id: 'squad',
+      ownerId: spencer.id,
+      members: const [spencer, alex],
+    );
+    final clock = ManualSquadClock(DateTime.utc(2026, 11, 8, 20));
+    final repo = FakeAvailabilityRepository(
+      clock: clock,
+      seed: [
+        StoredCheckIn(
+          userId: 'alex',
+          squadId: 'squad',
+          kind: CheckInKind.availableNow,
+          checkedAt: clock.now(),
+          until: DateTime.utc(2026, 11, 8, 22, 30),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          squadClockProvider.overrideWithValue(clock),
+          localOffsetProvider.overrideWithValue(Duration.zero),
+          availabilityTickProvider.overrideWithValue(Duration.zero),
+          availabilityRepositoryProvider.overrideWithValue(repo),
+          squadRepositoryProvider.overrideWithValue(
+            FakeSquadRepository(seed: home),
+          ),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: WhoCanPlayPanel(
+              squad: home,
+              meId: spencer.id,
+              showRest: true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(repo.loadCount, 1);
+    expect(find.textContaining('Alex · until 10:30 PM'), findsOneWidget);
+
+    repo.notifyDeleted('stranger');
+    await tester.pump();
+    await tester.pump();
+
+    expect(repo.loadCount, 1);
+    expect(find.textContaining('Alex · until 10:30 PM'), findsOneWidget);
+
+    repo.drop('alex');
+    repo.notifyDeleted('alex');
+    await tester.pump();
+    await tester.pump();
+
+    expect(repo.loadCount, 2);
+    expect(find.textContaining('Alex · until 10:30 PM'), findsNothing);
+    expect(find.textContaining('Alex · Not checked in'), findsOneWidget);
   });
 }

@@ -81,12 +81,20 @@ class SupabaseAvailabilityRepository implements AvailabilityRepository {
   }
 
   @override
-  Stream<void> watch({required String squadId}) {
+  Stream<CheckInChange> watch({required String squadId}) {
     final channel = _client.channel('sq8-checkins-$squadId');
-    final controller = StreamController<void>.broadcast();
+    final controller = StreamController<CheckInChange>.broadcast();
     var disposed = false;
-    for (final event in PostgresChangeEvent.values) {
-      if (event == PostgresChangeEvent.all) continue;
+    void emit(CheckInChange change) {
+      if (disposed || controller.isClosed) return;
+      controller.add(change);
+    }
+
+    // Inserts and updates include squad_id, so they stay filtered.
+    for (final event in [
+      PostgresChangeEvent.insert,
+      PostgresChangeEvent.update,
+    ]) {
       channel.onPostgresChanges(
         event: event,
         schema: 'public',
@@ -96,12 +104,21 @@ class SupabaseAvailabilityRepository implements AvailabilityRepository {
           column: 'squad_id',
           value: squadId,
         ),
-        callback: (_) {
-          if (disposed || controller.isClosed) return;
-          controller.add(null);
-        },
+        callback: (_) => emit(const CheckInChange()),
       );
     }
+    // Deletes are not filtered. A DELETE payload only has the primary key
+    // (user_id), so a squad_id filter never matches and the event is dropped.
+    // The listener reloads when that user is already on this board.
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.delete,
+      schema: 'public',
+      table: 'sq8_check_ins',
+      callback: (payload) {
+        final id = payload.oldRecord['user_id']?.toString();
+        emit(CheckInChange(deletedUserId: id));
+      },
+    );
     // subscribe() can be called once. A missing publication just stops live
     // rows. Resume and pull-to-refresh still load the board.
     channel.subscribe();

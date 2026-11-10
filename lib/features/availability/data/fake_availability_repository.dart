@@ -25,18 +25,35 @@ class FakeAvailabilityRepository implements AvailabilityRepository {
   /// Completes before a load returns. Tests hold the first frame on this.
   Future<void>? holdLoads;
 
-  final List<StoredCheckIn> _rows;
-  final _changes = StreamController<void>.broadcast();
+  /// How many times [load] has been asked. A delete for another squad
+  /// must not increment this.
+  int loadCount = 0;
 
-  /// Test seam for a realtime check-in. Does not add a row.
+  final List<StoredCheckIn> _rows;
+  final _changes = StreamController<CheckInChange>.broadcast();
+
+  /// Test seam for a realtime insert or update. Does not add a row.
   void notify() {
-    if (!_changes.isClosed) _changes.add(null);
+    if (!_changes.isClosed) _changes.add(const CheckInChange());
+  }
+
+  /// An unfiltered delete, the way realtime delivers one. Does not drop a row.
+  void notifyDeleted(String userId) {
+    if (!_changes.isClosed) {
+      _changes.add(CheckInChange(deletedUserId: userId));
+    }
+  }
+
+  /// Removes a stored row without telling listeners.
+  void drop(String userId) {
+    _rows.removeWhere((row) => row.userId == userId);
   }
 
   List<StoredCheckIn> get rows => List.unmodifiable(_rows);
 
   @override
   Future<List<StoredCheckIn>> load({required String squadId}) async {
+    loadCount += 1;
     final hold = holdLoads;
     if (hold != null) await hold;
     if (notEnabled) throw const AvailabilityNotEnabled();
@@ -78,7 +95,7 @@ class FakeAvailabilityRepository implements AvailabilityRepository {
   }
 
   @override
-  Stream<void> watch({required String squadId}) => _changes.stream;
+  Stream<CheckInChange> watch({required String squadId}) => _changes.stream;
 
   /// A row another phone stored. Does not notify until [notify].
   void store(StoredCheckIn row) {

@@ -19,6 +19,9 @@ class WhoCanPlayPanel extends ConsumerStatefulWidget {
     required this.squad,
     required this.meId,
     this.demo = false,
+    this.showDemoLine = true,
+    this.showRest = false,
+    this.onShowRest,
     super.key,
   });
 
@@ -26,16 +29,42 @@ class WhoCanPlayPanel extends ConsumerStatefulWidget {
   final String meId;
   final bool demo;
 
+  /// The chat banner already says this is a demo. The panel line is for the
+  /// panel's own tests.
+  final bool showDemoLine;
+
+  /// Tests open the other sections. The home screen starts on the summary.
+  final bool showRest;
+
+  /// The chat screen hears this so the full board can take the page.
+  final ValueChanged<bool>? onShowRest;
+
   @override
   ConsumerState<WhoCanPlayPanel> createState() => _WhoCanPlayPanelState();
 }
 
 class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
   final _game = TextEditingController();
+  final _gameFocus = FocusNode();
   Timer? _tick;
+  late bool _showRest = widget.showRest;
+
+  bool get _rest => widget.onShowRest == null ? _showRest : widget.showRest;
+
+  void _toggleRest() {
+    final next = !_rest;
+    final onShowRest = widget.onShowRest;
+    if (onShowRest != null) {
+      onShowRest(next);
+      return;
+    }
+    setState(() => _showRest = next);
+  }
+
   @override
   void initState() {
     super.initState();
+    _gameFocus.addListener(_onGameFocus);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final me = _member(widget.squad, widget.meId);
@@ -55,9 +84,16 @@ class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
     });
   }
 
+  void _onGameFocus() {
+    if (_gameFocus.hasFocus) return;
+    unawaited(_saveGame(_game.text));
+  }
+
   @override
   void dispose() {
+    _gameFocus.removeListener(_onGameFocus);
     _tick?.cancel();
+    _gameFocus.dispose();
     _game.dispose();
     super.dispose();
   }
@@ -68,32 +104,40 @@ class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
     return Material(
       color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+        padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const NotificationsStatus(),
-            if (widget.demo)
+            if (widget.demo && widget.showDemoLine)
               const Text(
                 'Demo. Check-ins stay on this phone.',
                 key: Key('who-demo'),
               ),
-            Text(
-              'Who can play',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
+            const _Lead(),
             const SizedBox(height: 8),
             _Mine(
               game: _game,
+              gameFocus: _gameFocus,
+              showGame: _rest,
               saving: state.saving,
               effect: state.board?.person(widget.meId)?.effect,
               onAvailable: () => _save(const CheckInDraft.now()),
               onLater: _pickLater,
               onCant: () => _save(const CheckInDraft.unavailable()),
+              onClear: _canClear(state.board?.person(widget.meId)?.effect)
+                  ? _clear
+                  : null,
               onGame: _saveGame,
             ),
-            const SizedBox(height: 12),
-            const _Body(),
+            const SizedBox(height: 4),
+            _Sections(showRest: _rest),
+            TextButton(
+              key: Key(_rest ? 'who-collapse' : 'who-expand'),
+              style: TextButton.styleFrom(minimumSize: const Size(44, 44)),
+              onPressed: _toggleRest,
+              child: Text(_rest ? 'Hide the rest' : 'Show the squad'),
+            ),
           ],
         ),
       ),
@@ -101,16 +145,30 @@ class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
   }
 
   void _save(CheckInDraft draft) {
-    unawaited(ref.read(availabilityControllerProvider.notifier).save(draft));
+    unawaited(_saveStatus(draft));
+  }
+
+  void _clear() {
+    unawaited(ref.read(availabilityControllerProvider.notifier).clear());
+  }
+
+  Future<void> _saveStatus(CheckInDraft draft) async {
+    await _saveGame(_game.text);
+    if (!mounted) return;
+    await ref.read(availabilityControllerProvider.notifier).save(draft);
   }
 
   Future<void> _pickLater() async {
+    await _saveGame(_game.text);
+    if (!mounted) return;
     final until = await showDialog<DateTime>(
       context: context,
       builder: (context) => const LaterTimeDialog(),
     );
     if (until == null || !mounted) return;
-    _save(CheckInDraft.later(until));
+    await ref
+        .read(availabilityControllerProvider.notifier)
+        .save(CheckInDraft.later(until));
   }
 
   Future<void> _saveGame(String value) async {
@@ -123,10 +181,11 @@ class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
       return;
     }
     try {
-      await ref
+      final saved = await ref
           .read(squadRepositoryProvider)
           .saveProfile(displayName: me.displayName, defaultGame: game);
       if (!mounted) return;
+      ref.read(availabilityControllerProvider.notifier).noteMember(saved);
       await ref.read(squadChatControllerProvider.notifier).refreshFromRoster();
     } on Object {
       if (!mounted) return;
@@ -145,20 +204,26 @@ class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
 class _Mine extends StatelessWidget {
   const _Mine({
     required this.game,
+    required this.gameFocus,
+    required this.showGame,
     required this.saving,
     required this.effect,
     required this.onAvailable,
     required this.onLater,
     required this.onCant,
+    required this.onClear,
     required this.onGame,
   });
 
   final TextEditingController game;
+  final FocusNode gameFocus;
+  final bool showGame;
   final bool saving;
   final AvailabilityEffect? effect;
   final VoidCallback onAvailable;
   final VoidCallback onLater;
   final VoidCallback onCant;
+  final VoidCallback? onClear;
   final ValueChanged<String> onGame;
 
   @override
@@ -188,21 +253,33 @@ class _Mine extends StatelessWidget {
               selected: effect == AvailabilityEffect.unavailable,
               onPressed: saving ? null : onCant,
             ),
+            if (onClear != null)
+              _StatusButton(
+                label: 'Not set',
+                buttonKey: const Key('status-clear'),
+                selected: false,
+                onPressed: saving ? null : onClear,
+              ),
           ],
         ),
-        const SizedBox(height: 8),
-        TextField(
-          key: const Key('status-game'),
-          controller: game,
-          textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            labelText: 'Game',
-            helperText: 'A label you type. Not a console reading.',
-            border: OutlineInputBorder(),
-            isDense: true,
+        if (showGame) ...[
+          const SizedBox(height: 8),
+          TextField(
+            key: const Key('status-game'),
+            controller: game,
+            focusNode: gameFocus,
+            textCapitalization: TextCapitalization.words,
+            textInputAction: TextInputAction.done,
+            decoration: const InputDecoration(
+              labelText: 'Game',
+              helperText: 'A label you type. Not a console reading.',
+              helperMaxLines: 3,
+              border: OutlineInputBorder(),
+              isDense: true,
+            ),
+            onSubmitted: onGame,
           ),
-          onSubmitted: onGame,
-        ),
+        ],
       ],
     );
   }
@@ -225,34 +302,28 @@ class _StatusButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final style = FilledButton.styleFrom(minimumSize: const Size(44, 44));
     final child = Text(selected ? '$label, selected' : label);
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      child: selected
-          ? FilledButton(
-              key: buttonKey,
-              style: style,
-              onPressed: onPressed,
-              child: child,
-            )
-          : FilledButton.tonal(
-              key: buttonKey,
-              style: style,
-              onPressed: onPressed,
-              child: child,
-            ),
-    );
+    return selected
+        ? FilledButton(
+            key: buttonKey,
+            style: style,
+            onPressed: onPressed,
+            child: child,
+          )
+        : FilledButton.tonal(
+            key: buttonKey,
+            style: style,
+            onPressed: onPressed,
+            child: child,
+          );
   }
 }
 
-class _Body extends ConsumerWidget {
-  const _Body();
+class _Lead extends ConsumerWidget {
+  const _Lead();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(availabilityControllerProvider);
-    final offset = ref.watch(localOffsetProvider);
     if (state.notEnabled) {
       return const Text(
         'Availability is not enabled on this project yet.',
@@ -290,18 +361,44 @@ class _Body extends ConsumerWidget {
       );
     }
     final who = WhoCanPlay.group(board: board, members: state.squad!.members);
+    final faces = [...who.playingNow, ...who.available];
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Semantics(
           liveRegion: true,
-          label: who.summary,
           child: Text(
             who.summary,
             key: const Key('who-summary'),
-            style: Theme.of(context).textTheme.titleLarge,
+            style: Theme.of(context).textTheme.titleMedium,
           ),
         ),
+        if (faces.isNotEmpty)
+          ExcludeSemantics(
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Wrap(
+                key: const Key('who-avatars'),
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final row in faces)
+                    Tooltip(
+                      message: row.displayName,
+                      child: CircleAvatar(
+                        radius: 16,
+                        child: Text(
+                          row.displayName.isEmpty
+                              ? '?'
+                              : row.displayName.substring(0, 1),
+                          textScaler: TextScaler.noScaling,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
         if (state.stale)
           const Text(
             'Showing the last check-ins. The refresh failed.',
@@ -309,15 +406,35 @@ class _Body extends ConsumerWidget {
           ),
         if (state.error != null)
           Text(state.error!, key: const Key('who-error')),
-        if (who.nobodyCheckedIn)
+      ],
+    );
+  }
+}
+
+class _Sections extends ConsumerWidget {
+  const _Sections({required this.showRest});
+
+  final bool showRest;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(availabilityControllerProvider);
+    final board = state.board;
+    final squad = state.squad;
+    if (board == null || squad == null) return const SizedBox.shrink();
+    final offset = ref.watch(localOffsetProvider);
+    final who = WhoCanPlay.group(board: board, members: squad.members);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (showRest && who.nobodyCheckedIn)
           const Padding(
-            padding: EdgeInsets.only(top: 8),
+            padding: EdgeInsets.only(top: 4),
             child: Text(
               'Nobody is checked in. Tap Available if you can play.',
               key: Key('who-empty'),
             ),
           ),
-        const SizedBox(height: 8),
         _Section(
           title: 'Playing now',
           sectionKey: const Key('section-playing'),
@@ -325,27 +442,29 @@ class _Body extends ConsumerWidget {
           rows: who.playingNow,
           offset: offset,
         ),
-        _Section(
-          title: 'Available',
-          sectionKey: const Key('section-available'),
-          empty: 'Nobody available without a game',
-          rows: who.available,
-          offset: offset,
-        ),
-        _Section(
-          title: 'Maybe later',
-          sectionKey: const Key('section-later'),
-          empty: 'Nobody later',
-          rows: who.maybeLater,
-          offset: offset,
-        ),
-        _Section(
-          title: 'Offline',
-          sectionKey: const Key('section-offline'),
-          empty: 'Nobody offline',
-          rows: who.offline,
-          offset: offset,
-        ),
+        if (showRest) ...[
+          _Section(
+            title: 'Available',
+            sectionKey: const Key('section-available'),
+            empty: 'Nobody available without a game',
+            rows: who.available,
+            offset: offset,
+          ),
+          _Section(
+            title: 'Maybe later',
+            sectionKey: const Key('section-later'),
+            empty: 'Nobody later',
+            rows: who.maybeLater,
+            offset: offset,
+          ),
+          _Section(
+            title: 'Offline',
+            sectionKey: const Key('section-offline'),
+            empty: 'Nobody offline',
+            rows: who.offline,
+            offset: offset,
+          ),
+        ],
       ],
     );
   }
@@ -370,30 +489,34 @@ class _Section extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: Semantics(
-        header: true,
-        child: Column(
-          key: sectionKey,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: Theme.of(context).textTheme.titleSmall),
-            if (rows.isEmpty)
-              Text(empty)
-            else
-              for (final row in rows)
-                Semantics(
-                  label:
-                      '${row.displayName}. ${whoStatusLine(row, localOffset: offset)}',
-                  child: Text(
-                    '${row.displayName} · ${whoStatusLine(row, localOffset: offset)}',
-                    key: Key('who-${row.userId}'),
-                  ),
+      child: Column(
+        key: sectionKey,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Semantics(
+            header: true,
+            child: Text(title, style: Theme.of(context).textTheme.titleSmall),
+          ),
+          if (rows.isEmpty)
+            Text(empty)
+          else
+            for (final row in rows)
+              Semantics(
+                label: whoSpokenLine(row, localOffset: offset),
+                excludeSemantics: true,
+                child: Text(
+                  '${row.displayName} · ${whoStatusLine(row, localOffset: offset)}',
+                  key: Key('who-${row.userId}'),
                 ),
-          ],
-        ),
+              ),
+        ],
       ),
     );
   }
+}
+
+bool _canClear(AvailabilityEffect? effect) {
+  return effect != null && effect != AvailabilityEffect.notCheckedIn;
 }
 
 Member? _member(Squad squad, String meId) {

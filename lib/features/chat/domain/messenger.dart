@@ -1,3 +1,4 @@
+import 'package:squadsync/features/availability/domain/check_in.dart';
 import 'package:squadsync/features/chat/domain/chat_message.dart';
 
 /// The six reactions the picker offers. Stored as these exact characters.
@@ -116,8 +117,15 @@ List<MessageReaction> toggleReaction(
   ];
 }
 
+class SeenGlance {
+  const SeenGlance({required this.name, required this.readAt});
+
+  final String name;
+  final DateTime readAt;
+}
+
 /// People other than me whose cursor is on [message] or a later one.
-List<String> seenByNames({
+List<SeenGlance> seenByNames({
   required ChatMessage message,
   required List<ChatMessage> thread,
   required List<MemberRead> reads,
@@ -127,20 +135,31 @@ List<String> seenByNames({
   final sorted = sortedThread(thread);
   final at = sorted.indexWhere((row) => row.id == message.id);
   if (at < 0) return const [];
-  final who = <String>[];
+  final who = <SeenGlance>[];
   for (final read in reads) {
     if (read.userId.isEmpty || read.userId == meId) continue;
     final cursor = read.messageId;
     if (cursor == null || cursor.isEmpty) continue;
     final seenAt = sorted.indexWhere((row) => row.id == cursor);
-    if (seenAt >= at) who.add(names[read.userId] ?? 'Someone');
+    if (seenAt >= at) {
+      who.add(
+        SeenGlance(name: names[read.userId] ?? 'Someone', readAt: read.readAt),
+      );
+    }
   }
   return who;
 }
 
-String seenByLine(List<String> names) {
-  if (names.isEmpty) return '';
-  return 'Seen by ${names.join(', ')}';
+String seenByLine(List<SeenGlance> people, {DateTime? clock}) {
+  if (people.isEmpty) return '';
+  final parts = [
+    for (final person in people)
+      if (clock == null)
+        person.name
+      else
+        '${person.name} ${formatRelative(person.readAt, clock)}',
+  ];
+  return 'Seen by ${parts.join(', ')}';
 }
 
 /// The oldest message from someone else that is still after [readThroughId].

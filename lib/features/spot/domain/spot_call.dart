@@ -1,3 +1,5 @@
+import 'package:squadsync/features/availability/domain/check_in.dart';
+
 /// A server-owned spot call. The join window is five minutes from the call,
 /// stamped by the database. This phone only reads that instant.
 class SpotCall {
@@ -85,13 +87,14 @@ String spotCountdown(Duration remaining) {
 /// Honest sentence for the home strip.
 String spotStatusLine({required SpotCall? call, required DateTime clock}) {
   if (call == null) return 'No spot called.';
+  final called = 'Called ${formatRelative(call.calledAt, clock)}.';
   switch (call.phaseAt(clock)) {
     case SpotPhase.locked:
-      return 'Locked. ${call.inCount} in.';
+      return 'Locked. ${call.inCount} in. $called';
     case SpotPhase.expired:
-      return 'Join window closed. Starters stay in.';
+      return 'Join window closed. Starters stay in. $called';
     case SpotPhase.open:
-      return '${spotCountdown(spotRemaining(call, clock))} to join ${call.game}.';
+      return '${spotCountdown(spotRemaining(call, clock))} to join ${call.game}. $called';
   }
 }
 

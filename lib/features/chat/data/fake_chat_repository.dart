@@ -57,11 +57,16 @@ class FakeChatRepository implements ChatRepository {
   /// Pauses [unread] so a test can deliver a row while reload is waiting.
   Future<void>? holdUnread;
 
+  /// Pauses [newest] so a cold start can show the loading skeleton.
+  Future<void>? holdNewest;
+
   /// Pauses [quoteBodies] so the thread can paint before a quote arrives.
   Future<void>? holdQuotes;
 
   @override
   Future<HistoryPage> newest(String chatId, {int limit = openPageSize}) async {
+    final hold = holdNewest;
+    if (hold != null) await hold;
     _guard('newest');
     return newestPage(_for(chatId), limit: limit);
   }

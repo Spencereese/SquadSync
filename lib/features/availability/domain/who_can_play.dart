@@ -84,7 +84,12 @@ WhoGroup _group(PersonAvailability person, String game) {
 }
 
 /// Short line under a name. Stale rows say last seen and are not available.
-String whoStatusLine(WhoRow row, {required Duration localOffset}) {
+/// [now] adds when Available, Maybe later, or Can't was set, as `set 2m ago`.
+String whoStatusLine(
+  WhoRow row, {
+  required Duration localOffset,
+  DateTime? now,
+}) {
   final checkIn = row.person.checkIn;
   switch (row.person.effect) {
     case AvailabilityEffect.availableNow:
@@ -96,25 +101,48 @@ String whoStatusLine(WhoRow row, {required Duration localOffset}) {
           ? 'Available since ${formatLocalClock(when, localOffset)}'
           : 'until ${formatLocalClock(when, localOffset)}';
       if (row.group == WhoGroup.playingNow) {
-        return [
-          if (clock.isNotEmpty) clock,
-          row.game,
-          'checked in, not detected',
-        ].join(' · ');
+        return _withSetAgo(
+          [
+            if (clock.isNotEmpty) clock,
+            row.game,
+            'checked in, not detected',
+          ].join(' · '),
+          row,
+          now,
+        );
       }
-      return clock.isEmpty ? 'Available' : clock;
+      return _withSetAgo(clock.isEmpty ? 'Available' : clock, row, now);
     case AvailabilityEffect.availableLater:
       final until = checkIn?.until;
       if (until == null) return 'Maybe later, time not set.';
-      return 'Maybe later from ${formatLocalClock(until, localOffset)}.';
+      return _withSetAgo(
+        'Maybe later from ${formatLocalClock(until, localOffset)}.',
+        row,
+        now,
+      );
     case AvailabilityEffect.unavailable:
-      return "Can't";
+      return _withSetAgo("Can't", row, now);
     case AvailabilityEffect.notCheckedIn:
       return 'Not checked in';
     case AvailabilityEffect.expired:
       final ended = availabilityEnded(checkIn);
       if (ended == null) return 'Last seen';
       return 'Last seen ${formatLocalClock(ended, localOffset)}';
+  }
+}
+
+String _withSetAgo(String line, WhoRow row, DateTime? now) {
+  if (now == null || line.isEmpty) return line;
+  final checkIn = row.person.checkIn;
+  if (checkIn == null) return line;
+  switch (row.person.effect) {
+    case AvailabilityEffect.availableNow:
+    case AvailabilityEffect.availableLater:
+    case AvailabilityEffect.unavailable:
+      return '$line · set ${formatRelative(checkIn.checkedAt, now)}';
+    case AvailabilityEffect.expired:
+    case AvailabilityEffect.notCheckedIn:
+      return line;
   }
 }
 
@@ -131,7 +159,11 @@ DateTime? availabilityEnded(StoredCheckIn? row) {
 }
 
 /// One VoiceOver node for a row. The visible line can stay shorter.
-String whoSpokenLine(WhoRow row, {required Duration localOffset}) {
+String whoSpokenLine(
+  WhoRow row, {
+  required Duration localOffset,
+  DateTime? now,
+}) {
   final name = row.displayName;
   final checkIn = row.person.checkIn;
   switch (row.person.effect) {
@@ -140,21 +172,33 @@ String whoSpokenLine(WhoRow row, {required Duration localOffset}) {
       final when = checkIn?.until;
       final clock = when == null ? '' : formatLocalClock(when, localOffset);
       if (row.group == WhoGroup.playingNow) {
-        if (clock.isEmpty) return '$name, playing ${row.game}';
-        if (promoted) {
-          return '$name, playing ${row.game}, available since $clock';
+        if (clock.isEmpty) {
+          return _spokenSet('$name, playing ${row.game}', row, now);
         }
-        return '$name, playing ${row.game}, until $clock';
+        if (promoted) {
+          return _spokenSet(
+            '$name, playing ${row.game}, available since $clock',
+            row,
+            now,
+          );
+        }
+        return _spokenSet('$name, playing ${row.game}, until $clock', row, now);
       }
-      if (clock.isEmpty) return '$name, available';
-      if (promoted) return '$name, available since $clock';
-      return '$name, available until $clock';
+      if (clock.isEmpty) return _spokenSet('$name, available', row, now);
+      if (promoted) {
+        return _spokenSet('$name, available since $clock', row, now);
+      }
+      return _spokenSet('$name, available until $clock', row, now);
     case AvailabilityEffect.availableLater:
       final until = checkIn?.until;
       if (until == null) return '$name, maybe later';
-      return '$name, available at ${formatLocalClock(until, localOffset)}';
+      return _spokenSet(
+        '$name, available at ${formatLocalClock(until, localOffset)}',
+        row,
+        now,
+      );
     case AvailabilityEffect.unavailable:
-      return "$name, can't";
+      return _spokenSet("$name, can't", row, now);
     case AvailabilityEffect.notCheckedIn:
       return '$name, not checked in';
     case AvailabilityEffect.expired:
@@ -162,4 +206,10 @@ String whoSpokenLine(WhoRow row, {required Duration localOffset}) {
       if (ended == null) return '$name, last seen';
       return '$name, last seen ${formatLocalClock(ended, localOffset)}';
   }
+}
+
+String _spokenSet(String line, WhoRow row, DateTime? now) {
+  final aged = _withSetAgo(line, row, now);
+  if (aged == line) return line;
+  return aged.replaceFirst(' · set ', ', set ');
 }

@@ -155,6 +155,11 @@ void main() {
 
     expect(find.byKey(const Key('who-loading')), findsOneWidget);
     expect(find.byKey(const Key('who-summary')), findsNothing);
+    expect(find.bySemanticsLabel("Loading who's on"), findsOneWidget);
+    expect(
+      find.bySemanticsLabel(RegExp("Loading who's on.*Notifications")),
+      findsNothing,
+    );
 
     gate.complete();
     await tester.pump();

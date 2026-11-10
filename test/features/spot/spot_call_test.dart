@@ -27,14 +27,17 @@ void main() {
       ],
     );
     expect(call.phaseAt(start), SpotPhase.open);
-    expect(spotStatusLine(call: call, clock: start), '5:00 left to join Halo.');
+    expect(
+      spotStatusLine(call: call, clock: start),
+      '5:00 left to join Halo. Called just now.',
+    );
     expect(
       call.phaseAt(start.add(const Duration(minutes: 5))),
       SpotPhase.expired,
     );
     expect(
       spotStatusLine(call: call, clock: start.add(const Duration(minutes: 5))),
-      'Join window closed. Starters stay in.',
+      'Join window closed. Starters stay in. Called 5m ago.',
     );
     expect(spotStatusLine(call: null, clock: start), 'No spot called.');
   });
@@ -66,7 +69,7 @@ void main() {
       await repo.lock(callId: call.id);
       expect(
         spotStatusLine(call: repo.call, clock: clock.now()),
-        'Locked. 2 in.',
+        'Locked. 2 in. Called 5m ago.',
       );
     },
   );
@@ -235,7 +238,8 @@ void main() {
 
     await tester.tap(find.byKey(const Key('spot-call')));
     await tester.pumpAndSettle();
-    expect(find.text('5:00 left to join Halo.'), findsOneWidget);
+    expect(find.textContaining('5:00 left to join Halo.'), findsOneWidget);
+    expect(find.textContaining('Called just now.'), findsOneWidget);
     expect(
       tester.widget<FilledButton>(find.byKey(const Key('spot-in'))).onPressed,
       isNotNull,
@@ -272,7 +276,7 @@ void main() {
     await spots.lock(callId: call.id);
     await _pumpStrip(tester, spots);
 
-    expect(find.text('Locked. 1 in.'), findsOneWidget);
+    expect(find.textContaining('Locked. 1 in.'), findsOneWidget);
     expect(find.bySemanticsLabel('In: Spencer'), findsOneWidget);
     expect(find.text('Spencer'), findsWidgets);
     expect(find.byKey(const Key('spot-in')), findsNothing);
@@ -283,7 +287,7 @@ void main() {
     expect(find.text('End this spot?'), findsOneWidget);
     await tester.tap(find.text('Keep it'));
     await tester.pumpAndSettle();
-    expect(find.text('Locked. 1 in.'), findsOneWidget);
+    expect(find.textContaining('Locked. 1 in.'), findsOneWidget);
 
     await tester.tap(find.byKey(const Key('spot-end')));
     await tester.pumpAndSettle();

@@ -2,7 +2,7 @@
 
 A private chat for one squad of eight friends, on iPhone and Android.
 
-This tree is a fresh start. The previous app is not the base of this branch. Without a Supabase URL and anon key the app is a labeled demo: messages stay on the phone. With both values it uses the live project. A URL without a running client shows "Not connected" and does not fall back to the demo.
+This tree is a fresh start. The previous app is not the base of this branch. Without a Supabase URL and anon key the app is a labeled demo: messages clear when you close the app. With both values it uses the live project. A URL without a running client shows "Not connected" and does not fall back to the demo.
 
 Bundle id: `com.spencereese.squadsync`.
 

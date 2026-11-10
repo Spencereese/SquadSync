@@ -124,6 +124,19 @@ final steamBoardProvider = FutureProvider<SteamBoard>((ref) {
   return ref.watch(steamRepositoryProvider).presence();
 });
 
+/// Bumped on resume and pull-to-refresh so the session list reloads
+/// even when realtime missed an event.
+class SessionRefresh extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void bump() => state++;
+}
+
+final sessionRefreshProvider = NotifierProvider<SessionRefresh, int>(
+  SessionRefresh.new,
+);
+
 final sessionRepositoryProvider = Provider<SessionRepository>((ref) {
   final client = ref.watch(supabaseClientProvider);
   if (client == null) return FakeSessionRepository();

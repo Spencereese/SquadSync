@@ -138,11 +138,11 @@ class SupabaseSessionRepository implements SessionRepository {
   }
 
   @override
-  Stream<void> watch({required String squadId}) {
+  Stream<SessionChange> watch({required String squadId}) {
     final channel = _client.channel('sq8-sessions-$squadId');
-    final controller = StreamController<void>.broadcast();
-    void emit() {
-      if (!controller.isClosed) controller.add(null);
+    final controller = StreamController<SessionChange>.broadcast();
+    void emit(SessionChange change) {
+      if (!controller.isClosed) controller.add(change);
     }
 
     for (final event in [
@@ -158,18 +158,42 @@ class SupabaseSessionRepository implements SessionRepository {
           column: 'squad_id',
           value: squadId,
         ),
-        callback: (_) => emit(),
+        callback: (_) => emit(const SessionChange.squad()),
       );
     }
-    for (final event in PostgresChangeEvent.values) {
-      if (event == PostgresChangeEvent.all) continue;
+    // A session delete payload is the primary key only, so a squad filter
+    // would drop it.
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.delete,
+      schema: 'public',
+      table: 'sq8_sessions',
+      callback: (payload) {
+        emit(SessionChange.maybe(payload.oldRecord['id']?.toString()));
+      },
+    );
+    for (final event in [
+      PostgresChangeEvent.insert,
+      PostgresChangeEvent.update,
+    ]) {
       channel.onPostgresChanges(
         event: event,
         schema: 'public',
         table: 'sq8_session_rsvps',
-        callback: (_) => emit(),
+        callback: (payload) {
+          emit(
+            SessionChange.maybe(payload.newRecord['session_id']?.toString()),
+          );
+        },
       );
     }
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.delete,
+      schema: 'public',
+      table: 'sq8_session_rsvps',
+      callback: (payload) {
+        emit(SessionChange.maybe(payload.oldRecord['session_id']?.toString()));
+      },
+    );
     channel.subscribe();
     controller.onCancel = () {
       unawaited(_client.removeChannel(channel));

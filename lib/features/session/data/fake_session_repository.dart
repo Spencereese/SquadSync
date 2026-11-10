@@ -18,11 +18,16 @@ class FakeSessionRepository implements SessionRepository {
   String userId;
   String ownerId;
   final List<SquadSession> sessions;
-  final _changes = StreamController<void>.broadcast();
+  final _changes = StreamController<SessionChange>.broadcast();
+  var loads = 0;
+  Object? loadError;
   var _next = 1;
 
   @override
   Future<SessionBoard> load({required String squadId}) async {
+    loads += 1;
+    final error = loadError;
+    if (error != null) throw error;
     if (!enabled) return SessionBoard.notEnabled;
     return SessionBoard(
       enabled: true,
@@ -57,7 +62,7 @@ class FakeSessionRepository implements SessionRepository {
     );
     _next++;
     sessions.add(session);
-    _changes.add(null);
+    _changes.add(const SessionChange.squad());
     return session;
   }
 
@@ -140,7 +145,7 @@ class FakeSessionRepository implements SessionRepository {
   }
 
   @override
-  Stream<void> watch({required String squadId}) => _changes.stream;
+  Stream<SessionChange> watch({required String squadId}) => _changes.stream;
 
   SquadSession _find(String sessionId) {
     if (!enabled) throw const SessionNotEnabled();
@@ -163,7 +168,7 @@ class FakeSessionRepository implements SessionRepository {
   void _replace(SquadSession current, SquadSession next) {
     final index = sessions.indexOf(current);
     sessions[index] = next;
-    _changes.add(null);
+    _changes.add(const SessionChange.squad());
   }
 
   String? _note(String? note) {

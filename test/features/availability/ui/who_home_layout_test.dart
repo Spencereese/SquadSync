@@ -71,15 +71,19 @@ void main() {
         )
         .first;
     await tester.scrollUntilVisible(
-      find.byKey(const Key('who-expand')),
+      find.byKey(const Key('member-row')),
       80,
       scrollable: page,
     );
     await tester.pumpAndSettle();
-    expect(
-      find.byKey(const Key('who-expand')).hitTestable(at: Alignment.topCenter),
-      findsOneWidget,
+    expect(tester.getSize(find.byKey(const Key('member-row'))).height, 112);
+    await tester.scrollUntilVisible(
+      find.byKey(const Key('who-expand')),
+      -120,
+      scrollable: page,
     );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('who-expand')), findsOneWidget);
     expect(
       find.descendant(
         of: find.byKey(const Key('who-panel')),

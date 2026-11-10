@@ -48,6 +48,10 @@ abstract class ChatRepository {
     required DateTime readAt,
   });
 
+  /// Reactions and receipts. Inserts and updates are for this squad.
+  /// Deletes are not filtered; the caller drops ones it does not know.
+  Stream<MessengerEvent> watchMessenger(String chatId);
+
   /// Broadcast only. There is no typing table.
   Stream<Set<String>> watchTyping(String chatId);
 

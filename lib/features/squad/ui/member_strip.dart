@@ -23,7 +23,8 @@ class MemberStrip extends StatelessWidget {
           ),
         ),
         SizedBox(
-          height: MediaQuery.textScalerOf(context).scale(56).clamp(56, 72),
+          key: const Key('member-row'),
+          height: MediaQuery.textScalerOf(context).scale(56),
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12),

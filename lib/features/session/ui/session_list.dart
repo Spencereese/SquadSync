@@ -30,7 +30,8 @@ class SessionList extends ConsumerStatefulWidget {
 class _SessionListState extends ConsumerState<SessionList> {
   SessionBoard _board = SessionBoard.notEnabled;
   String? _error;
-  StreamSubscription<void>? _live;
+  StreamSubscription<SessionChange>? _live;
+  var _settled = false;
 
   @override
   void initState() {
@@ -50,7 +51,11 @@ class _SessionListState extends ConsumerState<SessionList> {
     _live = ref
         .read(sessionRepositoryProvider)
         .watch(squadId: widget.squadId)
-        .listen((_) => unawaited(_load()));
+        .listen((change) {
+          final known = [for (final session in _board.sessions) session.id];
+          if (!sessionChangeReloads(change, known)) return;
+          unawaited(_load());
+        });
     await _load();
   }
 
@@ -63,15 +68,27 @@ class _SessionListState extends ConsumerState<SessionList> {
       setState(() {
         _board = board;
         _error = null;
+        _settled = true;
       });
     } on RepositoryFailure catch (error) {
       if (!mounted) return;
-      setState(() => _error = error.message);
+      setState(() {
+        _error = error.message;
+        _settled = true;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(sessionRefreshProvider, (previous, next) {
+      if (previous == next) return;
+      unawaited(_load());
+    });
+    if (!_settled) return const SizedBox.shrink();
+    if (_error != null && !_board.enabled) {
+      return Text(_error!, key: const Key('session-error'));
+    }
     if (!_board.enabled) {
       return const Text(
         'Sessions are not set up yet.',
@@ -88,7 +105,7 @@ class _SessionListState extends ConsumerState<SessionList> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (_error != null) Text(_error!, key: const Key('session-error')),
-        if (upcoming.isEmpty)
+        if (upcoming.isEmpty && _error == null)
           const Text('No sessions scheduled.', key: Key('sessions-empty')),
         for (final session in upcoming)
           _card(session, clock: clock, offset: offset),

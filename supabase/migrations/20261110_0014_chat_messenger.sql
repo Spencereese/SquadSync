@@ -4,6 +4,8 @@
 -- Members of the squad can read. A person writes only their own reaction
 -- and their own cursor. anon and public get nothing.
 -- Running this file again is safe.
+-- Apply after files 1, 2, and 3. File 3 creates sq8_messages, which this
+-- file alters. Files 1 and 2 create the profiles and squads it references.
 
 alter table public.sq8_messages
   add column if not exists reply_to_id uuid references public.sq8_messages (id)

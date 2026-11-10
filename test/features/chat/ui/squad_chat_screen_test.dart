@@ -65,8 +65,12 @@ void main() {
     await _pump(tester, chats: chats);
 
     expect(find.text('hello'), findsOneWidget);
-    expect(find.byKey(const Key('messenger-error')), findsOneWidget);
-    expect(find.textContaining('unavailable'), findsOneWidget);
+    expect(
+      find.text("Couldn't load reactions or seen-by. Messages are still here."),
+      findsOneWidget,
+    );
+    expect(find.textContaining('permission denied'), findsNothing);
+    expect(find.textContaining('sq8_message_reads'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

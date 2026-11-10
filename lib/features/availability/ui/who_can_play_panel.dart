@@ -9,6 +9,7 @@ import 'package:squadsync/features/availability/ui/availability_controller.dart'
 import 'package:squadsync/features/availability/ui/availability_screen.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
 import 'package:squadsync/features/push/ui/push_inbox.dart';
+import 'package:squadsync/features/spot/ui/spot_strip.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
 
@@ -137,6 +138,11 @@ class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
               style: TextButton.styleFrom(minimumSize: const Size(44, 44)),
               onPressed: _toggleRest,
               child: Text(_rest ? 'Hide the rest' : 'Show the squad'),
+            ),
+            SpotStrip(
+              squadId: widget.squad.id,
+              meId: widget.meId,
+              canLock: widget.squad.ownerId == widget.meId,
             ),
           ],
         ),

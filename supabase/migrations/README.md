@@ -31,6 +31,7 @@ Run these in order, in one project, as the migration role:
 10. `20261109_0010_revoke_anon_invite_rpcs.sql` — **not applied**. Needs Spencer's approval. Revokes `EXECUTE` from `anon` and `public` on `public.sq8_join_with_code`, `public.sq8_create_invite`, and the `sq8` implementations. `authenticated` keeps the two public wrappers. Running it again is safe.
 11. `20261109_0011_invite_capacity_by_members.sql` — live per Grok Bot report (~4:13 AM CT Nov 9, matches `33a26ab`). This checkout did not query the project. Apply after file 8 if a project does not have it yet. Files 9 and 10 may already be applied or not; this file does not depend on either. Preflight: `sq8.join_with_code(text)` and `public.sq8_invites` exist. Running it again is safe. It does not grant `anon` or `public`.
 12. `20261110_0012_device_tokens.sql` — **not applied**. Device tokens for the signed-in person, and `sq8.message_push_targets` for the service role only. Apply after files 1 and 2. Running it again is safe. It does not grant `anon` or `public`, and authenticated cannot list other people's tokens. The edge function in `supabase/functions/sq8-notify-message` is not deployed. Secrets and console steps are in that folder's README.
+13. `20261110_0013_spot_calls.sql` — **not applied**. A squad spot call, RSVPs, and a lock. The join window is five minutes on the database clock. Apply after files 1, 2, and 6. Running it again is safe. It does not grant `anon` or `public`. Lock order is the squad row, then the call.
 
 ## What each file does
 

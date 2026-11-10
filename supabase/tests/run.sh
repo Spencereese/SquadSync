@@ -34,6 +34,7 @@ bash "$root/tests/sq8_invite_rotate_race.sh"
 psql -v ON_ERROR_STOP=1 -f "$root/tests/sq8_device_tokens.sql"
 psql -v ON_ERROR_STOP=1 -f "$root/tests/sq8_spot_calls.sql"
 bash "$root/tests/sq8_spot_race.sh"
+bash "$root/tests/sq8_spot_expiry_race.sh"
 bash "$root/tests/sq8_concurrency.sh"
 bash "$root/tests/sq8_cap_unlocked.sh"
 

@@ -137,6 +137,7 @@ class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
               squadId: widget.squad.id,
               meId: widget.meId,
               canLock: widget.squad.ownerId == widget.meId,
+              members: widget.squad.members,
             ),
           ],
         ),

@@ -9,6 +9,7 @@ import 'package:squadsync/features/availability/domain/who_can_play.dart';
 import 'package:squadsync/features/availability/ui/availability_controller.dart';
 import 'package:squadsync/features/availability/ui/availability_screen.dart';
 import 'package:squadsync/features/availability/ui/who_can_play_panel.dart';
+import 'package:squadsync/features/spot/ui/spot_controller.dart';
 import 'package:squadsync/features/invite/ui/invite_screen.dart';
 import 'package:squadsync/features/chat/ui/message_bubble.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
@@ -69,10 +70,16 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
       ref.read(squadChatControllerProvider.notifier).refreshFromRoster(),
     );
     unawaited(ref.read(availabilityControllerProvider.notifier).refresh());
+    unawaited(ref.read(spotHomeProvider.notifier).refresh());
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(squadChatControllerProvider, (previous, next) {
+      final id = next.squad?.id;
+      if (id == null || id == previous?.squad?.id) return;
+      unawaited(ref.read(spotHomeProvider.notifier).open(id));
+    });
     final state = ref.watch(squadChatControllerProvider);
     final squad = state.squad;
     final error = state.error;
@@ -231,6 +238,7 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
   Future<void> _refreshHome() async {
     await ref.read(squadChatControllerProvider.notifier).refreshFromRoster();
     await ref.read(availabilityControllerProvider.notifier).refresh();
+    await ref.read(spotHomeProvider.notifier).refresh();
   }
 
   Future<void> _editProfile(BuildContext context, WidgetRef ref) async {

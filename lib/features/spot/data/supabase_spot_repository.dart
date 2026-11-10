@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/spot/data/spot_repository.dart';
 import 'package:squadsync/features/spot/domain/spot_call.dart';
@@ -9,27 +11,18 @@ class SupabaseSpotRepository implements SpotRepository {
 
   final SupabaseClient _client;
 
-  Never _map(PostgrestException error) {
+  Never _map(PostgrestException error, {String action = 'save'}) {
     final message = error.message;
     if (error.code == '42P01' || error.code == 'PGRST205') {
       throw const SpotNotEnabled();
     }
-    if (message.contains('spot_full')) {
-      throw const RepositoryFailure('This spot is full.');
-    }
-    if (message.contains('spot_join_closed')) {
-      throw const RepositoryFailure('The join window is closed.');
-    }
-    if (message.contains('spot_locked')) {
-      throw const RepositoryFailure('This spot is locked.');
-    }
-    if (message.contains('spot_already_open')) {
-      throw const RepositoryFailure('A spot is already open.');
-    }
-    if (message.contains('spot_not_caller')) {
-      throw const RepositoryFailure('Only the caller or the owner can lock.');
-    }
-    throw RepositoryFailure(message);
+    final code = spotErrorCode(message);
+    throw RepositoryFailure(
+      code == null
+          ? spotErrorMessage(null)
+          : spotErrorMessage(code, action: action),
+      code: code,
+    );
   }
 
   @override
@@ -54,6 +47,75 @@ class SupabaseSpotRepository implements SpotRepository {
     } on PostgrestException catch (error) {
       _map(error);
     }
+  }
+
+  @override
+  Stream<SpotChange> watch({required String squadId}) {
+    final channel = _client.channel('sq8-spots-$squadId');
+    final controller = StreamController<SpotChange>.broadcast();
+    var disposed = false;
+    void emit(SpotChange change) {
+      if (disposed || controller.isClosed) return;
+      controller.add(change);
+    }
+
+    for (final event in [
+      PostgresChangeEvent.insert,
+      PostgresChangeEvent.update,
+    ]) {
+      channel.onPostgresChanges(
+        event: event,
+        schema: 'public',
+        table: 'sq8_spot_calls',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'squad_id',
+          value: squadId,
+        ),
+        callback: (_) => emit(const SpotChange()),
+      );
+    }
+    // Deletes are not filtered. A DELETE payload only has the primary key,
+    // so a squad_id filter never matches and the event is dropped.
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.delete,
+      schema: 'public',
+      table: 'sq8_spot_calls',
+      callback: (payload) {
+        emit(SpotChange(deletedCallId: payload.oldRecord['id']?.toString()));
+      },
+    );
+    for (final event in [
+      PostgresChangeEvent.insert,
+      PostgresChangeEvent.update,
+    ]) {
+      channel.onPostgresChanges(
+        event: event,
+        schema: 'public',
+        table: 'sq8_spot_rsvps',
+        callback: (payload) {
+          emit(
+            SpotChange(rsvpCallId: payload.newRecord['call_id']?.toString()),
+          );
+        },
+      );
+    }
+    channel.onPostgresChanges(
+      event: PostgresChangeEvent.delete,
+      schema: 'public',
+      table: 'sq8_spot_rsvps',
+      callback: (payload) {
+        emit(
+          SpotChange(deletedCallId: payload.oldRecord['call_id']?.toString()),
+        );
+      },
+    );
+    channel.subscribe();
+    controller.onCancel = () {
+      disposed = true;
+      unawaited(_client.removeChannel(channel));
+    };
+    return controller.stream;
   }
 
   @override
@@ -95,7 +157,7 @@ class SupabaseSpotRepository implements SpotRepository {
         },
       );
     } on PostgrestException catch (error) {
-      _map(error);
+      _map(error, action: 'rsvp');
     }
   }
 
@@ -104,7 +166,28 @@ class SupabaseSpotRepository implements SpotRepository {
     try {
       await _client.rpc<dynamic>('sq8_lock_spot', params: {'call_id': callId});
     } on PostgrestException catch (error) {
-      _map(error);
+      _map(error, action: 'lock');
+    }
+  }
+
+  @override
+  Future<void> end({required String callId}) async {
+    try {
+      await _client.rpc<dynamic>('sq8_end_spot', params: {'call_id': callId});
+    } on PostgrestException catch (error) {
+      _map(error, action: 'end');
+    }
+  }
+
+  @override
+  Future<void> cancel({required String callId}) async {
+    try {
+      await _client.rpc<dynamic>(
+        'sq8_cancel_spot',
+        params: {'call_id': callId},
+      );
+    } on PostgrestException catch (error) {
+      _map(error, action: 'cancel');
     }
   }
 

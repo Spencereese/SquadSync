@@ -105,17 +105,60 @@ String whoStatusLine(WhoRow row, {required Duration localOffset}) {
       return clock.isEmpty ? 'Available' : clock;
     case AvailabilityEffect.availableLater:
       final until = checkIn?.until;
-      final when = until == null
-          ? 'time not set'
-          : 'until ${formatLocalClock(until, localOffset)}';
-      return 'Maybe later $when.';
+      if (until == null) return 'Maybe later, time not set.';
+      return 'Maybe later from ${formatLocalClock(until, localOffset)}.';
     case AvailabilityEffect.unavailable:
       return "Can't";
     case AvailabilityEffect.notCheckedIn:
       return 'Not checked in';
     case AvailabilityEffect.expired:
-      final at = checkIn?.checkedAt;
-      if (at == null) return 'Last seen';
-      return 'Last seen ${formatLocalClock(at, localOffset)}';
+      final ended = availabilityEnded(checkIn);
+      if (ended == null) return 'Last seen';
+      return 'Last seen ${formatLocalClock(ended, localOffset)}';
+  }
+}
+
+/// When this check-in stopped counting. An available-now row ends at its
+/// until instant. A later row ends 60 minutes after the chosen time.
+/// The check-in instant is not last seen.
+DateTime? availabilityEnded(StoredCheckIn? row) {
+  final until = row?.until;
+  if (row == null || until == null) return null;
+  if (row.kind == CheckInKind.availableLater) {
+    return until.add(availableNowWindow);
+  }
+  return until;
+}
+
+/// One VoiceOver node for a row. The visible line can stay shorter.
+String whoSpokenLine(WhoRow row, {required Duration localOffset}) {
+  final name = row.displayName;
+  final checkIn = row.person.checkIn;
+  switch (row.person.effect) {
+    case AvailabilityEffect.availableNow:
+      final promoted = checkIn?.kind == CheckInKind.availableLater;
+      final when = checkIn?.until;
+      final clock = when == null ? '' : formatLocalClock(when, localOffset);
+      if (row.group == WhoGroup.playingNow) {
+        if (clock.isEmpty) return '$name, playing ${row.game}';
+        if (promoted) {
+          return '$name, playing ${row.game}, available since $clock';
+        }
+        return '$name, playing ${row.game}, until $clock';
+      }
+      if (clock.isEmpty) return '$name, available';
+      return '$name, available until $clock';
+    case AvailabilityEffect.availableLater:
+      final until = checkIn?.until;
+      if (until == null) return '$name, maybe later';
+      return '$name, available at ${formatLocalClock(until, localOffset)}';
+    case AvailabilityEffect.unavailable:
+      return "$name, can't";
+    case AvailabilityEffect.notCheckedIn:
+      return '$name, not checked in';
+    case AvailabilityEffect.expired:
+      final ended = availabilityEnded(checkIn);
+      if (ended == null) return '$name, last seen';
+      return '$name, last seen ${formatLocalClock(ended, localOffset)}';
   }
 }

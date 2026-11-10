@@ -12,6 +12,7 @@ import 'package:squadsync/features/invite/ui/invite_screen.dart';
 import 'package:squadsync/features/chat/ui/message_bubble.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
 import 'package:squadsync/features/squad/domain/member.dart';
+import 'package:squadsync/features/squad/domain/squad.dart';
 import 'package:squadsync/features/squad/ui/member_strip.dart';
 
 class SquadChatScreen extends ConsumerStatefulWidget {
@@ -25,6 +26,8 @@ class SquadChatScreen extends ConsumerStatefulWidget {
 
 class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
     with WidgetsBindingObserver {
+  var _boardOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -116,27 +119,72 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
                   ? const CircularProgressIndicator()
                   : Text(error),
             )
-          : Column(
+          : _boardOpen
+          ? Column(
               children: [
-                if (widget.demo) const _DemoBanner(),
-                if (state.linkDown) const _LinkDownBanner(),
-                if (error != null)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                    child: Text(error, key: const Key('earlier-error')),
-                  ),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 160),
-                  child: SingleChildScrollView(
-                    child: WhoCanPlayPanel(
-                      squad: squad,
-                      meId: state.meId,
-                      demo: widget.demo,
+                Expanded(
+                  child: RefreshIndicator(
+                    key: const Key('refresh-chat'),
+                    onRefresh: _refreshHome,
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: [
+                        if (widget.demo) const _DemoBanner(),
+                        if (state.linkDown) const _LinkDownBanner(),
+                        if (error != null)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                            child: Text(error, key: const Key('earlier-error')),
+                          ),
+                        _who(squad, state.meId),
+                        MemberStrip(members: squad.members),
+                      ],
                     ),
                   ),
                 ),
-                MemberStrip(members: squad.members),
-                const Divider(height: 1),
+                const _Composer(),
+              ],
+            )
+          : Column(
+              children: [
+                Flexible(
+                  flex: MediaQuery.textScalerOf(context).scale(1) > 1.5
+                      ? 8
+                      : 3,
+                  child: RefreshIndicator(
+                    key: const Key('refresh-chat'),
+                    onRefresh: _refreshHome,
+                    child: CustomScrollView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              if (widget.demo) const _DemoBanner(),
+                              if (state.linkDown) const _LinkDownBanner(),
+                              if (error != null)
+                                Padding(
+                                  padding: const EdgeInsets.fromLTRB(
+                                    16,
+                                    8,
+                                    16,
+                                    0,
+                                  ),
+                                  child: Text(
+                                    error,
+                                    key: const Key('earlier-error'),
+                                  ),
+                                ),
+                              _who(squad, state.meId),
+                              MemberStrip(members: squad.members),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 if (state.hasOlder)
                   TextButton(
                     key: const Key('earlier'),
@@ -149,24 +197,31 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
                     },
                     child: const Text('Earlier messages'),
                   ),
-                Expanded(
-                  child: RefreshIndicator(
-                    key: const Key('refresh-chat'),
-                    onRefresh: () async {
-                      await ref
-                          .read(squadChatControllerProvider.notifier)
-                          .refreshFromRoster();
-                      await ref
-                          .read(availabilityControllerProvider.notifier)
-                          .refresh();
-                    },
-                    child: const _MessageList(),
-                  ),
-                ),
+                const Flexible(flex: 2, child: _MessageList()),
                 const _Composer(),
               ],
             ),
     );
+  }
+
+  Widget _who(Squad squad, String meId) {
+    return WhoCanPlayPanel(
+      key: const Key('who-panel'),
+      squad: squad,
+      meId: meId,
+      demo: widget.demo,
+      showDemoLine: false,
+      showRest: _boardOpen,
+      onShowRest: (open) {
+        if (!mounted) return;
+        setState(() => _boardOpen = open);
+      },
+    );
+  }
+
+  Future<void> _refreshHome() async {
+    await ref.read(squadChatControllerProvider.notifier).refreshFromRoster();
+    await ref.read(availabilityControllerProvider.notifier).refresh();
   }
 
   Future<void> _editProfile(BuildContext context, WidgetRef ref) async {

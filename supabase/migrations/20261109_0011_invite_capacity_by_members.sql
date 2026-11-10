@@ -1,4 +1,4 @@
--- Proposed. Not applied to the live project.
+-- Applied live ~4:13 AM CT Nov 9 per Grok Bot report.
 -- Safe after file 8. Files 9 and 10 may or may not be applied.
 -- Idempotent. Does not grant execute to anon or public.
 -- create or replace keeps the grants already on these functions, including

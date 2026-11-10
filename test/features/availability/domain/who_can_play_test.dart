@@ -90,14 +90,18 @@ void main() {
     );
     expect(
       whoStatusLine(who.maybeLater.single, localOffset: Duration.zero),
-      'Maybe later until 10:30 PM.',
+      'Maybe later from 10:30 PM.',
     );
     expect(
       whoStatusLine(
         who.offline.firstWhere((row) => row.userId == 'stale'),
         localOffset: Duration.zero,
       ),
-      'Last seen 6:00 PM',
+      'Last seen 7:59 PM',
+    );
+    expect(
+      whoSpokenLine(who.playingNow.single, localOffset: Duration.zero),
+      'Play, playing Call of Duty, until 8:30 PM',
     );
     expect(
       whoStatusLine(
@@ -198,7 +202,7 @@ void main() {
     expect(ended.availableCount, 0);
     expect(
       whoStatusLine(ended.offline.single, localOffset: Duration.zero),
-      'Last seen 6:00 PM',
+      'Last seen 10:00 PM',
     );
   });
 

@@ -6,6 +6,7 @@ import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/availability/data/availability_repository.dart';
 import 'package:squadsync/features/availability/domain/availability_board.dart';
 import 'package:squadsync/features/availability/domain/check_in.dart';
+import 'package:squadsync/features/squad/domain/member.dart';
 import 'package:squadsync/features/squad/domain/squad.dart';
 
 /// A save or clear that failed and can be sent again.
@@ -128,7 +129,16 @@ class AvailabilityController extends Notifier<AvailabilityState> {
     _live = ref
         .read(availabilityRepositoryProvider)
         .watch(squadId: squadId)
-        .listen((_) => unawaited(refresh()), onError: (_, _) {});
+        .listen((change) {
+          if (change.deletedUserId != null &&
+              !reloadAfterCheckInDelete(
+                knownUserIds: [for (final row in state.rows) row.userId],
+                deletedUserId: change.deletedUserId,
+              )) {
+            return;
+          }
+          unawaited(refresh());
+        }, onError: (_, _) {});
     if (previous != null) unawaited(previous.cancel());
   }
 
@@ -137,6 +147,23 @@ class AvailabilityController extends Notifier<AvailabilityState> {
     final meId = state.meId;
     if (squad == null || meId == null) return;
     await open(squad: squad, meId: meId);
+  }
+
+  /// The profile game changed. The board uses the member list for labels.
+  void noteMember(Member member) {
+    final squad = state.squad;
+    if (squad == null) return;
+    if (!squad.members.any((existing) => existing.id == member.id)) return;
+    state = state.copyWith(
+      squad: Squad(
+        id: squad.id,
+        ownerId: squad.ownerId,
+        members: [
+          for (final existing in squad.members)
+            if (existing.id == member.id) member else existing,
+        ],
+      ),
+    );
   }
 
   void reevaluate() {

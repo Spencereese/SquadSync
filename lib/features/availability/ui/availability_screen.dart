@@ -354,7 +354,7 @@ class _LaterTimeDialogState extends ConsumerState<LaterTimeDialog> {
           children: [
             const Text(
               'Choose when you expect to be free. '
-              'This does not mark you available now when that time comes.',
+              "You'll show as available from that time for an hour.",
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<DateTime>(

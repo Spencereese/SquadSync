@@ -306,6 +306,43 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byKey(const Key('later-dialog')), findsOneWidget);
+    expect(
+      find.textContaining(
+        "You'll show as available from that time for an hour.",
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(
+        'This does not mark you available now when that time comes.',
+      ),
+      findsNothing,
+    );
+  });
+
+  testWidgets('Not set clears my check-in back to not checked in', (
+    tester,
+  ) async {
+    final clock = ManualSquadClock(DateTime.utc(2026, 11, 8, 20));
+    final repo = FakeAvailabilityRepository(clock: clock);
+    await _pump(tester, repo: repo, clock: clock);
+    expect(find.byKey(const Key('status-clear')), findsNothing);
+
+    await tester.tap(find.byKey(const Key('status-available')));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('1 of 8 available'), findsOneWidget);
+    expect(find.byKey(const Key('status-clear')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('status-clear')));
+    await tester.pump();
+    await tester.pump();
+
+    expect(repo.rows, isEmpty);
+    expect(find.text('0 of 8 available'), findsOneWidget);
+    expect(find.textContaining('Spencer · Not checked in'), findsOneWidget);
+    expect(find.textContaining('checked in, not detected'), findsNothing);
+    expect(find.byKey(const Key('status-clear')), findsNothing);
   });
 
   test('a delete reloads only when that person is on the board', () {

@@ -123,6 +123,9 @@ class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
               onAvailable: () => _save(const CheckInDraft.now()),
               onLater: _pickLater,
               onCant: () => _save(const CheckInDraft.unavailable()),
+              onClear: _canClear(state.board?.person(widget.meId)?.effect)
+                  ? _clear
+                  : null,
               onGame: _saveGame,
             ),
             const SizedBox(height: 4),
@@ -141,6 +144,10 @@ class _WhoCanPlayPanelState extends ConsumerState<WhoCanPlayPanel> {
 
   void _save(CheckInDraft draft) {
     unawaited(_saveStatus(draft));
+  }
+
+  void _clear() {
+    unawaited(ref.read(availabilityControllerProvider.notifier).clear());
   }
 
   Future<void> _saveStatus(CheckInDraft draft) async {
@@ -202,6 +209,7 @@ class _Mine extends StatelessWidget {
     required this.onAvailable,
     required this.onLater,
     required this.onCant,
+    required this.onClear,
     required this.onGame,
   });
 
@@ -213,6 +221,7 @@ class _Mine extends StatelessWidget {
   final VoidCallback onAvailable;
   final VoidCallback onLater;
   final VoidCallback onCant;
+  final VoidCallback? onClear;
   final ValueChanged<String> onGame;
 
   @override
@@ -242,6 +251,13 @@ class _Mine extends StatelessWidget {
               selected: effect == AvailabilityEffect.unavailable,
               onPressed: saving ? null : onCant,
             ),
+            if (onClear != null)
+              _StatusButton(
+                label: 'Not set',
+                buttonKey: const Key('status-clear'),
+                selected: false,
+                onPressed: saving ? null : onClear,
+              ),
           ],
         ),
         if (showGame) ...[
@@ -495,6 +511,10 @@ class _Section extends StatelessWidget {
       ),
     );
   }
+}
+
+bool _canClear(AvailabilityEffect? effect) {
+  return effect != null && effect != AvailabilityEffect.notCheckedIn;
 }
 
 Member? _member(Squad squad, String meId) {

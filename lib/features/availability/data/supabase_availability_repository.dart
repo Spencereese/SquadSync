@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/availability/data/availability_repository.dart';
 import 'package:squadsync/features/availability/data/check_in_row.dart';
@@ -76,5 +78,37 @@ class SupabaseAvailabilityRepository implements AvailabilityRepository {
     } on PostgrestException catch (error) {
       throw mapCheckInWriteError(error);
     }
+  }
+
+  @override
+  Stream<void> watch({required String squadId}) {
+    final channel = _client.channel('sq8-checkins-$squadId');
+    final controller = StreamController<void>.broadcast();
+    var disposed = false;
+    for (final event in PostgresChangeEvent.values) {
+      if (event == PostgresChangeEvent.all) continue;
+      channel.onPostgresChanges(
+        event: event,
+        schema: 'public',
+        table: 'sq8_check_ins',
+        filter: PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: 'squad_id',
+          value: squadId,
+        ),
+        callback: (_) {
+          if (disposed || controller.isClosed) return;
+          controller.add(null);
+        },
+      );
+    }
+    // subscribe() can be called once. A missing publication just stops live
+    // rows. Resume and pull-to-refresh still load the board.
+    channel.subscribe();
+    controller.onCancel = () {
+      disposed = true;
+      unawaited(_client.removeChannel(channel));
+    };
+    return controller.stream;
   }
 }

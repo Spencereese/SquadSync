@@ -15,6 +15,10 @@ abstract class AvailabilityRepository {
   /// Removes only the signed-in person's row. They are then not checked in,
   /// which is different from marking unavailable.
   Future<void> clear({required String squadId});
+
+  /// Fires when a check-in row in [squadId] changes.
+  /// An empty stream is fine. Resume and pull-to-refresh do not need it.
+  Stream<void> watch({required String squadId});
 }
 
 /// The live project has no check-in table yet. Do not invent rows.

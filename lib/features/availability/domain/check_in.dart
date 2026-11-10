@@ -169,6 +169,16 @@ DateTime localSelectionToUtc({
   return wall.subtract(localOffset);
 }
 
+/// Clock only, for example `10:30 PM`. The date stays off this label.
+String formatLocalClock(DateTime utc, Duration offset) {
+  final local = utc.toUtc().add(offset);
+  final hour24 = local.hour;
+  final hour = hour24 % 12 == 0 ? 12 : hour24 % 12;
+  final suffix = hour24 >= 12 ? 'PM' : 'AM';
+  final minute = local.minute.toString().padLeft(2, '0');
+  return '$hour:$minute $suffix';
+}
+
 String formatLocalDateTime(DateTime utc, Duration offset) {
   final local = utc.toUtc().add(offset);
   final hour24 = local.hour;

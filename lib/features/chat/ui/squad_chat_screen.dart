@@ -7,6 +7,7 @@ import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/auth/ui/sign_out_button.dart';
 import 'package:squadsync/features/availability/ui/availability_controller.dart';
 import 'package:squadsync/features/availability/ui/availability_screen.dart';
+import 'package:squadsync/features/availability/ui/who_can_play_panel.dart';
 import 'package:squadsync/features/invite/ui/invite_screen.dart';
 import 'package:squadsync/features/chat/ui/message_bubble.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
@@ -124,6 +125,16 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                     child: Text(error, key: const Key('earlier-error')),
                   ),
+                ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 160),
+                  child: SingleChildScrollView(
+                    child: WhoCanPlayPanel(
+                      squad: squad,
+                      meId: state.meId,
+                      demo: widget.demo,
+                    ),
+                  ),
+                ),
                 MemberStrip(members: squad.members),
                 const Divider(height: 1),
                 if (state.hasOlder)
@@ -141,9 +152,14 @@ class _SquadChatScreenState extends ConsumerState<SquadChatScreen>
                 Expanded(
                   child: RefreshIndicator(
                     key: const Key('refresh-chat'),
-                    onRefresh: () => ref
-                        .read(squadChatControllerProvider.notifier)
-                        .refreshFromRoster(),
+                    onRefresh: () async {
+                      await ref
+                          .read(squadChatControllerProvider.notifier)
+                          .refreshFromRoster();
+                      await ref
+                          .read(availabilityControllerProvider.notifier)
+                          .refresh();
+                    },
                     child: const _MessageList(),
                   ),
                 ),

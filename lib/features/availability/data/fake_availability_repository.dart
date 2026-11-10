@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:squadsync/core/repository_failure.dart';
 import 'package:squadsync/features/availability/data/availability_repository.dart';
 import 'package:squadsync/features/availability/domain/check_in.dart';
@@ -24,6 +26,12 @@ class FakeAvailabilityRepository implements AvailabilityRepository {
   Future<void>? holdLoads;
 
   final List<StoredCheckIn> _rows;
+  final _changes = StreamController<void>.broadcast();
+
+  /// Test seam for a realtime check-in. Does not add a row.
+  void notify() {
+    if (!_changes.isClosed) _changes.add(null);
+  }
 
   List<StoredCheckIn> get rows => List.unmodifiable(_rows);
 
@@ -67,6 +75,15 @@ class FakeAvailabilityRepository implements AvailabilityRepository {
       );
     }
     _rows.removeWhere((row) => row.userId == userId && row.squadId == squadId);
+  }
+
+  @override
+  Stream<void> watch({required String squadId}) => _changes.stream;
+
+  /// A row another phone stored. Does not notify until [notify].
+  void store(StoredCheckIn row) {
+    _rows.removeWhere((stored) => stored.userId == row.userId);
+    _rows.add(row);
   }
 
   StoredCheckIn _stamp(String squadId, CheckInDraft draft) {

@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:squadsync/core/app.dart';
 import 'package:squadsync/core/client_id.dart';
 import 'package:squadsync/core/dependencies.dart';
+import 'package:squadsync/features/availability/data/fake_availability_repository.dart';
+import 'package:squadsync/features/availability/domain/check_in.dart';
 import 'package:squadsync/features/chat/data/fake_chat_repository.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_controller.dart';
 import 'package:squadsync/features/chat/ui/squad_chat_screen.dart';
@@ -351,5 +353,43 @@ void main() {
     expect(find.byKey(const Key('member-other')), findsNothing);
     expect(find.byKey(const Key('member-friend')), findsOneWidget);
     expect(find.byKey(const Key('composer')), findsOneWidget);
+  });
+
+  testWidgets('pull to refresh loads a check-in realtime missed', (
+    tester,
+  ) async {
+    final clock = ManualSquadClock(DateTime.utc(2026, 11, 8, 20));
+    final availability = FakeAvailabilityRepository(clock: clock);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          squadClockProvider.overrideWithValue(clock),
+          localOffsetProvider.overrideWithValue(Duration.zero),
+          availabilityTickProvider.overrideWithValue(Duration.zero),
+          availabilityRepositoryProvider.overrideWithValue(availability),
+        ],
+        child: const SquadSyncApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('0 of 8 available'), findsOneWidget);
+
+    availability.store(
+      StoredCheckIn(
+        userId: 'spencer',
+        squadId: 'squad',
+        kind: CheckInKind.availableNow,
+        checkedAt: clock.now(),
+        until: clock.now().add(const Duration(minutes: 60)),
+      ),
+    );
+    final refresh = tester.widget<RefreshIndicator>(
+      find.byKey(const Key('refresh-chat')),
+    );
+    await refresh.onRefresh();
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 of 8 available'), findsOneWidget);
+    expect(find.textContaining('checked in, not detected'), findsOneWidget);
   });
 }

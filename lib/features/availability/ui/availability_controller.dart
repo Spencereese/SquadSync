@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:squadsync/core/dependencies.dart';
 import 'package:squadsync/core/repository_failure.dart';
@@ -91,9 +93,17 @@ final availabilityControllerProvider =
 
 class AvailabilityController extends Notifier<AvailabilityState> {
   var _generation = 0;
+  StreamSubscription<void>? _live;
 
   @override
-  AvailabilityState build() => const AvailabilityState();
+  AvailabilityState build() {
+    ref.onDispose(() {
+      final live = _live;
+      _live = null;
+      if (live != null) unawaited(live.cancel());
+    });
+    return const AvailabilityState();
+  }
 
   Future<void> open({required Squad squad, required String meId}) async {
     final samePerson =
@@ -109,7 +119,17 @@ class AvailabilityController extends Notifier<AvailabilityState> {
       evaluatedAt: samePerson ? state.evaluatedAt : null,
       loading: !samePerson,
     );
+    _listen(squad.id);
     await _fetch(generation, refreshing: samePerson);
+  }
+
+  void _listen(String squadId) {
+    final previous = _live;
+    _live = ref
+        .read(availabilityRepositoryProvider)
+        .watch(squadId: squadId)
+        .listen((_) => unawaited(refresh()), onError: (_, _) {});
+    if (previous != null) unawaited(previous.cancel());
   }
 
   Future<void> refresh() async {

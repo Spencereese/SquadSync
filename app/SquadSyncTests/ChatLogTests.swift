@@ -163,6 +163,16 @@ final class SquadNameTests: XCTestCase {
             XCTAssertEqual(failure, .rejected("Enter a squad name."))
         }
     }
+
+    func testReloadDecodesTheSquadName() throws {
+        let json = """
+        {"id":"00000000-0000-0000-0000-000000000002","owner_id":"00000000-0000-0000-0000-000000000001","name":"Friday"}
+        """.data(using: .utf8)!
+        let reloaded = try JSONDecoder().decode(SquadDetails.self, from: json)
+        XCTAssertEqual(reloaded.name, "Friday")
+        XCTAssertEqual(reloaded.ownerId.uuidString, "00000000-0000-0000-0000-000000000001")
+        XCTAssertEqual(SquadSelect.columns, "id,owner_id,name")
+    }
 }
 
 final class KeychainFallbackTests: XCTestCase {

@@ -64,7 +64,7 @@ Arguments go after the bundle id. `-screen` jumps to a state. `-scenario` picks 
 
 Screens: `inbox`, `thread-general`, `thread-warzone`, `party`, `voice`, `voice-pill`, `space`, `handoff`.
 
-Scenarios: `seated` (viewer is Ready), `unseated` (I'm in can be tapped), `ready4` (Lock can be tapped).
+Scenarios: `seated` (viewer is Ready), `unseated` (I'm in can be tapped), `ready4` (Lock can be tapped), `noSquad` (create-squad form on the mock backend).
 
 ```bash
 xcrun simctl launch "$UDID" com.spencereese.squadsync -screen inbox -scenario seated
@@ -76,7 +76,10 @@ xcrun simctl launch "$UDID" com.spencereese.squadsync -screen voice-pill
 xcrun simctl launch "$UDID" com.spencereese.squadsync -screen space
 xcrun simctl launch "$UDID" com.spencereese.squadsync -screen handoff
 xcrun simctl launch "$UDID" com.spencereese.squadsync -uitest-largeText -screen inbox
+xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario noSquad
 ```
+
+`-backend mock -scenario noSquad` opens the live session screen against the in-memory mock, already signed in and not in a squad. The create-squad form is on screen. It does not write to Supabase.
 
 The voice lounge is mock-only. `VoiceRoomService` is the seam for a later hosted room: join, leave, mute, participants, speaking levels, and a connection state of idle, connecting, connected, reconnecting, or failed. `InMemoryVoiceRoomService` is the fake. No voice SDK, account, or provider is included.
 
@@ -100,4 +103,4 @@ Then launch the simulator build with the live flag:
 xcrun simctl launch "$UDID" com.spencereese.squadsync -backend live
 ```
 
-Leave the flag off for the mock prototype and for the existing UI tests.
+Leave the flag off for the mock prototype and for the existing UI tests. Use `-backend mock -scenario noSquad` when you need the create-squad form without a live row.

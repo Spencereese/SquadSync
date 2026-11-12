@@ -92,6 +92,29 @@ struct SquadRecord: Equatable, Identifiable {
     var members: [SquadMemberRecord]
 }
 
+enum SquadSelect {
+    static let columns = "id,owner_id,name"
+}
+
+struct SquadDetails: Decodable, Equatable {
+    let id: UUID
+    let ownerId: UUID
+    var name: String
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case ownerId = "owner_id"
+        case name
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        ownerId = try container.decode(UUID.self, forKey: .ownerId)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+    }
+}
+
 enum SignInCode {
     static func normalized(_ raw: String) -> String {
         raw.trimmingCharacters(in: .whitespacesAndNewlines)

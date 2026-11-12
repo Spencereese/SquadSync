@@ -23,6 +23,9 @@ final class LiveSessionModel {
     private let config: BackendConfig
     private let sessionStore: SessionStoring
     private var auth: AuthService
+    private let mockProfiles: ProfileService?
+    private let mockSquads: SquadService?
+    private let mockChat: ChatService?
     private var poll: Task<Void, Never>?
 
     enum Phase {
@@ -31,10 +34,32 @@ final class LiveSessionModel {
         case ready
     }
 
-    init(config: BackendConfig, sessionStore: SessionStoring = KeychainSessionStore()) {
+    init(config: BackendConfig, backend: BackendMode = .live, sessionStore: SessionStoring? = nil) {
         self.config = config
-        self.sessionStore = sessionStore
-        self.auth = SupabaseAuthService(config: config, store: sessionStore)
+        if backend == .mock {
+            let store = sessionStore ?? MemorySessionStore()
+            let session = AuthSession(
+                accessToken: "mock-access",
+                refreshToken: "mock-refresh",
+                userId: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+                email: "spencer@squadsync.app"
+            )
+            try? store.save(session)
+            self.sessionStore = store
+            self.auth = MockAuthService(store: store)
+            self.mockProfiles = MockProfileService()
+            self.mockSquads = MockSquadService()
+            self.mockChat = MockChatService()
+            self.phase = .ready
+            self.email = session.email
+        } else {
+            let store = sessionStore ?? KeychainSessionStore()
+            self.sessionStore = store
+            self.auth = SupabaseAuthService(config: config, store: store)
+            self.mockProfiles = nil
+            self.mockSquads = nil
+            self.mockChat = nil
+        }
     }
 
     func restore() async {
@@ -67,6 +92,7 @@ final class LiveSessionModel {
         await run {
             let session = try await auth.verify(email: email, code: code)
             phase = .ready
+            status = ""
             await refresh(session)
             startPolling(session)
         }
@@ -79,7 +105,7 @@ final class LiveSessionModel {
         self.profile = profile
         await run {
             let session = try requiredSession()
-            try await SupabaseProfileService(config: config, accessToken: session.accessToken).save(profile)
+            try await profileService(session).save(profile)
             status = "Profile saved."
         }
     }
@@ -93,7 +119,7 @@ final class LiveSessionModel {
         let name = SquadName.normalized(squadName)
         await run {
             let session = try requiredSession()
-            let service = SupabaseSquadService(config: config, accessToken: session.accessToken)
+            let service = squadService(session)
             squad = try await service.createSquad(ownerId: session.userId, name: name)
             status = "Squad created."
             await loadChat(session)
@@ -136,7 +162,7 @@ final class LiveSessionModel {
         poll = nil
         do {
             try await auth.signOut()
-            status = "Signed out."
+            status = ""
         } catch {
             status = (error as? SessionStoreError)?.message ?? "Sign out failed. \(error)"
         }
@@ -155,7 +181,7 @@ final class LiveSessionModel {
 
     private func deliver(_ message: RemoteMessage, session: AuthSession) async {
         do {
-            try await SupabaseChatService(config: config, accessToken: session.accessToken).send(message)
+            try await chatService(session).send(message)
             log.markSent(id: message.id)
         } catch let failure as BackendFailure {
             log.markFailed(id: message.id)
@@ -168,12 +194,12 @@ final class LiveSessionModel {
 
     private func refresh(_ session: AuthSession) async {
         await run {
-            let profiles = SupabaseProfileService(config: config, accessToken: session.accessToken)
+            let profiles = profileService(session)
             let loaded = try await profiles.loadOrCreate(userId: session.userId, email: session.email)
             profile = loaded
             displayName = loaded.displayName
             defaultGame = loaded.defaultGame
-            let squads = SupabaseSquadService(config: config, accessToken: session.accessToken)
+            let squads = squadService(session)
             squad = try await squads.currentSquad(userId: session.userId)
             await loadChat(session)
         }
@@ -182,11 +208,11 @@ final class LiveSessionModel {
     private func loadChat(_ session: AuthSession) async {
         guard let squad else { return }
         do {
-            let rows = try await SupabaseChatService(config: config, accessToken: session.accessToken).history(squadId: squad.id)
+            let chat = chatService(session)
+            let rows = try await chat.history(squadId: squad.id)
             log.ingest(rows.map { $0.entry() })
             log.markRead(at: Date())
-            try? await SupabaseChatService(config: config, accessToken: session.accessToken)
-                .markRead(squadId: squad.id, userId: session.userId, at: Date(), messageId: log.ordered.last?.id)
+            try? await chat.markRead(squadId: squad.id, userId: session.userId, at: Date(), messageId: log.ordered.last?.id)
         } catch let failure as BackendFailure {
             note(failure)
         } catch {
@@ -210,7 +236,7 @@ final class LiveSessionModel {
     private func pollOnce(_ session: AuthSession) async {
         guard let squad else { return }
         do {
-            let rows = try await SupabaseChatService(config: config, accessToken: session.accessToken).history(squadId: squad.id)
+            let rows = try await chatService(session).history(squadId: squad.id)
             log.ingest(rows.map { $0.entry() })
         } catch let failure as BackendFailure {
             note(failure)
@@ -230,6 +256,18 @@ final class LiveSessionModel {
         } catch {
             status = error.localizedDescription
         }
+    }
+
+    private func profileService(_ session: AuthSession) -> ProfileService {
+        mockProfiles ?? SupabaseProfileService(config: config, accessToken: session.accessToken)
+    }
+
+    private func squadService(_ session: AuthSession) -> SquadService {
+        mockSquads ?? SupabaseSquadService(config: config, accessToken: session.accessToken)
+    }
+
+    private func chatService(_ session: AuthSession) -> ChatService {
+        mockChat ?? SupabaseChatService(config: config, accessToken: session.accessToken)
     }
 
     private func note(_ failure: BackendFailure) {
@@ -252,8 +290,8 @@ final class LiveSessionModel {
 struct LiveSessionView: View {
     @State private var model: LiveSessionModel
 
-    init(config: BackendConfig = .fromBundle()) {
-        _model = State(initialValue: LiveSessionModel(config: config))
+    init(config: BackendConfig = .fromBundle(), backend: BackendMode = .live) {
+        _model = State(initialValue: LiveSessionModel(config: config, backend: backend))
     }
 
     var body: some View {
@@ -347,6 +385,7 @@ struct LiveSessionView: View {
                 Text("You're not in a squad yet.")
                 TextField("Squad name", text: Binding(get: { model.squadName }, set: { model.squadName = $0 }))
                     .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("squad-name")
                 if !model.squadNameError.isEmpty {
                     Text(model.squadNameError)
                         .font(.footnote)

@@ -289,6 +289,8 @@ enum LaunchScenario: String {
     case unseated
     /// Four Ready seats, so Lock can be tapped.
     case ready4
+    /// Signed-in mock session with no squad, so the create-squad form is on screen.
+    case noSquad
 }
 
 enum Seed {
@@ -332,6 +334,8 @@ enum Seed {
                 Seat(userId: "jordan", status: .ready),
                 Seat(userId: "quinn", status: .ready)
             ]
+        case .noSquad:
+            seats = []
         }
         return Party(
             id: "party-warzone",

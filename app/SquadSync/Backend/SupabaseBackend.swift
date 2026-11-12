@@ -171,25 +171,15 @@ final class SupabaseSquadService: SquadService {
             prefer: "return=representation",
             feature: .squad
         )
-        let created = try BackendJSON.decoder.decode([SquadRow].self, from: data)
+        let created = try BackendJSON.decoder.decode([SquadDetails].self, from: data)
         guard let row = created.first else { throw BackendFailure.rejected("Squad was not returned.") }
         var record = try await load(squadId: row.id)
-        record.name = trimmed
+        if record.name.isEmpty { record.name = trimmed }
         return record
     }
 
     private func load(squadId: UUID) async throws -> SquadRecord {
-        let squadData = try await http.send(
-            path: "rest/v1/sq8_squads",
-            method: "GET",
-            query: [
-                URLQueryItem(name: "id", value: "eq.\(squadId.uuidString)"),
-                URLQueryItem(name: "select", value: "id,owner_id")
-            ],
-            feature: .squad
-        )
-        let squads = try BackendJSON.decoder.decode([SquadRow].self, from: squadData)
-        guard let squad = squads.first else { throw BackendFailure.rejected("Squad was not found.") }
+        let squad = try await squadDetails(squadId: squadId)
         let memberData = try await http.send(
             path: "rest/v1/sq8_squad_members",
             method: "GET",
@@ -210,7 +200,37 @@ final class SupabaseSquadService: SquadService {
                 isOwner: id == squad.ownerId
             )
         }
-        return SquadRecord(id: squad.id, ownerId: squad.ownerId, name: "", members: members)
+        return SquadRecord(id: squad.id, ownerId: squad.ownerId, name: squad.name, members: members)
+    }
+
+    private func squadDetails(squadId: UUID) async throws -> SquadDetails {
+        do {
+            return try await fetchSquad(squadId: squadId, select: SquadSelect.columns)
+        } catch let failure as BackendFailure {
+            guard Self.missingNameColumn(failure) else { throw failure }
+            return try await fetchSquad(squadId: squadId, select: "id,owner_id")
+        }
+    }
+
+    private func fetchSquad(squadId: UUID, select: String) async throws -> SquadDetails {
+        let squadData = try await http.send(
+            path: "rest/v1/sq8_squads",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "id", value: "eq.\(squadId.uuidString)"),
+                URLQueryItem(name: "select", value: select)
+            ],
+            feature: .squad
+        )
+        let squads = try BackendJSON.decoder.decode([SquadDetails].self, from: squadData)
+        guard let squad = squads.first else { throw BackendFailure.rejected("Squad was not found.") }
+        return squad
+    }
+
+    private static func missingNameColumn(_ failure: BackendFailure) -> Bool {
+        guard case .rejected(let message) = failure else { return false }
+        let text = message.lowercased()
+        return text.contains("name") && text.contains("column")
     }
 
     private func profiles(for ids: [UUID]) async throws -> [UserProfile] {
@@ -231,15 +251,6 @@ final class SupabaseSquadService: SquadService {
     private struct Seat: Decodable {
         let squadId: UUID
         enum CodingKeys: String, CodingKey { case squadId = "squad_id" }
-    }
-
-    private struct SquadRow: Decodable {
-        let id: UUID
-        let ownerId: UUID
-        enum CodingKeys: String, CodingKey {
-            case id
-            case ownerId = "owner_id"
-        }
     }
 
     private struct MemberRow: Decodable {

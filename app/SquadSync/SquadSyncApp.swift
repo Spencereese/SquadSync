@@ -69,7 +69,9 @@ struct SquadSyncApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if launch.backend == .live {
+            if launch.scenario == .noSquad {
+                LiveSessionView(backend: .mock)
+            } else if launch.backend == .live {
                 LiveSessionView()
             } else {
                 RootView(store: store, launch: launch)
@@ -98,18 +100,14 @@ struct RootView: View {
             NavigationStack(path: $path) {
                 InboxView(store: store)
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if path.isEmpty { voicePill }
-            }
+            .bottomBarInset(shown: path.isEmpty && store.showsVoicePill) { voicePill }
             .tabItem { InboxTabLabel() }
             .tag(AppTab.inbox)
 
             NavigationStack(path: $spacePath) {
                 SpaceView(store: store)
             }
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if spacePath.isEmpty { voicePill }
-            }
+            .bottomBarInset(shown: spacePath.isEmpty && store.showsVoicePill) { voicePill }
             .tabItem { SpaceTabLabel() }
             .tag(AppTab.space)
         }
@@ -163,6 +161,19 @@ struct RootView: View {
             store.handoffSheetPresented = true
         default:
             break
+        }
+    }
+}
+
+private extension View {
+    /// An empty bottom inset replaces the tab bar's safe area, so the scroll
+    /// view lays its first screen out underneath the floating tab bar.
+    @ViewBuilder
+    func bottomBarInset<Inset: View>(shown: Bool, @ViewBuilder inset: () -> Inset) -> some View {
+        if shown {
+            safeAreaInset(edge: .bottom, spacing: 0, content: inset)
+        } else {
+            self
         }
     }
 }

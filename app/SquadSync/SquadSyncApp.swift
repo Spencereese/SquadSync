@@ -69,7 +69,9 @@ struct SquadSyncApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if launch.scenario == .noSquad {
+            if launch.scenario == .invite {
+                LiveSessionView(backend: .mock, scenario: .invite)
+            } else if launch.scenario == .noSquad {
                 LiveSessionView(backend: .mock)
             } else if launch.backend == .live {
                 LiveSessionView()

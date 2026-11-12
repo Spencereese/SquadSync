@@ -80,4 +80,55 @@ final class AccessibilityUITests: XCTestCase {
         }
         XCTAssertTrue(actions.isHittable, "Inline party actions were not reachable after scrolling")
     }
+
+    func testMockInviteCanAddAndRemoveAReaction() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
+        app.launch()
+
+        let row = app.descendants(matching: .any)["message-row-seed-1"]
+        XCTAssertTrue(row.waitForExistence(timeout: 15), "Seeded message row was not visible")
+        if !row.isHittable {
+            row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        } else {
+            row.tap()
+        }
+
+        let react = app.buttons["React"]
+        XCTAssertTrue(react.waitForExistence(timeout: 5), "React button was not visible")
+        react.tap()
+
+        let thumbs = app.buttons["Thumbs up"]
+        XCTAssertTrue(thumbs.waitForExistence(timeout: 5), "Thumbs up was not in the reaction row")
+        thumbs.tap()
+
+        let count = app.staticTexts["reaction-count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 5), "Reaction count was not visible")
+        XCTAssertEqual(count.label, "1")
+
+        thumbs.tap()
+        XCTAssertTrue(count.waitForNonExistence(timeout: 5), "Reaction count stayed after it was removed")
+    }
+
+    func testMockInviteSendShowsTheRow() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
+        app.launch()
+
+        let field = app.textFields["Message"]
+        XCTAssertTrue(field.waitForExistence(timeout: 15), "Message field was not on the invite screen")
+        let send = app.buttons["send-message"]
+        XCTAssertTrue(send.waitForExistence(timeout: 5), "Send was not on screen")
+        XCTAssertTrue(send.isHittable, "Send is covered, frame \(send.frame)")
+        field.tap()
+        field.typeText("hello")
+        XCTAssertTrue(send.isHittable, "Send dropped under the keyboard, frame \(send.frame)")
+        send.tap()
+        let sent = app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "(identifier BEGINSWITH 'message-row-' AND identifier != 'message-row-seed-1') OR label CONTAINS 'hello'"
+            )
+        ).firstMatch
+        XCTAssertTrue(sent.waitForExistence(timeout: 5), "Sent message did not appear")
+    }
 }

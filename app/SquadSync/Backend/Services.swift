@@ -192,9 +192,28 @@ protocol SquadService: AnyObject {
     func createSquad(ownerId: UUID, name: String) async throws -> SquadRecord
 }
 
+struct MemberRead: Equatable {
+    let userId: UUID
+    let lastReadAt: Date
+}
+
+struct InviteTicket: Equatable {
+    var code: String
+    var squadId: UUID
+}
+
+protocol InviteServing: AnyObject {
+    func createInvite() async throws -> InviteTicket
+    func join(code: String) async throws -> UUID
+}
+
 protocol ChatService: AnyObject {
     func history(squadId: UUID) async throws -> [RemoteMessage]
     func send(_ message: RemoteMessage) async throws
     func newer(squadId: UUID, after: Date) async throws -> [RemoteMessage]
     func markRead(squadId: UUID, userId: UUID, at: Date, messageId: UUID?) async throws
+    func reactions(squadId: UUID) async throws -> [ReactionMark]
+    func setReaction(squadId: UUID, messageId: UUID, userId: UUID, emoji: String, active: Bool) async throws
+    func reads(squadId: UUID) async throws -> [MemberRead]
+    func ownReadAt(squadId: UUID, userId: UUID) async throws -> Date?
 }

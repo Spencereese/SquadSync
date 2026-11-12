@@ -164,6 +164,145 @@ final class SquadNameTests: XCTestCase {
         }
     }
 
+    func testPollAndRealtimeDedupeById() {
+        let them = UUID()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var log = ChatLog()
+        let id = UUID()
+        let row = ChatEntry(id: id, senderId: them, body: "hi", sentAt: start, delivery: .sent)
+        log.ingest([row])
+        ChatBackfill.apply(&log, history: [row, row])
+        XCTAssertEqual(log.entries.count, 1)
+        XCTAssertEqual(RealtimeLink.connected.polls, false)
+        XCTAssertEqual(RealtimeLink.reconnecting.polls, true)
+        XCTAssertEqual(RealtimeLink.down.polls, true)
+    }
+
+    func testReconnectBackfillAddsTheMissedRow() {
+        let them = UUID()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var log = ChatLog()
+        let kept = UUID()
+        let missed = UUID()
+        log.ingest([ChatEntry(id: kept, senderId: them, body: "kept", sentAt: start, delivery: .sent)])
+        ChatBackfill.apply(&log, history: [
+            ChatEntry(id: kept, senderId: them, body: "kept", sentAt: start, delivery: .sent),
+            ChatEntry(id: missed, senderId: them, body: "missed", sentAt: start.addingTimeInterval(5), delivery: .sent)
+        ])
+        XCTAssertEqual(log.ordered.map(\.body), ["kept", "missed"])
+    }
+
+    func testInviteErrorsMatchTheServerCodes() {
+        XCTAssertEqual(InviteProblem.from(serverCode: "expired"), .expired)
+        XCTAssertEqual(InviteProblem.from(serverCode: "invalid"), .revokedOrUnknown)
+        XCTAssertEqual(InviteProblem.from(serverCode: "full"), .full)
+        XCTAssertEqual(InviteProblem.from(serverCode: "already_in_squad"), .alreadyInASquad)
+        XCTAssertEqual(InviteProblem.expired.message, "This invite has expired.")
+        XCTAssertEqual(InviteProblem.full.message, "That squad is full (8).")
+        XCTAssertTrue(InviteProblem.revokedOrUnknown.message.contains("revoked"))
+        XCTAssertEqual(InviteProblem.alreadyInASquad.message, "You're already in a squad.")
+    }
+
+    func testReactionToggleReplacesAndRemoves() {
+        var board = ReactionBoard()
+        let message = UUID()
+        let user = UUID()
+        XCTAssertEqual(board.toggle(messageId: message, userId: user, emoji: "👍"), [.insert("👍")])
+        XCTAssertEqual(board.toggle(messageId: message, userId: user, emoji: "🎮"), [.remove("👍"), .insert("🎮")])
+        XCTAssertEqual(board.marks.map(\.emoji), ["🎮"])
+        XCTAssertEqual(board.toggle(messageId: message, userId: user, emoji: "🎮"), [.remove("🎮")])
+        XCTAssertTrue(board.marks.isEmpty)
+    }
+
+    func testUnreadIgnoresTheCursorInstantAndOwnMessages() {
+        let me = UUID()
+        let them = UUID()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var log = ChatLog()
+        log.ingest([
+            ChatEntry(id: UUID(), senderId: them, body: "at cursor", sentAt: start, delivery: .sent),
+            ChatEntry(id: UUID(), senderId: me, body: "mine later", sentAt: start.addingTimeInterval(5), delivery: .sent),
+            ChatEntry(id: UUID(), senderId: them, body: "after", sentAt: start.addingTimeInterval(5), delivery: .sent)
+        ])
+        log.markRead(at: start)
+        XCTAssertEqual(log.unreadCount(viewerId: me), 1)
+        XCTAssertEqual(
+            Receipts.seenNames(
+                messageSentAt: start,
+                reads: [(id: them, name: "Riley", at: start)],
+                viewerId: me
+            ),
+            ["Riley"]
+        )
+    }
+
+    func testScrolledUpKeepsThePlaceAndShowsThePill() {
+        let atBottom = ScrollSample(offset: 400, content: 800, viewport: 400)
+        let grown = ScrollSample(offset: 400, content: 900, viewport: 400)
+        XCTAssertTrue(ChatFollow.isAtBottom(atBottom))
+        XCTAssertTrue(ChatFollow.pinned(previous: true, oldOffset: 400, sample: grown))
+        XCTAssertTrue(ChatFollow.scrolls(pinned: true, ownSend: false))
+
+        let up = ScrollSample(offset: 80, content: 900, viewport: 400)
+        XCTAssertFalse(ChatFollow.isAtBottom(up))
+        XCTAssertFalse(ChatFollow.pinned(previous: true, oldOffset: 400, sample: up))
+        XCTAssertFalse(ChatFollow.scrolls(pinned: false, ownSend: false))
+        XCTAssertTrue(ChatFollow.scrolls(pinned: false, ownSend: true))
+        let midScroll = ScrollSample(offset: 420, content: 900, viewport: 400)
+        XCTAssertTrue(ChatFollow.pinned(previous: true, oldOffset: 400, sample: midScroll))
+    }
+
+    func testCancellationIsNotAStatus() {
+        XCTAssertTrue(RequestNoise.isCancellation(CancellationError()))
+        XCTAssertTrue(RequestNoise.isCancellation(URLError(.cancelled)))
+        XCTAssertTrue(RequestNoise.isCancellation(BackendFailure.rejected("cancelled")))
+        let ns = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
+        XCTAssertTrue(RequestNoise.isCancellation(ns))
+        XCTAssertFalse(RequestNoise.isCancellation(BackendFailure.rejected("Squad is full.")))
+    }
+
+    func testMockSendAppendsTheRow() async throws {
+        let chat = MockChatService()
+        let id = UUID()
+        let me = UUID()
+        let sentAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let message = RemoteMessage(id: id, squadId: ChatSeed.squadId, senderId: me, body: "hello", sentAt: sentAt)
+        try await chat.send(message)
+        let stored = try await chat.history(squadId: ChatSeed.squadId)
+        XCTAssertEqual(stored.map(\.body), ["hello"])
+        var log = ChatLog()
+        log.beginSend(id: id, senderId: me, body: "hello", now: sentAt)
+        XCTAssertEqual(OutboundSend.result(error: nil), .sent)
+        log.markSent(id: id)
+        XCTAssertEqual(log.entries.map(\.body), ["hello"])
+        XCTAssertEqual(log.entries.first?.delivery, .sent)
+    }
+
+    func testSendIsConfirmedWithoutAnEcho() {
+        var log = ChatLog()
+        let id = UUID()
+        let me = UUID()
+        log.beginSend(id: id, senderId: me, body: "rt test 3", now: Date())
+        XCTAssertEqual(OutboundSend.result(error: nil), .sent)
+        if OutboundSend.result(error: nil) == .sent { log.markSent(id: id) }
+        XCTAssertEqual(log.entries.first?.delivery, .sent)
+        XCTAssertEqual(OutboundSend.result(error: CancellationError()), .staySending)
+        log.ingest([ChatEntry(id: id, senderId: me, body: "rt test 3", sentAt: Date(), delivery: .sent)])
+        XCTAssertEqual(log.entries.count, 1)
+    }
+
+    func testBackfillAfterAGapKeepsTheOldRowAndAddsTheNewOne() {
+        var log = ChatLog()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let them = UUID()
+        let kept = ChatEntry(id: UUID(), senderId: them, body: "kept", sentAt: start, delivery: .sent)
+        let missed = ChatEntry(id: UUID(), senderId: them, body: "rt test 3", sentAt: start.addingTimeInterval(30), delivery: .sent)
+        log.ingest([kept])
+        XCTAssertEqual(ChatBackfill.missing(in: log, history: [kept, missed]).map(\.body), ["rt test 3"])
+        ChatBackfill.apply(&log, history: [kept, missed])
+        XCTAssertEqual(log.ordered.map(\.body), ["kept", "rt test 3"])
+    }
+
     func testEmptySquadNameUsesYourSquad() {
         XCTAssertEqual(SquadTitle.line(name: "", memberCount: 1), "Your squad · 1 of 8")
         XCTAssertEqual(SquadTitle.line(name: "   ", memberCount: 1), "Your squad · 1 of 8")

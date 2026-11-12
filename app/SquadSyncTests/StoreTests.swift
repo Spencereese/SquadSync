@@ -113,6 +113,9 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(options.scenario, .ready4)
         XCTAssertTrue(options.largeText)
         XCTAssertEqual(options.path, [])
+        let mockSquad = LaunchOptions.current(["-backend", "mock", "-scenario", "noSquad"])
+        XCTAssertEqual(mockSquad.backend, .mock)
+        XCTAssertEqual(mockSquad.scenario, .noSquad)
         XCTAssertEqual(LaunchOptions.current(["-screen", "thread-warzone"]).path, ["warzone"])
         XCTAssertEqual(LaunchOptions.current(["-screen", "party"]).path, ["general"])
     }

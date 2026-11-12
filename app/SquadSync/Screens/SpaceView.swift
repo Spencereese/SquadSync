@@ -14,8 +14,10 @@ struct SpaceView: View {
                 members
             }
         }
-        .listRowSpacing(typeSize.isAccessibilitySize ? 4 : 8)
-        .contentMargins(.bottom, typeSize.isAccessibilitySize ? SQSpace.tabBarInset : SQSpace.s, for: .scrollContent)
+        .listRowSpacing(typeSize.isAccessibilitySize ? 0 : 8)
+        .contentMargins(.bottom, SQSpace.s, for: .scrollContent)
+        .modifier(AccessibilityListTop(enabled: typeSize.isAccessibilitySize))
+        .navigationBarTitleDisplayMode(typeSize.isAccessibilitySize ? .inline : .large)
         .navigationDestination(for: String.self) { id in
             if let conversation = store.conversations.first(where: { $0.id == id }) {
                 ThreadView(store: store, conversation: conversation)
@@ -46,6 +48,7 @@ struct SpaceView: View {
                 memberRow(person)
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("member-\(person.id)")
+                    .modifier(CompactListRow(enabled: typeSize.isAccessibilitySize))
             }
         }
     }
@@ -81,6 +84,30 @@ struct SpaceView: View {
         case .onlineOnly: return "Online, not up to play"
         case .later: return "Maybe later"
         case .cant: return "Can't"
+        }
+    }
+}
+
+private struct AccessibilityListTop: ViewModifier {
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.contentMargins(.top, 0, for: .scrollContent)
+        } else {
+            content
+        }
+    }
+}
+
+private struct CompactListRow: ViewModifier {
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+        } else {
+            content
         }
     }
 }

@@ -64,7 +64,7 @@ Arguments go after the bundle id. `-screen` jumps to a state. `-scenario` picks 
 
 Screens: `inbox`, `thread-general`, `thread-warzone`, `party`, `voice`, `voice-pill`, `space`, `handoff`.
 
-Scenarios: `seated` (viewer is Ready), `unseated` (I'm in can be tapped), `ready4` (Lock can be tapped).
+Scenarios: `seated` (viewer is Ready), `unseated` (I'm in can be tapped), `ready4` (Lock can be tapped), `noSquad` (create-squad form on the mock backend).
 
 ```bash
 xcrun simctl launch "$UDID" com.spencereese.squadsync -screen inbox -scenario seated
@@ -76,8 +76,31 @@ xcrun simctl launch "$UDID" com.spencereese.squadsync -screen voice-pill
 xcrun simctl launch "$UDID" com.spencereese.squadsync -screen space
 xcrun simctl launch "$UDID" com.spencereese.squadsync -screen handoff
 xcrun simctl launch "$UDID" com.spencereese.squadsync -uitest-largeText -screen inbox
+xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario noSquad
 ```
+
+`-backend mock -scenario noSquad` opens the live session screen against the in-memory mock, already signed in and not in a squad. The create-squad form is on screen. It does not write to Supabase.
 
 The voice lounge is mock-only. `VoiceRoomService` is the seam for a later hosted room: join, leave, mute, participants, speaking levels, and a connection state of idle, connecting, connected, reconnecting, or failed. `InMemoryVoiceRoomService` is the fake. No voice SDK, account, or provider is included.
 
 The prototype starts in the inbox. The States menu shows loading, empty, and error. Tap a thread for bubbles, tapbacks, swipe-to-reply, the party card, voice, and handoff.
+
+## Live backend
+
+Mock data is the default. `-backend live` uses the existing Supabase project for email sign-in, your profile, your squad, and squad chat. Voice, spots, presence, and push stay mock.
+
+Before building, create the local config. The anon key is not in git.
+
+```bash
+cp app/Config.example.xcconfig app/Config.xcconfig
+```
+
+Open `app/Config.xcconfig` and replace `paste-anon-key-here` with the project anon key. The URL line is already the `sfckxrnoiwetmzdycqaa` project, written so xcconfig does not treat `//` as a comment.
+
+Then launch the simulator build with the live flag:
+
+```bash
+xcrun simctl launch "$UDID" com.spencereese.squadsync -backend live
+```
+
+Leave the flag off for the mock prototype and for the existing UI tests. Use `-backend mock -scenario noSquad` when you need the create-squad form without a live row.

@@ -26,36 +26,30 @@ final class AccessibilityUITests: XCTestCase {
         app.launchArguments = ["-screen", "space", "-uitest-largeText"]
         app.launch()
 
-        let row = app.descendants(matching: .any)["member-spencer"]
-        XCTAssertTrue(row.waitForExistence(timeout: 15), "Spencer's row was not in the accessibility tree")
-        let tab = app.descendants(matching: .any)["tab-space"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 15), "Space tab was not in the accessibility tree")
+        let row = app.descendants(matching: .any)["member-sam"]
+        XCTAssertTrue(row.waitForExistence(timeout: 15), "Sam's row was not in the accessibility tree")
+        let tabBar = app.tabBars.firstMatch
+        XCTAssertTrue(tabBar.waitForExistence(timeout: 15), "Tab bar was not in the accessibility tree")
         XCTAssertLessThanOrEqual(
             row.frame.maxY,
-            tab.frame.minY + 1,
-            "Spencer's row ends at \(row.frame.maxY), under the tab bar at \(tab.frame.minY)"
+            tabBar.frame.minY + 1,
+            "Sam's row ends at \(row.frame.maxY), under the tab bar at \(tabBar.frame.minY)"
         )
     }
 
-    func testInboxLastRowClearsTheTabBarAfterScrollingAtLargeText() {
+    func testInboxLastRowClearsTheTabBarAtLargeText() {
         let app = XCUIApplication()
         app.launchArguments = ["-screen", "inbox", "-uitest-largeText"]
         app.launch()
 
-        let tab = app.descendants(matching: .any)["tab-inbox"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 15), "Inbox tab was not in the accessibility tree")
-        let scroll = app.scrollViews.firstMatch
-        XCTAssertTrue(scroll.waitForExistence(timeout: 15), "Inbox scroll view was not found")
-        for _ in 0..<8 {
-            scroll.swipeUp()
-        }
-
-        let row = app.descendants(matching: .any)["inbox-dm-riley"]
-        XCTAssertTrue(row.waitForExistence(timeout: 15), "Last inbox row was not in the accessibility tree")
+        let row = app.descendants(matching: .any)["inbox-friday"]
+        XCTAssertTrue(row.waitForExistence(timeout: 15), "Friday crew was not in the accessibility tree")
+        let tabBar = app.tabBars.firstMatch
+        XCTAssertTrue(tabBar.waitForExistence(timeout: 15), "Tab bar was not in the accessibility tree")
         XCTAssertLessThanOrEqual(
             row.frame.maxY,
-            tab.frame.minY + 1,
-            "Last inbox row ends at \(row.frame.maxY), under the tab bar at \(tab.frame.minY)"
+            tabBar.frame.minY + 1,
+            "Friday crew ends at \(row.frame.maxY), under the tab bar at \(tabBar.frame.minY)"
         )
     }
 

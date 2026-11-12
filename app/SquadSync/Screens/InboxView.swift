@@ -23,6 +23,7 @@ struct InboxView: View {
         }
         .background(SQColor.canvas)
         .navigationTitle("SquadSync")
+        .navigationBarTitleDisplayMode(typeSize.isAccessibilitySize ? .inline : .large)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu("States") {
@@ -39,7 +40,7 @@ struct InboxView: View {
     private var ready: some View {
         let visible = store.visibleConversations()
         return ScrollView {
-            VStack(alignment: .leading, spacing: SQSpace.l) {
+            VStack(alignment: .leading, spacing: typeSize.isAccessibilitySize ? SQSpace.s : SQSpace.l) {
                 presence
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     if let party = store.party {
@@ -62,7 +63,7 @@ struct InboxView: View {
             }
             .padding(SQSpace.l)
         }
-        .contentMargins(.bottom, typeSize.isAccessibilitySize ? SQSpace.tabBarInset : SQSpace.m, for: .scrollContent)
+        .contentMargins(.bottom, SQSpace.m, for: .scrollContent)
         .navigationDestination(for: String.self) { id in
             thread(for: id)
         }
@@ -81,7 +82,10 @@ struct InboxView: View {
                 } label: {
                     HStack {
                         Image(systemName: "person.3.fill")
-                        Text(space.title).font(.headline)
+                        Text(space.title)
+                            .font(.headline)
+                            .lineLimit(typeSize.isAccessibilitySize ? 1 : 2)
+                            .minimumScaleFactor(0.8)
                         Spacer()
                         Image(systemName: channelsOpen ? "chevron.down" : "chevron.right")
                     }
@@ -161,7 +165,7 @@ private struct PresenceStrip: View {
                 }
             }
         }
-        .frame(height: typeSize.isAccessibilitySize ? 64 : 68)
+        .frame(height: typeSize.isAccessibilitySize ? 44 : 68)
         .accessibilityElement(children: .contain)
         .sheet(isPresented: $showRest) { restSheet }
     }

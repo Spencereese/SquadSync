@@ -55,10 +55,13 @@ final class MockSquadService: SquadService {
 
     func seed(ownerId: UUID, name: String) -> SquadRecord {
         let created = SquadRecord(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000000010")!,
+            id: ChatSeed.squadId,
             ownerId: ownerId,
             name: name,
-            members: [SquadMemberRecord(id: ownerId, displayName: "You", defaultGame: "Call of Duty", isOwner: true)]
+            members: [
+                SquadMemberRecord(id: ownerId, displayName: "You", defaultGame: "Call of Duty", isOwner: true),
+                SquadMemberRecord(id: ChatSeed.otherId, displayName: "Riley", defaultGame: "", isOwner: false)
+            ]
         )
         squad = created
         return created
@@ -89,6 +92,11 @@ final class MockSquadService: SquadService {
 
 final class MockChatService: ChatService {
     private var stored: [RemoteMessage] = []
+
+    func seed(_ message: RemoteMessage) {
+        if stored.contains(where: { $0.id == message.id }) { return }
+        stored.append(message)
+    }
 
     func history(squadId: UUID) async throws -> [RemoteMessage] {
         stored.filter { $0.squadId == squadId }

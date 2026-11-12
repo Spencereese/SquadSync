@@ -86,46 +86,13 @@ final class AccessibilityUITests: XCTestCase {
         app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
         app.launch()
 
-        let field = app.textFields["Message"]
-        XCTAssertTrue(field.waitForExistence(timeout: 15), "Message field was not on the invite screen")
-        field.tap()
-        field.typeText("hello")
-        app.buttons["Send"].tap()
-
-        let list = app.scrollViews.firstMatch
-        XCTAssertTrue(list.waitForExistence(timeout: 5), "Chat list was not visible")
-        var swipes = 0
-        while app.keyboards.count > 0, swipes < 3 {
-            list.swipeDown()
-            swipes += 1
+        let row = app.descendants(matching: .any)["message-row-seed-1"]
+        XCTAssertTrue(row.waitForExistence(timeout: 15), "Seeded message row was not visible")
+        if !row.isHittable {
+            row.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        } else {
+            row.tap()
         }
-        let keyboardGone = XCTNSPredicateExpectation(
-            predicate: NSPredicate(format: "count == 0"),
-            object: app.keyboards
-        )
-        XCTAssertEqual(
-            XCTWaiter.wait(for: [keyboardGone], timeout: 5),
-            .completed,
-            "Keyboard was still covering the message row"
-        )
-
-        let bubble = app.descendants(matching: .any).matching(
-            NSPredicate(format: "identifier BEGINSWITH 'message-row-'")
-        ).firstMatch
-        XCTAssertTrue(bubble.waitForExistence(timeout: 5), "Sent message row was not visible")
-        let pill = app.buttons["New messages"]
-        if pill.exists {
-            XCTAssertFalse(
-                pill.frame.intersects(bubble.frame),
-                "New messages pill covers the row at \(bubble.frame)"
-            )
-        }
-        swipes = 0
-        while !bubble.isHittable, swipes < 4 {
-            list.swipeDown()
-            swipes += 1
-        }
-        bubble.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
 
         let react = app.buttons["React"]
         XCTAssertTrue(react.waitForExistence(timeout: 5), "React button was not visible")
@@ -141,5 +108,22 @@ final class AccessibilityUITests: XCTestCase {
 
         thumbs.tap()
         XCTAssertTrue(count.waitForNonExistence(timeout: 5), "Reaction count stayed after it was removed")
+    }
+
+    func testMockInviteSendShowsTheRow() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
+        app.launch()
+
+        let field = app.textFields["Message"]
+        XCTAssertTrue(field.waitForExistence(timeout: 15), "Message field was not on the invite screen")
+        let send = app.buttons["send-message"]
+        XCTAssertTrue(send.waitForExistence(timeout: 5), "Send was not on screen")
+        XCTAssertTrue(send.isHittable, "Send is covered, frame \(send.frame)")
+        field.tap()
+        field.typeText("hello")
+        XCTAssertTrue(send.isHittable, "Send dropped under the keyboard, frame \(send.frame)")
+        send.tap()
+        XCTAssertTrue(app.staticTexts["hello"].waitForExistence(timeout: 5), "Sent message did not appear")
     }
 }

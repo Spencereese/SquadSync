@@ -59,17 +59,28 @@ final class LiveSessionModel {
             )
             try? store.save(session)
             let squads = MockSquadService()
+            let chat = MockChatService()
             self.sessionStore = store
             self.auth = MockAuthService(store: store)
             self.mockProfiles = MockProfileService()
             self.mockSquads = squads
-            self.mockChat = MockChatService()
+            self.mockChat = chat
             self.mockInvites = MockInviteService(squads: squads)
             self.phase = .ready
             self.email = session.email
             self.viewerId = session.userId
             if scenario == .invite {
-                self.squad = squads.seed(ownerId: session.userId, name: "Friday")
+                let seeded = squads.seed(ownerId: session.userId, name: "Friday")
+                self.squad = seeded
+                let message = RemoteMessage(
+                    id: ChatSeed.messageId,
+                    squadId: seeded.id,
+                    senderId: ChatSeed.otherId,
+                    body: "From Riley",
+                    sentAt: Date(timeIntervalSince1970: 1_700_000_000)
+                )
+                chat.seed(message)
+                log.ingest([message.entry()])
             }
         } else {
             let store = sessionStore ?? KeychainSessionStore()
@@ -490,6 +501,14 @@ struct LiveSessionView: View {
                 }
             }
             .padding(SQSpace.l)
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if model.phase == .ready, model.squad != nil {
+                    composer
+                        .padding(.horizontal, SQSpace.l)
+                        .padding(.vertical, SQSpace.s)
+                        .background(SQColor.canvas)
+                }
+            }
             .navigationTitle("SquadSync")
             .toolbar {
                 if model.phase == .ready {
@@ -560,13 +579,10 @@ struct LiveSessionView: View {
                     Text(notice).font(.caption).foregroundStyle(SQColor.muted)
                 }
                 chatList
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .layoutPriority(1)
                 Text("Unread \(model.log.unreadCount(viewerId: model.profile?.id ?? UUID()))")
                     .font(.caption)
-                HStack {
-                    TextField("Message", text: Binding(get: { model.draft }, set: { model.draft = $0 }))
-                        .textFieldStyle(.roundedBorder)
-                    Button("Send") { Task { await model.send() } }
-                }
             } else {
                 joinControls
                 Text("You're not in a squad yet.")
@@ -607,7 +623,7 @@ struct LiveSessionView: View {
         ScrollViewReader { proxy in
             ZStack(alignment: .bottom) {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
+                    LazyVStack(alignment: .leading, spacing: 2) {
                         ForEach(model.log.ordered) { entry in
                             messageRow(entry).id(entry.id)
                         }
@@ -642,6 +658,15 @@ struct LiveSessionView: View {
                     showNewMessages = true
                 }
             }
+        }
+    }
+
+    private var composer: some View {
+        HStack {
+            TextField("Message", text: Binding(get: { model.draft }, set: { model.draft = $0 }))
+                .textFieldStyle(.roundedBorder)
+            Button("Send") { Task { await model.send() } }
+                .accessibilityIdentifier("send-message")
         }
     }
 
@@ -690,7 +715,6 @@ struct LiveSessionView: View {
             .buttonStyle(WideRowButtonStyle())
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            .accessibilityIdentifier("message-row-\(entry.id.uuidString)")
             Text(label(for: entry))
                 .font(.caption)
                 .foregroundStyle(SQColor.muted)
@@ -712,8 +736,10 @@ struct LiveSessionView: View {
             }
         }
         .padding(.vertical, SQSpace.xs)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .contentShape(Rectangle())
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(ChatSeed.rowIdentifier(for: entry.id))
         .onTapGesture(count: 2) {
             model.selectedMessage = entry.id
             model.reacting = true

@@ -139,6 +139,16 @@ enum ChatFollow {
     }
 }
 
+enum ChatSeed {
+    static let squadId = UUID(uuidString: "00000000-0000-0000-0000-000000000010")!
+    static let otherId = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!
+    static let messageId = UUID(uuidString: "00000000-0000-0000-0000-00000000A001")!
+
+    static func rowIdentifier(for id: UUID) -> String {
+        id == messageId ? "message-row-seed-1" : "message-row-\(id.uuidString)"
+    }
+}
+
 enum ChatBackfill {
     static func apply(_ log: inout ChatLog, history: [ChatEntry]) {
         log.ingest(history)

@@ -82,7 +82,7 @@ xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario in
 
 `-backend mock -scenario noSquad` opens the live session screen against the in-memory mock, already signed in and not in a squad. The create-squad form is on screen. It does not write to Supabase.
 
-`-backend mock -scenario invite` opens that screen as the owner of a mock squad named Friday. Create invite, share or copy the code, and the join field are on screen. Codes `EXPIRED2`, `REVOKED2`, `FULL2345`, and `ALREADY2` show those errors. Any other code adds Riley. Nothing is written to Supabase.
+`-backend mock -scenario invite` opens that screen as the owner of a mock squad named Friday, with Riley already in it and one message from Riley (`message-row-seed-1`). Create invite, share or copy the code, and the join field are on screen. Codes `EXPIRED2`, `REVOKED2`, `FULL2345`, and `ALREADY2` show those errors. Any other code adds Riley again only if she is not already seated. Nothing is written to Supabase.
 
 The voice lounge is mock-only. `VoiceRoomService` is the seam for a later hosted room: join, leave, mute, participants, speaking levels, and a connection state of idle, connecting, connected, reconnecting, or failed. `InMemoryVoiceRoomService` is the fake. No voice SDK, account, or provider is included.
 

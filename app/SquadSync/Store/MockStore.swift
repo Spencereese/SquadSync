@@ -13,6 +13,7 @@ final class MockStore {
     var viewerId: String
     var typingNames: [String]
     var handoffNote: String?
+    let voiceService: VoiceRoomService
     private var nextId = 100
 
     init(
@@ -21,6 +22,7 @@ final class MockStore {
         messages: [String: [ChatMessage]],
         party: Party?,
         voice: VoiceRoom,
+        voiceService: VoiceRoomService,
         screen: ScreenState = .ready,
         viewerId: String = "spencer"
     ) {
@@ -29,9 +31,11 @@ final class MockStore {
         self.messages = messages
         self.party = party
         self.voice = voice
+        self.voiceService = voiceService
         self.screen = screen
         self.viewerId = viewerId
         self.typingNames = ["Jordan"]
+        applyVoiceSnapshot()
     }
 
     static func preview() -> MockStore { MockStore.seeded() }
@@ -133,30 +137,37 @@ final class MockStore {
         )
     }
 
-    func joinVoice() {
-        if !voice.occupantIds.contains(viewerId) {
-            voice.occupantIds.append(viewerId)
-        }
-        if let index = people.firstIndex(where: { $0.id == viewerId }) {
-            people[index].inVoice = true
-        }
+    func joinVoice() async {
+        voice.connection = .connecting
+        await voiceService.join(userId: viewerId)
+        applyVoiceSnapshot()
         voice.collapsed = false
     }
 
-    func leaveVoice() {
-        voice.occupantIds.removeAll { $0 == viewerId }
-        voice.mutedIds.removeAll { $0 == viewerId }
-        if let index = people.firstIndex(where: { $0.id == viewerId }) {
-            people[index].inVoice = false
-            people[index].isSpeaking = false
-        }
+    func leaveVoice() async {
+        await voiceService.leave(userId: viewerId)
+        applyVoiceSnapshot()
     }
 
-    func toggleMute() {
-        if voice.mutedIds.contains(viewerId) {
-            voice.mutedIds.removeAll { $0 == viewerId }
-        } else {
-            voice.mutedIds.append(viewerId)
+    func toggleMute() async {
+        let muted = voice.mutedIds.contains(viewerId)
+        await voiceService.mute(userId: viewerId, muted: !muted)
+        applyVoiceSnapshot()
+    }
+
+    private func applyVoiceSnapshot() {
+        voice.occupantIds = voiceService.participants.map(\.id)
+        voice.mutedIds = voiceService.participants.filter(\.muted).map(\.id)
+        voice.speakingLevels = Dictionary(
+            uniqueKeysWithValues: voiceService.participants.map { ($0.id, $0.speakingLevel) }
+        )
+        voice.connection = voiceService.connection
+        for index in people.indices {
+            let id = people[index].id
+            let participant = voiceService.participants.first { $0.id == id }
+            people[index].inVoice = participant != nil
+            let level = participant?.speakingLevel ?? 0
+            people[index].isSpeaking = participant != nil && participant?.muted != true && level > 0.2
         }
     }
 
@@ -193,10 +204,19 @@ final class MockStore {
             ],
             locked: false
         )
+        let service = InMemoryVoiceRoomService(
+            participants: [
+                VoiceParticipant(id: "spencer", muted: false, speakingLevel: 0.8),
+                VoiceParticipant(id: "quinn", muted: false, speakingLevel: 0.15)
+            ],
+            connection: .connected
+        )
         let voice = VoiceRoom(
             title: "Lounge",
-            occupantIds: ["spencer", "quinn"],
+            occupantIds: [],
             mutedIds: [],
+            speakingLevels: [:],
+            connection: .idle,
             collapsed: false
         )
         return MockStore(
@@ -204,7 +224,8 @@ final class MockStore {
             conversations: conversations,
             messages: Seed.messages(now: now),
             party: party,
-            voice: voice
+            voice: voice,
+            voiceService: service
         )
     }
 }

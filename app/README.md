@@ -1,6 +1,6 @@
 # SquadSync iOS prototype
 
-SwiftUI iPhone app for Phase 1. Mock data only. No networking, no Supabase, and no third-party packages.
+SwiftUI iPhone app for Phase 1. The target is iPhone only. Mock data only. No networking, no Supabase, and no third-party packages.
 
 - Bundle id: `com.spencereese.squadsync`
 - Deployment: iOS 17
@@ -26,5 +26,7 @@ xcrun simctl launch booted com.spencereese.squadsync
 ```
 
 Or open `app/SquadSync.xcodeproj` in Xcode, choose the SquadSync scheme and an iPhone 17-or-newer simulator, and press Run.
+
+The voice lounge is mock-only. `VoiceRoomService` is the seam for a later hosted room: join, leave, mute, participants, speaking levels, and a connection state of idle, connecting, connected, reconnecting, or failed. `InMemoryVoiceRoomService` is the fake. No voice SDK, account, or provider is included.
 
 The prototype starts in the inbox. The States menu shows loading, empty, and error. Tap a thread for bubbles, tapbacks, swipe-to-reply, the party card, voice, and handoff.

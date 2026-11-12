@@ -10,7 +10,7 @@ struct HandoffSheet: View {
             List {
                 Section("Stay here") {
                     Button {
-                        store.joinVoice()
+                        Task { await store.joinVoice() }
                         store.postSystem("Staying in the Lounge.")
                         dismiss()
                     } label: {

@@ -113,10 +113,20 @@ struct ChatMessage: Identifiable, Hashable, Codable {
     var mentionsHere: Bool
 }
 
+enum VoiceConnectionState: Equatable, Hashable, Codable {
+    case idle
+    case connecting
+    case connected
+    case reconnecting
+    case failed(String)
+}
+
 struct VoiceRoom: Hashable, Codable {
     var title: String
     var occupantIds: [String]
     var mutedIds: [String]
+    var speakingLevels: [String: Double]
+    var connection: VoiceConnectionState
     var collapsed: Bool
 }
 

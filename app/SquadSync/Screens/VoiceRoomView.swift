@@ -5,6 +5,9 @@ struct VoiceRoomView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: SQSpace.l) {
             Text(store.voice.title).font(.title2.weight(.semibold))
+            Text(connectionLine)
+                .font(.subheadline)
+                .foregroundStyle(SQColor.muted)
             Text("\(store.voice.occupantIds.count) in the room")
                 .font(.subheadline)
                 .foregroundStyle(SQColor.muted)
@@ -15,7 +18,7 @@ struct VoiceRoomView: View {
                             .overlay(speaking(person))
                         VStack(alignment: .leading) {
                             Text(person.name).font(.headline)
-                            Text(store.voice.mutedIds.contains(id) ? "Muted" : (person.isSpeaking ? "Speaking" : "Listening"))
+                            Text(line(for: id, person: person))
                                 .font(.caption)
                                 .foregroundStyle(SQColor.muted)
                         }
@@ -26,10 +29,12 @@ struct VoiceRoomView: View {
             }
             HStack {
                 Button(store.voice.mutedIds.contains(store.viewerId) ? "Unmute" : "Mute") {
-                    store.toggleMute()
+                    Task { await store.toggleMute() }
                 }
                 .buttonStyle(.bordered)
-                Button("Leave", role: .destructive) { store.leaveVoice() }
+                Button("Leave", role: .destructive) {
+                    Task { await store.leaveVoice() }
+                }
                     .buttonStyle(.bordered)
                 Spacer()
                 Button("Collapse") { store.voice.collapsed = true }
@@ -39,6 +44,23 @@ struct VoiceRoomView: View {
         .padding(SQSpace.l)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+
+    private var connectionLine: String {
+        switch store.voice.connection {
+        case .idle: "Not connected"
+        case .connecting: "Connecting…"
+        case .connected: "Connected"
+        case .reconnecting: "Reconnecting…"
+        case .failed(let reason): "Connection failed. \(reason)"
+        }
+    }
+
+    private func line(for id: String, person: Person) -> String {
+        if store.voice.mutedIds.contains(id) { return "Muted" }
+        let level = store.voice.speakingLevels[id] ?? 0
+        if level > 0.2 { return "Speaking" }
+        return person.isSpeaking ? "Speaking" : "Listening"
     }
 
     @ViewBuilder

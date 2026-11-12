@@ -1,37 +1,50 @@
 # SquadSync iOS prototype
 
-SwiftUI iPhone app for Phase 1. The target is iPhone only. Mock data only. No networking, no Supabase, and no third-party packages.
+SwiftUI iPhone app for Phase 1. The target is iPhone only. Mock data only. No networking, no Supabase client, and no third-party packages.
+
+The Xcode project vendors no Swift packages, CocoaPods, or Carthage checkouts. A build does not fetch dependencies from the network. Simulator builds do not need a signing certificate (`CODE_SIGNING_ALLOWED` is NO).
+
+Builds, simulator runs, and screenshots happen on the Mac mini. GitHub Actions on this branch runs the Linux SQL RLS and FCM payload jobs only.
 
 - Bundle id: `com.spencereese.squadsync`
 - Deployment: iOS 17
 - Swift: 5.9
-- The `.xcodeproj` was written by hand to match `project.yml`. XcodeGen is not required. Simulator builds do not need a signing certificate.
+- `app/SquadSync.xcodeproj` is already committed and matches `app/project.yml`.
 
-## Build and run on a Mac
+Commands below run from the repository root.
 
-From the repository root:
+## XcodeGen
+
+Optional. The checked-in project already builds. To rewrite it from the spec:
+
+```bash
+xcodegen generate --spec app/project.yml
+```
+
+## Build
+
+```bash
+xcodebuild -project app/SquadSync.xcodeproj -scheme SquadSync -destination 'platform=iOS Simulator,name=iPhone 16 Pro' build
+```
+
+## Test
 
 ```bash
 xcodebuild -project app/SquadSync.xcodeproj -scheme SquadSync -destination 'platform=iOS Simulator,name=iPhone 16 Pro' test
 ```
 
-Xcode 26's simulator list no longer includes iPhone 16 Pro. On that Xcode, use an installed phone, for example iPhone 17 Pro. If more than one runtime matches the name, pass the device id from `xcrun simctl list devices available`:
-
-```bash
-xcodebuild -project app/SquadSync.xcodeproj -scheme SquadSync -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
-```
-
-That command builds the app, runs the XCTest unit tests, and leaves a simulator build. To launch it in the Simulator after a build:
+## Run in the Simulator
 
 ```bash
 xcodebuild -project app/SquadSync.xcodeproj -scheme SquadSync -destination 'platform=iOS Simulator,name=iPhone 16 Pro' build
 open -a Simulator
 xcrun simctl boot "iPhone 16 Pro" || true
-xcrun simctl install booted ~/Library/Developer/Xcode/DerivedData/SquadSync-*/Build/Products/Debug-iphonesimulator/SquadSync.app
+APP=$(xcodebuild -project app/SquadSync.xcodeproj -scheme SquadSync -destination 'platform=iOS Simulator,name=iPhone 16 Pro' -showBuildSettings | awk -F ' = ' '/ BUILT_PRODUCTS_DIR / {print $2; exit}')
+xcrun simctl install booted "$APP/SquadSync.app"
 xcrun simctl launch booted com.spencereese.squadsync
 ```
 
-Or open `app/SquadSync.xcodeproj` in Xcode, choose the SquadSync scheme and an iPhone 17-or-newer simulator, and press Run.
+If this Mac has no iPhone 16 Pro simulator, substitute the installed phone name in every command above. On Xcode 26 that name is `iPhone 17 Pro`.
 
 The voice lounge is mock-only. `VoiceRoomService` is the seam for a later hosted room: join, leave, mute, participants, speaking levels, and a connection state of idle, connecting, connected, reconnecting, or failed. `InMemoryVoiceRoomService` is the fake. No voice SDK, account, or provider is included.
 

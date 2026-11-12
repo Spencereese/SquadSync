@@ -1,5 +1,5 @@
-# Backend checks and, on later slices, the native iOS build.
-# Runs on push and pull request for ios/** and ios/main only.
+# Linux checks only. Runs on push and pull request for ios/** and ios/main.
+# iOS builds, simulator runs, and screenshots stay on the Mac mini.
 # Does not deploy, and does not run on repository default main or master.
 name: ios
 
@@ -70,39 +70,3 @@ jobs:
           PGPASSWORD: postgres
           PGDATABASE: sq8
         run: bash supabase/tests/run.sh
-
-  ios-simulator:
-    name: iOS simulator build and tests
-    runs-on: macos-latest
-    timeout-minutes: 40
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Build and test
-        run: |
-          set -euo pipefail
-          UDID=$(python3 - <<'PY'
-          import json, subprocess
-          raw = subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"])
-          data = json.loads(raw)
-          preferred = ["iPhone 16 Pro", "iPhone 17 Pro", "iPhone 17", "iPhone 16e", "iPhone Air"]
-          found = {}
-          for runtime, devices in data.get("devices", {}).items():
-              if "iOS" not in runtime:
-                  continue
-              for device in devices:
-                  if device.get("isAvailable") and device.get("name", "").startswith("iPhone"):
-                      found[device["name"]] = device["udid"]
-          for name in preferred:
-              if name in found:
-                  print(found[name])
-                  break
-          else:
-              if not found:
-                  raise SystemExit("No available iPhone simulator")
-              print(next(iter(found.values())))
-          PY
-          )
-          echo "Using simulator $UDID"
-          xcodebuild -project app/SquadSync.xcodeproj -scheme SquadSync -destination "platform=iOS Simulator,id=$UDID" test

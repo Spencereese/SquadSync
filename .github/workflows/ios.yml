@@ -80,4 +80,29 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Build and test
-        run: xcodebuild -project app/SquadSync.xcodeproj -scheme SquadSync -destination 'platform=iOS Simulator,name=iPhone 16 Pro' test
+        run: |
+          set -euo pipefail
+          UDID=$(python3 - <<'PY'
+          import json, subprocess
+          raw = subprocess.check_output(["xcrun", "simctl", "list", "devices", "available", "-j"])
+          data = json.loads(raw)
+          preferred = ["iPhone 16 Pro", "iPhone 17 Pro", "iPhone 17", "iPhone 16e", "iPhone Air"]
+          found = {}
+          for runtime, devices in data.get("devices", {}).items():
+              if "iOS" not in runtime:
+                  continue
+              for device in devices:
+                  if device.get("isAvailable") and device.get("name", "").startswith("iPhone"):
+                      found[device["name"]] = device["udid"]
+          for name in preferred:
+              if name in found:
+                  print(found[name])
+                  break
+          else:
+              if not found:
+                  raise SystemExit("No available iPhone simulator")
+              print(next(iter(found.values())))
+          PY
+          )
+          echo "Using simulator $UDID"
+          xcodebuild -project app/SquadSync.xcodeproj -scheme SquadSync -destination "platform=iOS Simulator,id=$UDID" test

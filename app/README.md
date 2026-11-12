@@ -15,6 +15,12 @@ From the repository root:
 xcodebuild -project app/SquadSync.xcodeproj -scheme SquadSync -destination 'platform=iOS Simulator,name=iPhone 16 Pro' test
 ```
 
+Xcode 26's simulator list no longer includes iPhone 16 Pro. On that Xcode, use an installed phone, for example iPhone 17 Pro. If more than one runtime matches the name, pass the device id from `xcrun simctl list devices available`:
+
+```bash
+xcodebuild -project app/SquadSync.xcodeproj -scheme SquadSync -destination 'platform=iOS Simulator,name=iPhone 17 Pro' test
+```
+
 That command builds the app, runs the XCTest unit tests, and leaves a simulator build. To launch it in the Simulator after a build:
 
 ```bash

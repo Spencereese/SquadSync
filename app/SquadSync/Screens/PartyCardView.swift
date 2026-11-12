@@ -201,6 +201,7 @@ struct PartyCardView: View {
         return "\(up) up to play · \(online) just online"
     }
 
+    @ViewBuilder
     private func slotRow(_ party: Party) -> some View {
         if typeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: SQSpace.m) {

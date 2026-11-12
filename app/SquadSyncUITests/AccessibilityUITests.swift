@@ -52,4 +52,24 @@ final class AccessibilityUITests: XCTestCase {
             "Friday crew ends at \(row.frame.maxY), under the tab bar at \(tab.frame.minY)"
         )
     }
+
+    func testPartySheetDetailsClearTheActionBarAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-screen", "thread-general", "-uitest-largeText"]
+        app.launch()
+
+        let summary = app.descendants(matching: .any)["party-summary"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 15), "Party summary was not in the accessibility tree")
+        summary.tap()
+
+        let last = app.descendants(matching: .any)["party-details-last"]
+        let bar = app.descendants(matching: .any)["party-actions"]
+        XCTAssertTrue(last.waitForExistence(timeout: 15), "Last party details line was not in the accessibility tree")
+        XCTAssertTrue(bar.waitForExistence(timeout: 15), "Party action bar was not in the accessibility tree")
+        XCTAssertLessThanOrEqual(
+            last.frame.maxY,
+            bar.frame.minY + 1,
+            "Party details end at \(last.frame.maxY), under the action bar at \(bar.frame.minY)"
+        )
+    }
 }

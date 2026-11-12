@@ -49,6 +49,7 @@ struct PartyCardView: View {
                 .background(SQColor.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("party-summary")
         .accessibilityLabel("\(party.game), \(SpotRules.filled(party)) of \(party.targetSize). Open the party card")
         .sheet(isPresented: $open) {
             partySheet(party)
@@ -58,18 +59,25 @@ struct PartyCardView: View {
     private func partySheet(_ party: Party) -> some View {
         NavigationStack {
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                ScrollView {
-                    sheetDetails(party, now: context.date)
-                        .padding(SQSpace.l)
-                }
-                .background(SQColor.canvas)
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    if !party.locked {
-                        actionRow(party, now: context.date)
-                            .padding(SQSpace.m)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .background(.ultraThinMaterial)
+                GeometryReader { geo in
+                    VStack(spacing: 0) {
+                        ScrollView {
+                            sheetDetails(party, now: context.date)
+                                .padding(SQSpace.l)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        if !party.locked {
+                            actionRow(party, now: context.date)
+                                .padding(SQSpace.m)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .background(.ultraThinMaterial)
+                                .layoutPriority(1)
+                                .accessibilityElement(children: .contain)
+                                .accessibilityIdentifier("party-actions")
+                        }
                     }
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .background(SQColor.canvas)
                 }
             }
             .navigationTitle(party.game)
@@ -106,6 +114,7 @@ struct PartyCardView: View {
                 .font(.footnote)
                 .foregroundStyle(SQColor.muted)
                 .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("party-details-last")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }

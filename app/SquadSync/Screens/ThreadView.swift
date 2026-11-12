@@ -5,6 +5,7 @@ struct ThreadView: View {
     let conversation: Conversation
     @State private var draft = ""
     @State private var reply: ChatMessage?
+    @State private var bottomChrome: CGFloat = 0
     @Environment(\.dynamicTypeSize) private var typeSize
 
     private var messages: [ChatMessage] { store.messages(in: conversation.id) }
@@ -55,7 +56,7 @@ struct ThreadView: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
-                .contentMargins(.bottom, SQSpace.l, for: .scrollContent)
+                .contentMargins(.bottom, listBottomMargin, for: .scrollContent)
                 .frame(maxHeight: .infinity)
                 .onAppear {
                     store.markSeen(in: conversation.id)
@@ -69,29 +70,35 @@ struct ThreadView: View {
                     }
                 }
             }
-            if store.showsVoicePill {
-                VoicePill(room: store.voice) { store.openVoice() }
-                    .padding(.top, SQSpace.s)
-                    .accessibilityIdentifier("voice-pill")
-                    .layoutPriority(1)
+            VStack(spacing: 0) {
+                if store.showsVoicePill {
+                    VoicePill(room: store.voice) { store.openVoice() }
+                        .padding(.top, SQSpace.s)
+                        .accessibilityIdentifier("voice-pill")
+                }
+                if !typing.isEmpty {
+                    Text(typingLine)
+                        .font(.footnote)
+                        .foregroundStyle(SQColor.muted)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.8)
+                        .dynamicTypeSize(.large ... .xxxLarge)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, SQSpace.l)
+                        .padding(.top, SQSpace.xs)
+                        .accessibilityLabel(typingLine)
+                        .accessibilityIdentifier("typing-indicator")
+                }
+                composer
             }
-            if !typing.isEmpty {
-                Text(typingLine)
-                    .font(.footnote)
-                    .foregroundStyle(SQColor.muted)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                    .dynamicTypeSize(.large ... .xxxLarge)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, SQSpace.l)
-                    .padding(.top, SQSpace.xs)
-                    .accessibilityLabel(typingLine)
-                    .accessibilityIdentifier("typing-indicator")
-                    .layoutPriority(1)
+            .layoutPriority(1)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear.preference(key: BottomChromeKey.self, value: proxy.size.height)
+                }
             }
-            composer
-                .layoutPriority(1)
         }
+        .onPreferenceChange(BottomChromeKey.self) { bottomChrome = $0 }
         .background(SQColor.canvas)
         .navigationTitle(conversation.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -122,6 +129,11 @@ struct ThreadView: View {
             }
         }
         .sensoryFeedback(.success, trigger: store.party?.locked ?? false)
+    }
+
+    private var listBottomMargin: CGFloat {
+        guard typeSize.isAccessibilitySize else { return SQSpace.l }
+        return max(bottomChrome, 220)
     }
 
     private var typingLine: String {
@@ -296,6 +308,13 @@ struct ThreadView: View {
                 }
             }
         }
+    }
+}
+
+private struct BottomChromeKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 

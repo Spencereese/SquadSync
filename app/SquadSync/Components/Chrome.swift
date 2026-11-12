@@ -99,10 +99,16 @@ struct FormingDock: View {
         let timer = party.locked ? "Locked" : "\(SpotRules.countdownText(party, now: now)) left"
         return HStack(spacing: SQSpace.m) {
             if typeSize.isAccessibilitySize {
-                Text("\(party.game) · \(SpotRules.filled(party))/\(party.targetSize) · \(timer)")
-                    .font(.headline)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(timer)
+                        .font(.headline.monospacedDigit())
+                        .foregroundStyle(SQColor.warning)
+                        .lineLimit(1)
+                    Text("\(party.game) · \(SpotRules.filled(party))/\(party.targetSize)")
+                        .font(.subheadline)
+                        .lineLimit(1)
+                }
+                .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: SQSpace.s)
             } else {
                 VStack(alignment: .leading, spacing: 2) {

@@ -106,6 +106,39 @@ enum RealtimeLink: Equatable {
     }
 }
 
+struct ScrollSample: Equatable {
+    var offset: CGFloat
+    var content: CGFloat
+    var viewport: CGFloat
+}
+
+enum ChatFollow {
+    static let slack: CGFloat = 48
+
+    static func distanceFromBottom(_ sample: ScrollSample) -> CGFloat {
+        sample.content - sample.viewport - sample.offset
+    }
+
+    static func isAtBottom(_ sample: ScrollSample) -> Bool {
+        guard sample.viewport > 1 else { return true }
+        return distanceFromBottom(sample) <= slack
+    }
+
+    /// Content growing does not change the offset, so a pinned reader stays pinned.
+    /// Moving toward the bottom does not unpin mid-animation. Moving up does.
+    static func pinned(previous: Bool, oldOffset: CGFloat, sample: ScrollSample) -> Bool {
+        guard sample.content > 1, sample.viewport > 1 else { return previous }
+        let delta = sample.offset - oldOffset
+        if abs(delta) < 0.5 { return previous }
+        if delta > 0 { return isAtBottom(sample) || previous }
+        return isAtBottom(sample)
+    }
+
+    static func scrolls(pinned: Bool, ownSend: Bool) -> Bool {
+        pinned || ownSend
+    }
+}
+
 enum ChatBackfill {
     static func apply(_ log: inout ChatLog, history: [ChatEntry]) {
         log.ingest(history)

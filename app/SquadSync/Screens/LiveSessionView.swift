@@ -471,7 +471,7 @@ final class LiveSessionModel {
 
 struct LiveSessionView: View {
     @State private var model: LiveSessionModel
-    @State private var stickToBottom = true
+    @State private var pinnedToBottom = true
     @State private var showNewMessages = false
     @State private var wentToBackground = false
     @Environment(\.scenePhase) private var scenePhase
@@ -611,18 +611,16 @@ struct LiveSessionView: View {
                         ForEach(model.log.ordered) { entry in
                             messageRow(entry).id(entry.id)
                         }
-                        Color.clear
-                            .frame(height: 1)
-                            .id("chat-bottom")
-                            .onAppear { stickToBottom = true }
-                            .onDisappear { stickToBottom = false }
                     }
+                    .background(ChatContentFrame())
                 }
-                .defaultScrollAnchor(.bottom)
+                .coordinateSpace(name: "chat")
+                .scrollDismissesKeyboard(.interactively)
+                .modifier(ChatPinModifier(pinned: $pinnedToBottom))
                 if showNewMessages {
                     Button("New messages") {
                         showNewMessages = false
-                        stickToBottom = true
+                        pinnedToBottom = true
                         if let id = model.log.ordered.last?.id {
                             proxy.scrollTo(id, anchor: .bottom)
                         }
@@ -634,7 +632,7 @@ struct LiveSessionView: View {
             .onChange(of: model.log.ordered.last?.id) { _, id in
                 guard let id else { return }
                 let own = model.followSend == id
-                if stickToBottom || own {
+                if ChatFollow.scrolls(pinned: pinnedToBottom, ownSend: own) {
                     withAnimation { proxy.scrollTo(id, anchor: .bottom) }
                     showNewMessages = false
                     if own { model.followSend = nil }
@@ -680,9 +678,14 @@ struct LiveSessionView: View {
         let lastMine = model.log.ordered.last { $0.senderId == model.profile?.id && $0.delivery == .sent }?.id
         let names = seenNames(for: entry)
         return VStack(alignment: .leading, spacing: 2) {
-            Text(entry.body)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier("message-\(entry.id.uuidString)")
+            Button {
+                model.selectedMessage = entry.id
+            } label: {
+                Text(entry.body)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("message-row-\(entry.id.uuidString)")
             Text(label(for: entry))
                 .font(.caption)
                 .foregroundStyle(SQColor.muted)
@@ -704,8 +707,8 @@ struct LiveSessionView: View {
             }
         }
         .padding(.vertical, SQSpace.xs)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .onTapGesture { model.selectedMessage = entry.id }
         .onTapGesture(count: 2) {
             model.selectedMessage = entry.id
             model.reacting = true
@@ -768,6 +771,63 @@ struct LiveSessionView: View {
         case .sending: "Sending"
         case .sent: "Sent"
         case .failed: "Failed"
+        }
+    }
+}
+
+private struct ChatFrameKey: PreferenceKey {
+    static var defaultValue: CGRect = .zero
+    static func reduce(value: inout CGRect, nextValue: () -> CGRect) {
+        let next = nextValue()
+        if next != .zero { value = next }
+    }
+}
+
+private struct ChatViewportKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
+    }
+}
+
+private struct ChatContentFrame: View {
+    var body: some View {
+        GeometryReader { geo in
+            Color.clear.preference(key: ChatFrameKey.self, value: geo.frame(in: .named("chat")))
+        }
+    }
+}
+
+private struct ChatPinModifier: ViewModifier {
+    @Binding var pinned: Bool
+    @State private var lastOffset: CGFloat = 0
+    @State private var viewport: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, *) {
+            content.onScrollGeometryChange(for: ScrollSample.self, of: { geo in
+                ScrollSample(
+                    offset: geo.contentOffset.y,
+                    content: geo.contentSize.height,
+                    viewport: geo.containerSize.height
+                )
+            }, action: { _, sample in
+                pinned = ChatFollow.pinned(previous: pinned, oldOffset: lastOffset, sample: sample)
+                lastOffset = sample.offset
+            })
+        } else {
+            content
+                .background {
+                    GeometryReader { geo in
+                        Color.clear.preference(key: ChatViewportKey.self, value: geo.size.height)
+                    }
+                }
+                .onPreferenceChange(ChatViewportKey.self) { viewport = $0 }
+                .onPreferenceChange(ChatFrameKey.self) { frame in
+                    let sample = ScrollSample(offset: -frame.minY, content: frame.height, viewport: viewport)
+                    pinned = ChatFollow.pinned(previous: pinned, oldOffset: lastOffset, sample: sample)
+                    lastOffset = sample.offset
+                }
         }
     }
 }

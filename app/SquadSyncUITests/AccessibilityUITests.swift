@@ -92,8 +92,17 @@ final class AccessibilityUITests: XCTestCase {
         field.typeText("hello")
         app.buttons["Send"].tap()
 
-        let bubble = app.staticTexts["hello"]
-        XCTAssertTrue(bubble.waitForExistence(timeout: 5), "Sent message was not visible")
+        let list = app.scrollViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 5), "Chat list was not visible")
+        list.swipeDown()
+
+        let bubble = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH 'message-row-'")
+        ).firstMatch
+        XCTAssertTrue(bubble.waitForExistence(timeout: 5), "Sent message row was not visible")
+        if !bubble.isHittable {
+            list.swipeDown()
+        }
         bubble.tap()
 
         let react = app.buttons["React"]

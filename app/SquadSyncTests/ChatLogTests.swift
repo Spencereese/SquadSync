@@ -236,6 +236,22 @@ final class SquadNameTests: XCTestCase {
         )
     }
 
+    func testScrolledUpKeepsThePlaceAndShowsThePill() {
+        let atBottom = ScrollSample(offset: 400, content: 800, viewport: 400)
+        let grown = ScrollSample(offset: 400, content: 900, viewport: 400)
+        XCTAssertTrue(ChatFollow.isAtBottom(atBottom))
+        XCTAssertTrue(ChatFollow.pinned(previous: true, oldOffset: 400, sample: grown))
+        XCTAssertTrue(ChatFollow.scrolls(pinned: true, ownSend: false))
+
+        let up = ScrollSample(offset: 80, content: 900, viewport: 400)
+        XCTAssertFalse(ChatFollow.isAtBottom(up))
+        XCTAssertFalse(ChatFollow.pinned(previous: true, oldOffset: 400, sample: up))
+        XCTAssertFalse(ChatFollow.scrolls(pinned: false, ownSend: false))
+        XCTAssertTrue(ChatFollow.scrolls(pinned: false, ownSend: true))
+        let midScroll = ScrollSample(offset: 420, content: 900, viewport: 400)
+        XCTAssertTrue(ChatFollow.pinned(previous: true, oldOffset: 400, sample: midScroll))
+    }
+
     func testCancellationIsNotAStatus() {
         XCTAssertTrue(RequestNoise.isCancellation(CancellationError()))
         XCTAssertTrue(RequestNoise.isCancellation(URLError(.cancelled)))

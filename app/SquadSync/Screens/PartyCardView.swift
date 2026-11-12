@@ -64,20 +64,18 @@ struct PartyCardView: View {
                         ScrollView {
                             sheetDetails(party, now: context.date)
                                 .padding(SQSpace.l)
+                                .padding(.bottom, typeSize.isAccessibilitySize ? 64 : SQSpace.xxl)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .clipped()
                         if !party.locked {
-                            actionRow(party, now: context.date)
-                                .padding(SQSpace.m)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .background(.ultraThinMaterial)
+                            actionBar(party, now: context.date)
                                 .layoutPriority(1)
-                                .accessibilityElement(children: .contain)
-                                .accessibilityIdentifier("party-actions")
                         }
                     }
                     .frame(width: geo.size.width, height: geo.size.height)
                     .background(SQColor.canvas)
+                    .clipped()
                 }
             }
             .navigationTitle(party.game)
@@ -91,6 +89,24 @@ struct PartyCardView: View {
         }
         .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+
+    private func actionBar(_ party: Party, now: Date) -> some View {
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(SQColor.card)
+                .frame(height: 12)
+                .frame(maxWidth: .infinity)
+                .accessibilityElement(children: .ignore)
+                .accessibilityIdentifier("party-actions-background")
+                .accessibilityLabel("Party actions background")
+            actionRow(party, now: now)
+                .padding(SQSpace.m)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("party-actions")
+        }
+        .background(SQColor.card)
+        .clipped()
     }
 
     private func sheetDetails(_ party: Party, now: Date) -> some View {

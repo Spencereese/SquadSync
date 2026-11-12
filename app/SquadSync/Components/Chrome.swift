@@ -106,9 +106,11 @@ struct FormingDock: View {
                         .lineLimit(1)
                     Text("\(party.game) · \(SpotRules.filled(party))/\(party.targetSize)")
                         .font(.subheadline)
-                        .lineLimit(1)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 Spacer(minLength: SQSpace.s)
             } else {
                 VStack(alignment: .leading, spacing: 2) {

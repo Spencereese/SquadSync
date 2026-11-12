@@ -37,19 +37,25 @@ final class AccessibilityUITests: XCTestCase {
         )
     }
 
-    func testInboxFridayCrewClearsTheTabBarAtLargeText() {
+    func testInboxLastRowClearsTheTabBarAfterScrollingAtLargeText() {
         let app = XCUIApplication()
         app.launchArguments = ["-screen", "inbox", "-uitest-largeText"]
         app.launch()
 
-        let row = app.descendants(matching: .any)["inbox-friday"]
-        XCTAssertTrue(row.waitForExistence(timeout: 15), "Friday crew was not in the accessibility tree")
         let tab = app.descendants(matching: .any)["tab-inbox"]
         XCTAssertTrue(tab.waitForExistence(timeout: 15), "Inbox tab was not in the accessibility tree")
+        let scroll = app.scrollViews.firstMatch
+        XCTAssertTrue(scroll.waitForExistence(timeout: 15), "Inbox scroll view was not found")
+        for _ in 0..<8 {
+            scroll.swipeUp()
+        }
+
+        let row = app.descendants(matching: .any)["inbox-dm-riley"]
+        XCTAssertTrue(row.waitForExistence(timeout: 15), "Last inbox row was not in the accessibility tree")
         XCTAssertLessThanOrEqual(
             row.frame.maxY,
             tab.frame.minY + 1,
-            "Friday crew ends at \(row.frame.maxY), under the tab bar at \(tab.frame.minY)"
+            "Last inbox row ends at \(row.frame.maxY), under the tab bar at \(tab.frame.minY)"
         )
     }
 
@@ -63,13 +69,13 @@ final class AccessibilityUITests: XCTestCase {
         summary.tap()
 
         let last = app.descendants(matching: .any)["party-details-last"]
-        let bar = app.descendants(matching: .any)["party-actions"]
+        let barTop = app.descendants(matching: .any)["party-actions-background"]
         XCTAssertTrue(last.waitForExistence(timeout: 15), "Last party details line was not in the accessibility tree")
-        XCTAssertTrue(bar.waitForExistence(timeout: 15), "Party action bar was not in the accessibility tree")
+        XCTAssertTrue(barTop.waitForExistence(timeout: 15), "Party action background was not in the accessibility tree")
         XCTAssertLessThanOrEqual(
             last.frame.maxY,
-            bar.frame.minY + 1,
-            "Party details end at \(last.frame.maxY), under the action bar at \(bar.frame.minY)"
+            barTop.frame.minY + 1,
+            "Party details end at \(last.frame.maxY), under the action bar at \(barTop.frame.minY)"
         )
     }
 }

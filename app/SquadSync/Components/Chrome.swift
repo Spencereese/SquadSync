@@ -59,14 +59,34 @@ struct PresenceAvatar: View {
 
 struct RoleTag: View {
     let role: Role
+    var compact = false
+
     var body: some View {
-        Text(role.title)
-            .font(.caption.weight(.semibold))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .foregroundStyle(SQColor.ink)
-            .background(SQColor.role(role).opacity(0.85), in: Capsule())
-            .accessibilityLabel("\(role.title) role")
+        if compact {
+            Label(role.title, systemImage: symbol)
+                .font(.caption.weight(.semibold))
+                .dynamicTypeSize(.large ... .xxxLarge)
+                .labelStyle(.titleAndIcon)
+                .lineLimit(1)
+                .accessibilityLabel("\(role.title) role")
+        } else {
+            Text(role.title)
+                .font(.caption.weight(.semibold))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .foregroundStyle(SQColor.ink)
+                .background(SQColor.role(role).opacity(0.85), in: Capsule())
+                .accessibilityLabel("\(role.title) role")
+        }
+    }
+
+    private var symbol: String {
+        switch role {
+        case .owner: "crown.fill"
+        case .admin: "shield.fill"
+        case .member: "person.fill"
+        case .guest: "person.badge.plus"
+        }
     }
 }
 

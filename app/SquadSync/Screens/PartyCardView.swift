@@ -6,6 +6,7 @@ struct PartyCardView: View {
     var showsFullCard = false
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var open = false
+    @State private var actionBarHeight: CGFloat = 0
 
     private var useCompactSummary: Bool {
         !showsFullCard && typeSize.isAccessibilitySize
@@ -39,28 +40,17 @@ struct PartyCardView: View {
 
     private func compact(_ party: Party, now: Date) -> some View {
         Button { open = true } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(party.game)
-                    .font(.headline)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("\(SpotRules.filled(party))/\(party.targetSize) · \(party.locked ? "Locked" : SpotRules.countdownText(party, now: now))")
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(party.locked ? SQColor.online : SQColor.warning)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("Open the party card")
-                    .font(.caption)
-                    .foregroundStyle(SQColor.muted)
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .sqCard()
+            Text("\(party.game) · \(SpotRules.filled(party))/\(party.targetSize) · \(party.locked ? "Locked" : SpotRules.countdownText(party, now: now))")
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, SQSpace.s)
+                .padding(.horizontal, SQSpace.m)
+                .background(SQColor.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
-        .lineLimit(nil)
-        .accessibilityHint("Opens the party card")
+        .accessibilityLabel("\(party.game), \(SpotRules.filled(party)) of \(party.targetSize). Open the party card")
         .sheet(isPresented: $open) {
             partySheet(party)
         }
@@ -73,12 +63,18 @@ struct PartyCardView: View {
                     ScrollView {
                         sheetDetails(party, now: context.date)
                             .padding(SQSpace.l)
+                            .padding(.bottom, actionBarHeight > 0 ? actionBarHeight : SQSpace.xxl)
                     }
                     if !party.locked {
                         actionRow(party, now: context.date)
-                            .padding(SQSpace.l)
+                            .padding(SQSpace.m)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(.ultraThinMaterial)
+                            .background {
+                                GeometryReader { geo in
+                                    Color.clear.preference(key: ActionBarHeightKey.self, value: geo.size.height)
+                                }
+                            }
                     }
                 }
             }
@@ -92,8 +88,9 @@ struct PartyCardView: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium, .large])
         .presentationDragIndicator(.visible)
+        .onPreferenceChange(ActionBarHeightKey.self) { actionBarHeight = $0 }
     }
 
     private func sheetDetails(_ party: Party, now: Date) -> some View {
@@ -230,7 +227,7 @@ struct PartyCardView: View {
         }
         return Group {
             if typeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: SQSpace.s) { actions }
+                VStack(alignment: .leading, spacing: SQSpace.xs) { actions }
             } else {
                 ViewThatFits(in: .horizontal) {
                     HStack { actions }
@@ -239,6 +236,15 @@ struct PartyCardView: View {
             }
         }
         .font(.subheadline.weight(.semibold))
+        .dynamicTypeSize(.large ... (typeSize.isAccessibilitySize ? .xxxLarge : .accessibility5))
+        .controlSize(typeSize.isAccessibilitySize ? .small : .regular)
+    }
+}
+
+private struct ActionBarHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 

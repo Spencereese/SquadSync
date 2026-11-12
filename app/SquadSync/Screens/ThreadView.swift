@@ -13,29 +13,33 @@ struct ThreadView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if typeSize.isAccessibilitySize {
-                Text(conversation.title)
-                    .font(.title3.weight(.semibold))
-                    .lineLimit(nil)
-                    .fixedSize(horizontal: false, vertical: true)
+            if !typeSize.isAccessibilitySize {
+                Text("\(store.onCount) of \(SpotRules.squadCap) on")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(SQColor.muted)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, SQSpace.l)
                     .padding(.top, SQSpace.s)
-                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityLabel("\(store.onCount) of \(SpotRules.squadCap) on")
+                PartyCardView(store: store, conversation: conversation)
+                    .padding(.horizontal, SQSpace.l)
+                    .padding(.top, SQSpace.s)
             }
-            Text("\(store.onCount) of \(SpotRules.squadCap) on")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(SQColor.muted)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, SQSpace.l)
-                .padding(.top, SQSpace.s)
-                .accessibilityLabel("\(store.onCount) of \(SpotRules.squadCap) on")
-            PartyCardView(store: store, conversation: conversation)
-                .padding(.horizontal, SQSpace.l)
-                .padding(.top, SQSpace.s)
-                .fixedSize(horizontal: false, vertical: true)
             ScrollViewReader { proxy in
                 List {
+                    if typeSize.isAccessibilitySize {
+                        Text("\(conversation.title) · \(store.onCount) of \(SpotRules.squadCap) on")
+                            .font(.headline)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .accessibilityAddTraits(.isHeader)
+                            .accessibilityLabel("\(conversation.title), \(store.onCount) of \(SpotRules.squadCap) on")
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                        PartyCardView(store: store, conversation: conversation)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    }
                     ForEach(messages) { message in
                         bubble(message)
                             .id(message.id)
@@ -75,9 +79,12 @@ struct ThreadView: View {
                 Text(typingLine)
                     .font(.footnote)
                     .foregroundStyle(SQColor.muted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .dynamicTypeSize(.large ... .xxxLarge)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, SQSpace.l)
-                    .padding(.top, SQSpace.s)
+                    .padding(.top, SQSpace.xs)
                     .accessibilityLabel(typingLine)
                     .accessibilityIdentifier("typing-indicator")
                     .layoutPriority(1)

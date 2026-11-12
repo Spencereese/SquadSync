@@ -20,4 +20,20 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(voice.waitForExistence(timeout: 15), "Voice room button was not in the accessibility tree")
         XCTAssertTrue(handoff.exists, "Handoff menu button was not in the accessibility tree")
     }
+
+    func testSpaceMemberRowClearsTheTabBarAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-screen", "space", "-uitest-largeText"]
+        app.launch()
+
+        let row = app.descendants(matching: .any)["member-spencer"]
+        XCTAssertTrue(row.waitForExistence(timeout: 15), "Spencer's row was not in the accessibility tree")
+        let tab = app.descendants(matching: .any)["tab-space"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 15), "Space tab was not in the accessibility tree")
+        XCTAssertLessThanOrEqual(
+            row.frame.maxY,
+            tab.frame.minY + 1,
+            "Spencer's row ends at \(row.frame.maxY), under the tab bar at \(tab.frame.minY)"
+        )
+    }
 }

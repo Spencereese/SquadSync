@@ -162,25 +162,29 @@ private struct PresenceStrip: View {
             .overlay(alignment: .trailing) {
                 if !plan.hidden.isEmpty {
                     LinearGradient(
-                        colors: [SQColor.canvas.opacity(0), SQColor.canvas],
+                        stops: [
+                            .init(color: SQColor.canvas.opacity(0), location: 0),
+                            .init(color: SQColor.canvas.opacity(0.55), location: 0.45),
+                            .init(color: SQColor.canvas, location: 1)
+                        ],
                         startPoint: .leading,
                         endPoint: .trailing
                     )
-                    .frame(width: 32)
+                    .frame(width: 72)
                     .padding(.trailing, cueWidth)
                     .allowsHitTesting(false)
                     .accessibilityHidden(true)
                 }
             }
         }
-        .frame(height: typeSize.isAccessibilitySize ? 112 : 64)
+        .frame(height: typeSize.isAccessibilitySize ? 64 : 68)
         .accessibilityElement(children: .contain)
         .sheet(isPresented: $showRest) { restSheet }
     }
 
-    private var cellWidth: CGFloat { typeSize.isAccessibilitySize ? 84 : 52 }
-    private var avatarSize: CGFloat { typeSize.isAccessibilitySize ? 40 : 32 }
-    private var cueWidth: CGFloat { 48 }
+    private var cellWidth: CGFloat { typeSize.isAccessibilitySize ? 54 : 52 }
+    private var avatarSize: CGFloat { typeSize.isAccessibilitySize ? 36 : 32 }
+    private var cueWidth: CGFloat { 76 }
     private var spacing: CGFloat { SQSpace.s }
 
     private func layout(width: CGFloat) -> (visible: [Person], hidden: [Person]) {
@@ -197,22 +201,29 @@ private struct PresenceStrip: View {
     private func cell(_ person: Person) -> some View {
         VStack(spacing: 4) {
             PresenceAvatar(person: person, size: avatarSize)
-            Text(person.name)
-                .font(.caption2)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .frame(width: cellWidth)
+            if !typeSize.isAccessibilitySize {
+                Text(person.name)
+                    .font(.caption2)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
+                    .frame(width: cellWidth)
+            }
         }
+        .frame(width: cellWidth)
         .accessibilityElement(children: .combine)
     }
 
     private func overflow(_ hidden: [Person]) -> some View {
         Button { showRest = true } label: {
             Text("+\(hidden.count)")
-                .font(.subheadline.weight(.semibold))
-                .frame(width: avatarSize, height: avatarSize)
-                .background(SQColor.card, in: Circle())
-                .overlay(Circle().stroke(SQColor.line, lineWidth: 1))
+                .font(.subheadline.weight(.bold))
+                .dynamicTypeSize(.medium ... .xLarge)
+                .lineLimit(1)
+                .fixedSize(horizontal: true, vertical: false)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(SQColor.card, in: Capsule())
+                .overlay(Capsule().stroke(SQColor.line, lineWidth: 1))
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(hidden.count) more: \(hidden.map(\.name).joined(separator: ", "))")

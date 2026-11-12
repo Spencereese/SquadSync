@@ -612,8 +612,10 @@ struct LiveSessionView: View {
                             messageRow(entry).id(entry.id)
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .background(ChatContentFrame())
                 }
+                .frame(minHeight: 120)
                 .coordinateSpace(name: "chat")
                 .scrollDismissesKeyboard(.interactively)
                 .modifier(ChatPinModifier(pinned: $pinnedToBottom))
@@ -683,8 +685,11 @@ struct LiveSessionView: View {
             } label: {
                 Text(entry.body)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(WideRowButtonStyle())
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
             .accessibilityIdentifier("message-row-\(entry.id.uuidString)")
             Text(label(for: entry))
                 .font(.caption)
@@ -772,6 +777,14 @@ struct LiveSessionView: View {
         case .sent: "Sent"
         case .failed: "Failed"
         }
+    }
+}
+
+private struct WideRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
     }
 }
 

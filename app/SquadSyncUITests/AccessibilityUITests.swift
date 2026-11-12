@@ -94,16 +94,38 @@ final class AccessibilityUITests: XCTestCase {
 
         let list = app.scrollViews.firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 5), "Chat list was not visible")
-        list.swipeDown()
+        var swipes = 0
+        while app.keyboards.count > 0, swipes < 3 {
+            list.swipeDown()
+            swipes += 1
+        }
+        let keyboardGone = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "count == 0"),
+            object: app.keyboards
+        )
+        XCTAssertEqual(
+            XCTWaiter.wait(for: [keyboardGone], timeout: 5),
+            .completed,
+            "Keyboard was still covering the message row"
+        )
 
         let bubble = app.descendants(matching: .any).matching(
             NSPredicate(format: "identifier BEGINSWITH 'message-row-'")
         ).firstMatch
         XCTAssertTrue(bubble.waitForExistence(timeout: 5), "Sent message row was not visible")
-        if !bubble.isHittable {
-            list.swipeDown()
+        let pill = app.buttons["New messages"]
+        if pill.exists {
+            XCTAssertFalse(
+                pill.frame.intersects(bubble.frame),
+                "New messages pill covers the row at \(bubble.frame)"
+            )
         }
-        bubble.tap()
+        swipes = 0
+        while !bubble.isHittable, swipes < 4 {
+            list.swipeDown()
+            swipes += 1
+        }
+        bubble.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
 
         let react = app.buttons["React"]
         XCTAssertTrue(react.waitForExistence(timeout: 5), "React button was not visible")

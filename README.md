@@ -22,3 +22,5 @@ On `ios/main` and `ios/**`:
 - SQL RLS tests (Postgres 16)
 
 The Flutter analyze, widget test, and APK job does not run on this line.
+
+The SwiftUI prototype lives on `ios/slice-prototype-37ef` under `app/`. See `app/README.md` for the simulator command.

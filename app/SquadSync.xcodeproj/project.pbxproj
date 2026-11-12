@@ -1,0 +1,394 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A10000000000000000000016 /* Chrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000001 /* Chrome.swift */; };
+		A10000000000000000000017 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* Theme.swift */; };
+		A10000000000000000000018 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* Models.swift */; };
+		A10000000000000000000019 /* SpotRules.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000005 /* SpotRules.swift */; };
+		A10000000000000000000020 /* HandoffSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000006 /* HandoffSheet.swift */; };
+		A10000000000000000000021 /* InboxView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000007 /* InboxView.swift */; };
+		A10000000000000000000022 /* PartyCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000008 /* PartyCardView.swift */; };
+		A10000000000000000000023 /* SpaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000009 /* SpaceView.swift */; };
+		A10000000000000000000024 /* ThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000010 /* ThreadView.swift */; };
+		A10000000000000000000025 /* VoiceRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000011 /* VoiceRoomView.swift */; };
+		A10000000000000000000026 /* SquadSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000012 /* SquadSyncApp.swift */; };
+		A10000000000000000000027 /* MockStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000013 /* MockStore.swift */; };
+		A10000000000000000000028 /* SpotRulesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000014 /* SpotRulesTests.swift */; };
+		A10000000000000000000029 /* StoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000015 /* StoreTests.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		A10000000000000000000001 /* Chrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chrome.swift; sourceTree = "<group>"; };
+		A10000000000000000000002 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		A10000000000000000000003 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000000000000000000004 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		A10000000000000000000005 /* SpotRules.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotRules.swift; sourceTree = "<group>"; };
+		A10000000000000000000006 /* HandoffSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HandoffSheet.swift; sourceTree = "<group>"; };
+		A10000000000000000000007 /* InboxView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InboxView.swift; sourceTree = "<group>"; };
+		A10000000000000000000008 /* PartyCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PartyCardView.swift; sourceTree = "<group>"; };
+		A10000000000000000000009 /* SpaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpaceView.swift; sourceTree = "<group>"; };
+		A10000000000000000000010 /* ThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThreadView.swift; sourceTree = "<group>"; };
+		A10000000000000000000011 /* VoiceRoomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceRoomView.swift; sourceTree = "<group>"; };
+		A10000000000000000000012 /* SquadSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadSyncApp.swift; sourceTree = "<group>"; };
+		A10000000000000000000013 /* MockStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockStore.swift; sourceTree = "<group>"; };
+		A10000000000000000000014 /* SpotRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotRulesTests.swift; sourceTree = "<group>"; };
+		A10000000000000000000015 /* StoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreTests.swift; sourceTree = "<group>"; };
+		A10000000000000000000930 /* SquadSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SquadSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000931 /* SquadSyncTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SquadSyncTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		A10000000000000000000912 /* Frameworks */ = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		A10000000000000000000800 /* SquadSync */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000801 /* Components */,
+				A10000000000000000000802 /* Design */,
+				A10000000000000000000803 /* Model */,
+				A10000000000000000000804 /* Screens */,
+				A10000000000000000000805 /* Store */,
+				A10000000000000000000003 /* Info.plist */,
+				A10000000000000000000012 /* SquadSyncApp.swift */,
+			);
+			path = SquadSync;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000801 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000001 /* Chrome.swift */,
+			);
+			path = Components;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000802 /* Design */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000002 /* Theme.swift */,
+			);
+			path = Design;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000803 /* Model */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000004 /* Models.swift */,
+				A10000000000000000000005 /* SpotRules.swift */,
+			);
+			path = Model;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000804 /* Screens */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000006 /* HandoffSheet.swift */,
+				A10000000000000000000007 /* InboxView.swift */,
+				A10000000000000000000008 /* PartyCardView.swift */,
+				A10000000000000000000009 /* SpaceView.swift */,
+				A10000000000000000000010 /* ThreadView.swift */,
+				A10000000000000000000011 /* VoiceRoomView.swift */,
+			);
+			path = Screens;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000805 /* Store */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000013 /* MockStore.swift */,
+			);
+			path = Store;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000806 /* SquadSyncTests */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000014 /* SpotRulesTests.swift */,
+				A10000000000000000000015 /* StoreTests.swift */,
+			);
+			path = SquadSyncTests;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000921 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000930 /* SquadSync.app */,
+				A10000000000000000000931 /* SquadSyncTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000920 = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000800 /* SquadSync */,
+				A10000000000000000000806 /* SquadSyncTests */,
+				A10000000000000000000921 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		A10000000000000000000900 /* SquadSync */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000961 /* Build configuration list for PBXNativeTarget "SquadSync" */;
+			buildPhases = (
+				A10000000000000000000910 /* Sources */,
+				A10000000000000000000912 /* Frameworks */,
+				A10000000000000000000913 /* Resources */,
+			);
+			buildRules = ();
+			dependencies = ();
+			name = SquadSync;
+			productName = SquadSync;
+			productReference = A10000000000000000000930 /* SquadSync.app */;
+			productType = "com.apple.product-type.application";
+		};
+		A10000000000000000000901 /* SquadSyncTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A10000000000000000000962 /* Build configuration list for PBXNativeTarget "SquadSyncTests" */;
+			buildPhases = (
+				A10000000000000000000911 /* Sources */,
+			);
+			buildRules = ();
+			dependencies = (
+				A10000000000000000000940 /* PBXTargetDependency */,
+			);
+			name = SquadSyncTests;
+			productName = SquadSyncTests;
+			productReference = A10000000000000000000931 /* SquadSyncTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		A10000000000000000000902 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					A10000000000000000000900 = { CreatedOnToolsVersion = 16.0; };
+					A10000000000000000000901 = { CreatedOnToolsVersion = 16.0; TestTargetID = A10000000000000000000900; };
+				};
+			};
+			buildConfigurationList = A10000000000000000000960 /* Build configuration list for PBXProject "SquadSync" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = A10000000000000000000920;
+			productRefGroup = A10000000000000000000921 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				A10000000000000000000900 /* SquadSync */,
+				A10000000000000000000901 /* SquadSyncTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A10000000000000000000913 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		A10000000000000000000910 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000016 /* Chrome.swift in Sources */,
+				A10000000000000000000017 /* Theme.swift in Sources */,
+				A10000000000000000000018 /* Models.swift in Sources */,
+				A10000000000000000000019 /* SpotRules.swift in Sources */,
+				A10000000000000000000020 /* HandoffSheet.swift in Sources */,
+				A10000000000000000000021 /* InboxView.swift in Sources */,
+				A10000000000000000000022 /* PartyCardView.swift in Sources */,
+				A10000000000000000000023 /* SpaceView.swift in Sources */,
+				A10000000000000000000024 /* ThreadView.swift in Sources */,
+				A10000000000000000000025 /* VoiceRoomView.swift in Sources */,
+				A10000000000000000000026 /* SquadSyncApp.swift in Sources */,
+				A10000000000000000000027 /* MockStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		A10000000000000000000911 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000028 /* SpotRulesTests.swift in Sources */,
+				A10000000000000000000029 /* StoreTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXContainerItemProxy section */
+		A10000000000000000000941 /* PBXContainerItemProxy */ = {isa = PBXContainerItemProxy; containerPortal = A10000000000000000000902 /* Project object */; proxyType = 1; remoteGlobalIDString = A10000000000000000000900; remoteInfo = SquadSync; };
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXTargetDependency section */
+		A10000000000000000000940 /* PBXTargetDependency */ = {isa = PBXTargetDependency; target = A10000000000000000000900 /* SquadSync */; targetProxy = A10000000000000000000941 /* PBXContainerItemProxy */; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		A10000000000000000000950 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				ENABLE_TESTABILITY = YES;
+			};
+			name = Debug;
+		};
+		A10000000000000000000951 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				ENABLE_TESTABILITY = YES;
+				SWIFT_COMPILATION_MODE = wholemodule;
+			};
+			name = Release;
+		};
+		A10000000000000000000952 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_TESTABILITY = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SquadSync/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = ( "$(inherited)", "@executable_path/Frameworks" );
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.spencereese.squadsync;
+				PRODUCT_NAME = $(TARGET_NAME);
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+			};
+			name = Debug;
+		};
+		A10000000000000000000953 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_TESTABILITY = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SquadSync/Info.plist;
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
+				LD_RUNPATH_SEARCH_PATHS = ( "$(inherited)", "@executable_path/Frameworks" );
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.spencereese.squadsync;
+				PRODUCT_NAME = $(TARGET_NAME);
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+			};
+			name = Release;
+		};
+		A10000000000000000000954 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.spencereese.squadsync.tests;
+				PRODUCT_NAME = $(TARGET_NAME);
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SquadSync.app/SquadSync";
+			};
+			name = Debug;
+		};
+		A10000000000000000000955 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGNING_ALLOWED = NO;
+				CODE_SIGNING_REQUIRED = NO;
+				CODE_SIGN_IDENTITY = "";
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.spencereese.squadsync.tests;
+				PRODUCT_NAME = $(TARGET_NAME);
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SquadSync.app/SquadSync";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		A10000000000000000000960 /* Build configuration list for PBXProject "SquadSync" */ = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000950 /* Debug */, A10000000000000000000951 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A10000000000000000000961 /* Build configuration list for PBXNativeTarget "SquadSync" */ = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000952 /* Debug */, A10000000000000000000953 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A10000000000000000000962 /* Build configuration list for PBXNativeTarget "SquadSyncTests" */ = {isa = XCConfigurationList; buildConfigurations = (A10000000000000000000954 /* Debug */, A10000000000000000000955 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+	};
+	rootObject = A10000000000000000000902 /* Project object */;
+}

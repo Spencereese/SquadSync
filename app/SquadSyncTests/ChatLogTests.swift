@@ -236,6 +236,40 @@ final class SquadNameTests: XCTestCase {
         )
     }
 
+    func testCancellationIsNotAStatus() {
+        XCTAssertTrue(RequestNoise.isCancellation(CancellationError()))
+        XCTAssertTrue(RequestNoise.isCancellation(URLError(.cancelled)))
+        XCTAssertTrue(RequestNoise.isCancellation(BackendFailure.rejected("cancelled")))
+        let ns = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
+        XCTAssertTrue(RequestNoise.isCancellation(ns))
+        XCTAssertFalse(RequestNoise.isCancellation(BackendFailure.rejected("Squad is full.")))
+    }
+
+    func testSendIsConfirmedWithoutAnEcho() {
+        var log = ChatLog()
+        let id = UUID()
+        let me = UUID()
+        log.beginSend(id: id, senderId: me, body: "rt test 3", now: Date())
+        XCTAssertEqual(OutboundSend.result(error: nil), .sent)
+        if OutboundSend.result(error: nil) == .sent { log.markSent(id: id) }
+        XCTAssertEqual(log.entries.first?.delivery, .sent)
+        XCTAssertEqual(OutboundSend.result(error: CancellationError()), .staySending)
+        log.ingest([ChatEntry(id: id, senderId: me, body: "rt test 3", sentAt: Date(), delivery: .sent)])
+        XCTAssertEqual(log.entries.count, 1)
+    }
+
+    func testBackfillAfterAGapKeepsTheOldRowAndAddsTheNewOne() {
+        var log = ChatLog()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let them = UUID()
+        let kept = ChatEntry(id: UUID(), senderId: them, body: "kept", sentAt: start, delivery: .sent)
+        let missed = ChatEntry(id: UUID(), senderId: them, body: "rt test 3", sentAt: start.addingTimeInterval(30), delivery: .sent)
+        log.ingest([kept])
+        XCTAssertEqual(ChatBackfill.missing(in: log, history: [kept, missed]).map(\.body), ["rt test 3"])
+        ChatBackfill.apply(&log, history: [kept, missed])
+        XCTAssertEqual(log.ordered.map(\.body), ["kept", "rt test 3"])
+    }
+
     func testEmptySquadNameUsesYourSquad() {
         XCTAssertEqual(SquadTitle.line(name: "", memberCount: 1), "Your squad · 1 of 8")
         XCTAssertEqual(SquadTitle.line(name: "   ", memberCount: 1), "Your squad · 1 of 8")

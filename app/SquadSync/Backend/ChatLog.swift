@@ -99,7 +99,7 @@ enum RealtimeLink: Equatable {
         case .connected:
             nil
         case .reconnecting:
-            "Reconnecting. Messages are checked until the socket is back."
+            "Reconnecting…"
         case .down:
             "Live chat is down. Messages are checked every few seconds."
         }
@@ -109,6 +109,40 @@ enum RealtimeLink: Equatable {
 enum ChatBackfill {
     static func apply(_ log: inout ChatLog, history: [ChatEntry]) {
         log.ingest(history)
+    }
+
+    static func missing(in log: ChatLog, history: [ChatEntry]) -> [ChatEntry] {
+        let ids = Set(log.entries.map(\.id))
+        return history.filter { !ids.contains($0.id) }
+    }
+}
+
+enum RequestNoise {
+    static func isCancellation(_ error: Error) -> Bool {
+        if error is CancellationError { return true }
+        if let url = error as? URLError, url.code == .cancelled { return true }
+        let ns = error as NSError
+        if ns.domain == NSURLErrorDomain && ns.code == NSURLErrorCancelled { return true }
+        if let failure = error as? BackendFailure, case .rejected(let message) = failure {
+            let text = message.lowercased()
+            return text == "cancelled" || text == "canceled" || text.contains("-999")
+        }
+        return false
+    }
+}
+
+enum OutboundSend {
+    enum Result: Equatable {
+        case sent
+        case staySending
+        case failed
+    }
+
+    /// The PostgREST insert response confirms the send. A cancelled request is not a failure, and no realtime echo is required.
+    static func result(error: Error?) -> Result {
+        guard let error else { return .sent }
+        if RequestNoise.isCancellation(error) { return .staySending }
+        return .failed
     }
 }
 

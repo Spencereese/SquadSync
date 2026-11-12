@@ -20,6 +20,10 @@ final class LiveSessionModel {
     var board = ReactionBoard()
     var reads: [MemberRead] = []
     var link: RealtimeLink = .down
+    var presenceNote = ""
+    var followSend: UUID?
+    var selectedMessage: UUID?
+    var reacting = false
     var viewerId: UUID?
     var status = ""
     var notes: [String] = [
@@ -196,13 +200,11 @@ final class LiveSessionModel {
                     try await chat.setReaction(squadId: squad.id, messageId: id, userId: session.userId, emoji: symbol, active: false)
                 }
             }
-        } catch let failure as BackendFailure {
-            note(failure)
+        } catch {
+            report(error)
             if let marks = try? await chatService(session).reactions(squadId: squad.id) {
                 board.replace(with: marks)
             }
-        } catch {
-            status = error.localizedDescription
         }
     }
 
@@ -219,6 +221,7 @@ final class LiveSessionModel {
         let id = UUID()
         let now = Date()
         log.beginSend(id: id, senderId: session.userId, body: text, now: now)
+        followSend = id
         draft = ""
         await deliver(RemoteMessage(id: id, squadId: squad.id, senderId: session.userId, body: text, sentAt: now), session: session)
     }
@@ -262,16 +265,36 @@ final class LiveSessionModel {
     }
 
     private func deliver(_ message: RemoteMessage, session: AuthSession) async {
+        let chat = chatService(session)
+        var error: Error?
         do {
-            try await chatService(session).send(message)
-            log.markSent(id: message.id)
-        } catch let failure as BackendFailure {
-            log.markFailed(id: message.id)
-            note(failure)
-        } catch {
-            log.markFailed(id: message.id)
-            status = error.localizedDescription
+            try await chat.send(message)
+        } catch let first {
+            if RequestNoise.isCancellation(first) {
+                do { try await chat.send(message) } catch let second { error = second }
+            } else {
+                error = first
+            }
         }
+        switch OutboundSend.result(error: error) {
+        case .sent:
+            log.markSent(id: message.id)
+        case .staySending:
+            break
+        case .failed:
+            log.markFailed(id: message.id)
+            if let error { report(error) }
+        }
+    }
+
+    func becameActive() async {
+        guard usesLiveSocket, phase == .ready, let session = try? requiredSession(), let squad else { return }
+        presenceNote = "Reconnecting…"
+        realtime?.start(config: config, accessToken: session.accessToken, squadId: squad.id)
+        await loadChat(session)
+        presenceNote = "Back online"
+        try? await Task.sleep(nanoseconds: 1_600_000_000)
+        if presenceNote == "Back online" { presenceNote = "" }
     }
 
     private func refresh(_ session: AuthSession) async {
@@ -305,10 +328,8 @@ final class LiveSessionModel {
             if let remoteReads = try? await chat.reads(squadId: squad.id) {
                 reads = remoteReads
             }
-        } catch let failure as BackendFailure {
-            note(failure)
         } catch {
-            status = error.localizedDescription
+            report(error)
         }
     }
 
@@ -390,11 +411,10 @@ final class LiveSessionModel {
         do {
             let rows = try await chatService(session).history(squadId: squad.id)
             log.ingest(rows.map { $0.entry() })
-        } catch let failure as BackendFailure {
-            note(failure)
-            if case .notSetUp(.messages) = failure { poll?.cancel() }
         } catch {
-            status = error.localizedDescription
+            if RequestNoise.isCancellation(error) { return }
+            report(error)
+            if let failure = error as? BackendFailure, case .notSetUp(.messages) = failure { poll?.cancel() }
         }
     }
 
@@ -403,10 +423,8 @@ final class LiveSessionModel {
         defer { busy = false }
         do {
             try await work()
-        } catch let failure as BackendFailure {
-            note(failure)
         } catch {
-            status = error.localizedDescription
+            report(error)
         }
     }
 
@@ -422,7 +440,19 @@ final class LiveSessionModel {
         mockChat ?? SupabaseChatService(config: config, accessToken: session.accessToken)
     }
 
+    private func report(_ error: Error) {
+        if RequestNoise.isCancellation(error) { return }
+        if let failure = error as? BackendFailure {
+            note(failure)
+        } else if let problem = error as? InviteProblem {
+            status = problem.message
+        } else {
+            status = error.localizedDescription
+        }
+    }
+
     private func note(_ failure: BackendFailure) {
+        if RequestNoise.isCancellation(failure) { return }
         switch failure {
         case .notConfigured:
             status = config.configurationError
@@ -441,6 +471,10 @@ final class LiveSessionModel {
 
 struct LiveSessionView: View {
     @State private var model: LiveSessionModel
+    @State private var stickToBottom = true
+    @State private var showNewMessages = false
+    @State private var wentToBackground = false
+    @Environment(\.scenePhase) private var scenePhase
 
     init(config: BackendConfig = .fromBundle(), backend: BackendMode = .live, scenario: LaunchScenario = .seated) {
         _model = State(initialValue: LiveSessionModel(config: config, backend: backend, scenario: scenario))
@@ -464,6 +498,12 @@ struct LiveSessionView: View {
             }
         }
         .task { await model.restore() }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background { wentToBackground = true }
+            guard phase == .active, wentToBackground else { return }
+            wentToBackground = false
+            Task { await model.becameActive() }
+        }
     }
 
     private var signIn: some View {
@@ -516,14 +556,10 @@ struct LiveSessionView: View {
                     inviteControls
                 }
                 joinControls
-                if let notice = model.link.notice, model.usesLiveSocket {
+                if let notice = liveNotice {
                     Text(notice).font(.caption).foregroundStyle(SQColor.muted)
                 }
-                ScrollView {
-                    ForEach(model.log.ordered) { entry in
-                        messageRow(entry)
-                    }
-                }
+                chatList
                 Text("Unread \(model.log.unreadCount(viewerId: model.profile?.id ?? UUID()))")
                     .font(.caption)
                 HStack {
@@ -557,6 +593,54 @@ struct LiveSessionView: View {
         VStack(alignment: .leading, spacing: SQSpace.xs) {
             ForEach(model.notes, id: \.self) { note in
                 Text(note).font(.caption).foregroundStyle(SQColor.muted)
+            }
+        }
+    }
+
+    private var liveNotice: String? {
+        guard model.usesLiveSocket else { return nil }
+        if !model.presenceNote.isEmpty { return model.presenceNote }
+        return model.link.notice
+    }
+
+    private var chatList: some View {
+        ScrollViewReader { proxy in
+            ZStack(alignment: .bottom) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(model.log.ordered) { entry in
+                            messageRow(entry).id(entry.id)
+                        }
+                        Color.clear
+                            .frame(height: 1)
+                            .id("chat-bottom")
+                            .onAppear { stickToBottom = true }
+                            .onDisappear { stickToBottom = false }
+                    }
+                }
+                .defaultScrollAnchor(.bottom)
+                if showNewMessages {
+                    Button("New messages") {
+                        showNewMessages = false
+                        stickToBottom = true
+                        if let id = model.log.ordered.last?.id {
+                            proxy.scrollTo(id, anchor: .bottom)
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("new-messages")
+                }
+            }
+            .onChange(of: model.log.ordered.last?.id) { _, id in
+                guard let id else { return }
+                let own = model.followSend == id
+                if stickToBottom || own {
+                    withAnimation { proxy.scrollTo(id, anchor: .bottom) }
+                    showNewMessages = false
+                    if own { model.followSend = nil }
+                } else {
+                    showNewMessages = true
+                }
             }
         }
     }
@@ -596,7 +680,9 @@ struct LiveSessionView: View {
         let lastMine = model.log.ordered.last { $0.senderId == model.profile?.id && $0.delivery == .sent }?.id
         let names = seenNames(for: entry)
         return VStack(alignment: .leading, spacing: 2) {
-            Text(entry.body).frame(maxWidth: .infinity, alignment: .leading)
+            Text(entry.body)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("message-\(entry.id.uuidString)")
             Text(label(for: entry))
                 .font(.caption)
                 .foregroundStyle(SQColor.muted)
@@ -606,14 +692,40 @@ struct LiveSessionView: View {
                     .font(.caption2)
                     .foregroundStyle(SQColor.muted)
             }
+            if model.selectedMessage == entry.id {
+                Button("React") { model.reacting = true }
+                    .accessibilityIdentifier("react")
+            }
+            if model.reacting, model.selectedMessage == entry.id {
+                reactionChoices(entry.id)
+            }
             if entry.delivery == .failed {
                 Button("Retry") { Task { await model.retry(entry.id) } }
             }
         }
         .padding(.vertical, SQSpace.xs)
+        .contentShape(Rectangle())
+        .onTapGesture { model.selectedMessage = entry.id }
+        .onTapGesture(count: 2) {
+            model.selectedMessage = entry.id
+            model.reacting = true
+        }
+        .accessibilityAction(named: Text("React")) {
+            model.selectedMessage = entry.id
+            model.reacting = true
+        }
         .contextMenu {
             ForEach(Tapback.allCases) { reaction in
                 Button(reaction.spoken) { Task { await model.tap(reaction, on: entry.id) } }
+            }
+        }
+    }
+
+    private func reactionChoices(_ id: UUID) -> some View {
+        VStack(alignment: .leading, spacing: SQSpace.xs) {
+            ForEach(Tapback.allCases) { reaction in
+                Button(reaction.spoken) { Task { await model.tap(reaction, on: id) } }
+                    .accessibilityIdentifier("tapback-\(reaction.rawValue)")
             }
         }
     }
@@ -632,6 +744,7 @@ struct LiveSessionView: View {
                     HStack(spacing: 3) {
                         Image(systemName: reaction.rawValue)
                         Text("\(count)")
+                            .accessibilityIdentifier("reaction-count")
                     }
                     .font(.caption2.weight(.semibold))
                     .padding(.horizontal, 6)

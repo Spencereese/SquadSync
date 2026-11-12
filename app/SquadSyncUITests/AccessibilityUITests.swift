@@ -80,4 +80,35 @@ final class AccessibilityUITests: XCTestCase {
         }
         XCTAssertTrue(actions.isHittable, "Inline party actions were not reachable after scrolling")
     }
+
+    func testMockInviteCanAddAndRemoveAReaction() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
+        app.launch()
+
+        let field = app.textFields["Message"]
+        XCTAssertTrue(field.waitForExistence(timeout: 15), "Message field was not on the invite screen")
+        field.tap()
+        field.typeText("hello")
+        app.buttons["Send"].tap()
+
+        let bubble = app.staticTexts["hello"]
+        XCTAssertTrue(bubble.waitForExistence(timeout: 5), "Sent message was not visible")
+        bubble.tap()
+
+        let react = app.buttons["React"]
+        XCTAssertTrue(react.waitForExistence(timeout: 5), "React button was not visible")
+        react.tap()
+
+        let thumbs = app.buttons["Thumbs up"]
+        XCTAssertTrue(thumbs.waitForExistence(timeout: 5), "Thumbs up was not in the reaction row")
+        thumbs.tap()
+
+        let count = app.staticTexts["reaction-count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 5), "Reaction count was not visible")
+        XCTAssertEqual(count.label, "1")
+
+        thumbs.tap()
+        XCTAssertTrue(count.waitForNonExistence(timeout: 5), "Reaction count stayed after it was removed")
+    }
 }

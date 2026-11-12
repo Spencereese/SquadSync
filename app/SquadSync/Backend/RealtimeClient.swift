@@ -25,6 +25,11 @@ final class RealtimeClient {
     private var config = BackendConfig(urlText: "", anonKey: "")
     private var accessToken = ""
     private let topicPrefix = "realtime:sq8"
+    private static let socketSession: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.waitsForConnectivity = true
+        return URLSession(configuration: configuration)
+    }()
 
     func start(config: BackendConfig, accessToken: String, squadId: UUID) {
         stop()
@@ -57,7 +62,7 @@ final class RealtimeClient {
         generation += 1
         let current = generation
         onEvent(.phase(link))
-        let socket = URLSession.shared.webSocketTask(with: url)
+        let socket = Self.socketSession.webSocketTask(with: url)
         task = socket
         socket.resume()
         listen = Task { [weak self] in

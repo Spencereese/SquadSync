@@ -4,6 +4,13 @@ struct SupabaseHTTP {
     let config: BackendConfig
     var accessToken: String?
 
+    /// Kept off `URLSession.shared` so a websocket cancel cannot abort an insert.
+    private static let session: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        configuration.waitsForConnectivity = false
+        return URLSession(configuration: configuration)
+    }()
+
     func send(
         path: String,
         method: String,
@@ -34,8 +41,9 @@ struct SupabaseHTTP {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: request)
+            (data, response) = try await Self.session.data(for: request)
         } catch {
+            if RequestNoise.isCancellation(error) { throw error }
             throw BackendFailure.rejected(error.localizedDescription)
         }
         guard let http = response as? HTTPURLResponse else {

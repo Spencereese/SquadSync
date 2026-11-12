@@ -65,9 +65,12 @@ struct PartyCardView: View {
                             VStack(alignment: .leading, spacing: SQSpace.l) {
                                 sheetDetails(party, now: context.date)
                                 if typeSize.isAccessibilitySize, !party.locked {
-                                    actionRow(party, now: context.date)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .accessibilityIdentifier("party-actions")
+                                    VStack(alignment: .leading, spacing: 0) {
+                                        actionRow(party, now: context.date)
+                                    }
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .accessibilityElement(children: .contain)
+                                    .accessibilityIdentifier("party-actions")
                                 }
                             }
                             .padding(SQSpace.l)
@@ -104,10 +107,13 @@ struct PartyCardView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityIdentifier("party-actions-background")
                 .accessibilityLabel("Party actions background")
-            actionRow(party, now: now)
-                .padding(SQSpace.m)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .accessibilityIdentifier("party-actions")
+            VStack(alignment: .leading, spacing: 0) {
+                actionRow(party, now: now)
+            }
+            .padding(SQSpace.m)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("party-actions")
         }
         .background(SQColor.card)
         .clipped()
@@ -196,16 +202,41 @@ struct PartyCardView: View {
     }
 
     private func slotRow(_ party: Party) -> some View {
-        ViewThatFits(in: .horizontal) {
-            slotLine(party)
-            ScrollView(.horizontal, showsIndicators: false) { slotLine(party) }
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: SQSpace.m) {
+                seatItems(party, stacked: true)
+            }
+        } else {
+            ViewThatFits(in: .horizontal) {
+                slotLine(party)
+                ScrollView(.horizontal, showsIndicators: false) { slotLine(party) }
+            }
         }
     }
 
     private func slotLine(_ party: Party) -> some View {
         HStack(spacing: SQSpace.s) {
-            ForEach(party.seats) { seat in
-                if let person = store.person(seat.userId) {
+            seatItems(party, stacked: false)
+        }
+    }
+
+    @ViewBuilder
+    private func seatItems(_ party: Party, stacked: Bool) -> some View {
+        ForEach(party.seats) { seat in
+            if let person = store.person(seat.userId) {
+                if stacked {
+                    HStack(spacing: SQSpace.m) {
+                        PresenceAvatar(person: person, size: 44)
+                        Text(person.name)
+                            .font(.body)
+                            .lineLimit(1)
+                        Text(seat.status == .ready ? "Ready" : "In")
+                            .font(.body)
+                            .lineLimit(1)
+                            .fixedSize(horizontal: true, vertical: true)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
                     VStack(spacing: 2) {
                         PresenceAvatar(person: person, size: 36)
                         Text(seat.status == .ready ? "Ready" : "In")
@@ -214,13 +245,13 @@ struct PartyCardView: View {
                     }
                 }
             }
-            let open = max(0, party.targetSize - party.seats.count)
-            ForEach(0..<open, id: \.self) { _ in
-                Circle()
-                    .stroke(SQColor.line, style: StrokeStyle(lineWidth: 1, dash: [3]))
-                    .frame(width: 36, height: 36)
-                    .accessibilityLabel("Open slot")
-            }
+        }
+        let open = max(0, party.targetSize - party.seats.count)
+        ForEach(0..<open, id: \.self) { _ in
+            Circle()
+                .stroke(SQColor.line, style: StrokeStyle(lineWidth: 1, dash: [3]))
+                .frame(width: 36, height: 36)
+                .accessibilityLabel("Open slot")
         }
     }
 

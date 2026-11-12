@@ -12,7 +12,8 @@ struct HandoffSheet: View {
                     Button {
                         Task { await store.joinVoice() }
                         store.postSystem("Staying in the Lounge.")
-                        dismiss()
+                        store.openVoiceAfterHandoff = true
+                        store.handoffSheetPresented = false
                     } label: {
                         Label("Stay in the Lounge", systemImage: "waveform")
                     }

@@ -3,7 +3,7 @@ import SwiftUI
 struct InboxView: View {
     @Bindable var store: MockStore
     @State private var channelsOpen = false
-    @State private var now = Date()
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         Group {
@@ -41,14 +41,14 @@ struct InboxView: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: SQSpace.l) {
                 presence
-                if let party = store.party {
-                    NavigationLink {
-                        thread(for: "general")
-                    } label: {
-                        FormingDock(party: party, now: now)
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    if let party = store.party {
+                        NavigationLink(value: party.conversationId) {
+                            FormingDock(party: party, now: context.date)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityHint("Opens the squad thread")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityHint("Opens the squad thread")
                 }
                 section("Squad") {
                     spaceRow(visible)
@@ -62,6 +62,10 @@ struct InboxView: View {
             }
             .padding(SQSpace.l)
         }
+        .contentMargins(.bottom, typeSize.isAccessibilitySize ? SQSpace.xl : SQSpace.m, for: .scrollContent)
+        .navigationDestination(for: String.self) { id in
+            thread(for: id)
+        }
     }
 
     private var presence: some View {
@@ -74,7 +78,7 @@ struct InboxView: View {
                             .font(.caption2)
                             .lineLimit(2)
                             .multilineTextAlignment(.center)
-                            .frame(maxWidth: 72)
+                            .frame(maxWidth: typeSize.isAccessibilitySize ? 110 : 72)
                     }
                 }
             }
@@ -106,9 +110,7 @@ struct InboxView: View {
     }
 
     private func row(_ conversation: Conversation) -> some View {
-        NavigationLink {
-            thread(for: conversation.id)
-        } label: {
+        NavigationLink(value: conversation.id) {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(conversation.title).font(.body.weight(.semibold))

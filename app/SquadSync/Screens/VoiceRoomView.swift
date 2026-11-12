@@ -37,7 +37,8 @@ struct VoiceRoomView: View {
                 }
                     .buttonStyle(.bordered)
                 Spacer()
-                Button("Collapse") { store.voice.collapsed = true }
+                Button("Collapse") { store.collapseVoice() }
+                    .accessibilityLabel("Collapse voice room")
                     .buttonStyle(.borderedProminent)
             }
         }

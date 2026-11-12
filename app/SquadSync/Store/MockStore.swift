@@ -11,8 +11,11 @@ final class MockStore {
     var voice: VoiceRoom
     var screen: ScreenState
     var viewerId: String
-    var typingNames: [String]
+    var typingByConversation: [String: [String]]
     var handoffNote: String?
+    var voiceSheetPresented = false
+    var handoffSheetPresented = false
+    var openVoiceAfterHandoff = false
     let voiceService: VoiceRoomService
     private var nextId = 100
 
@@ -34,8 +37,32 @@ final class MockStore {
         self.voiceService = voiceService
         self.screen = screen
         self.viewerId = viewerId
-        self.typingNames = ["Jordan"]
+        self.typingByConversation = ["general": ["Jordan"]]
         applyVoiceSnapshot()
+    }
+
+    func typingNames(in conversationId: String) -> [String] {
+        typingByConversation[conversationId] ?? []
+    }
+
+    func showsParty(in conversation: Conversation) -> Bool {
+        party?.conversationId == conversation.id
+    }
+
+    func canOfferCall(in conversation: Conversation) -> Bool {
+        guard party == nil else { return false }
+        return conversation.kind == .channel || conversation.kind == .squadSpace
+    }
+
+    var viewerSeat: Seat? { party?.seat(for: viewerId) }
+
+    var readyButtonTitle: String {
+        viewerSeat?.status == .ready ? "Unready" : "Ready"
+    }
+
+    var canPressReady: Bool {
+        guard let party, !party.locked, let seat = viewerSeat else { return false }
+        return seat.status == .in || seat.status == .ready
     }
 
     static func preview() -> MockStore { MockStore.seeded() }
@@ -124,7 +151,27 @@ final class MockStore {
         return ok
     }
 
-    func callSpot(game: String, size: Int) {
+    @discardableResult
+    func unready(personId: String) -> Bool {
+        guard var party, !party.locked else { return false }
+        guard let index = party.seats.firstIndex(where: { $0.userId == personId }) else { return false }
+        guard party.seats[index].status == .ready else { return false }
+        party.seats[index].status = .in
+        self.party = party
+        return true
+    }
+
+    func toggleReady(personId: String) -> Bool {
+        if party?.seat(for: personId)?.status == .ready {
+            return unready(personId: personId)
+        }
+        return markReady(personId: personId)
+    }
+
+    /// A forming card stays put. Pass `replacing` only after the person confirms.
+    @discardableResult
+    func callSpot(game: String, size: Int, in conversationId: String, replacing: Bool = false) -> Bool {
+        if party != nil && !replacing { return false }
         let clamped = min(max(size, 1), SpotRules.squadCap)
         party = Party(
             id: "party-new",
@@ -133,8 +180,24 @@ final class MockStore {
             callerId: viewerId,
             calledAt: Date(),
             seats: [Seat(userId: viewerId, status: .ready)],
-            locked: false
+            locked: false,
+            conversationId: conversationId
         )
+        return true
+    }
+
+    func openVoice() {
+        voice.collapsed = false
+        voiceSheetPresented = true
+    }
+
+    func collapseVoice() {
+        voice.collapsed = true
+        voiceSheetPresented = false
+    }
+
+    var showsVoicePill: Bool {
+        voice.collapsed && !voice.occupantIds.isEmpty && !voiceSheetPresented
     }
 
     func joinVoice() async {
@@ -189,21 +252,10 @@ final class MockStore {
         )
     }
 
-    static func seeded(now: Date = Date()) -> MockStore {
+    static func seeded(now: Date = Date(), scenario: LaunchScenario = .seated) -> MockStore {
         let people = Seed.people
         let conversations = Seed.conversations
-        let party = Party(
-            id: "party-warzone",
-            game: "Warzone",
-            targetSize: 4,
-            callerId: "spencer",
-            calledAt: now.addingTimeInterval(-90),
-            seats: [
-                Seat(userId: "spencer", status: .ready),
-                Seat(userId: "alex", status: .in)
-            ],
-            locked: false
-        )
+        let party = Seed.party(now: now, scenario: scenario)
         let service = InMemoryVoiceRoomService(
             participants: [
                 VoiceParticipant(id: "spencer", muted: false, speakingLevel: 0.8),
@@ -230,6 +282,15 @@ final class MockStore {
     }
 }
 
+enum LaunchScenario: String {
+    /// Viewer is already Ready. I'm in stays off. Lock stays off until four are Ready.
+    case seated
+    /// Viewer has no seat, so I'm in can be tapped.
+    case unseated
+    /// Four Ready seats, so Lock can be tapped.
+    case ready4
+}
+
 enum Seed {
     static let people: [Person] = [
         Person(id: "spencer", name: "Spencer", role: .owner, availability: .upToPlay, game: nil, inVoice: true, isSpeaking: true, isStarter: true),
@@ -250,6 +311,39 @@ enum Seed {
         Conversation(id: "friday", title: "Friday crew", kind: .sideGroup, parentId: nil, participantIds: ["spencer", "jordan", "riley"], guestIds: ["riley"], unread: 1, folded: false),
         Conversation(id: "dm-riley", title: "Riley", kind: .dm, parentId: nil, participantIds: ["spencer", "riley"], guestIds: ["riley"], unread: 0, folded: false)
     ]
+
+    static func party(now: Date, scenario: LaunchScenario) -> Party {
+        let seats: [Seat]
+        switch scenario {
+        case .seated:
+            seats = [
+                Seat(userId: "spencer", status: .ready),
+                Seat(userId: "alex", status: .in)
+            ]
+        case .unseated:
+            seats = [
+                Seat(userId: "alex", status: .in),
+                Seat(userId: "jordan", status: .in)
+            ]
+        case .ready4:
+            seats = [
+                Seat(userId: "spencer", status: .ready),
+                Seat(userId: "alex", status: .ready),
+                Seat(userId: "jordan", status: .ready),
+                Seat(userId: "quinn", status: .ready)
+            ]
+        }
+        return Party(
+            id: "party-warzone",
+            game: "Warzone",
+            targetSize: 4,
+            callerId: "spencer",
+            calledAt: now.addingTimeInterval(scenario == .unseated ? -30 : -90),
+            seats: seats,
+            locked: false,
+            conversationId: "general"
+        )
+    }
 
     static func messages(now: Date) -> [String: [ChatMessage]] {
         [

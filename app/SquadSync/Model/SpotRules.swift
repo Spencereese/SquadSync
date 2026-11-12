@@ -20,8 +20,15 @@ enum SpotRules {
         party.calledAt.addingTimeInterval(joinWindow)
     }
 
+    /// Never longer than the five-minute window, even if the clock is behind the call.
     static func remaining(_ party: Party, now: Date) -> TimeInterval {
-        max(0, joinDeadline(party).timeIntervalSince(now))
+        let raw = joinDeadline(party).timeIntervalSince(now)
+        return min(joinWindow, max(0, raw))
+    }
+
+    static func countdownText(_ party: Party, now: Date) -> String {
+        let left = Int(remaining(party, now: now))
+        return String(format: "%d:%02d", left / 60, left % 60)
     }
 
     /// In-game starters skip the five-minute drop. Everyone else is closed

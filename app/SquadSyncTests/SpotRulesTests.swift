@@ -32,6 +32,17 @@ final class SpotRulesTests: XCTestCase {
         )
     }
 
+    func testCountdownNeverExceedsFiveMinutes() {
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        let skewed = party(calledAt: now.addingTimeInterval(207))
+        XCTAssertEqual(SpotRules.remaining(skewed, now: now), SpotRules.joinWindow)
+        XCTAssertEqual(SpotRules.countdownText(skewed, now: now), "5:00")
+        let fresh = party(calledAt: now)
+        XCTAssertEqual(SpotRules.countdownText(fresh, now: now), "5:00")
+        XCTAssertEqual(SpotRules.countdownText(fresh, now: now.addingTimeInterval(90)), "3:30")
+        XCTAssertEqual(SpotRules.countdownText(fresh, now: now.addingTimeInterval(301)), "0:00")
+    }
+
     func testWindowClosesForEveryoneExceptInGameStarters() {
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         let open = party(calledAt: start)

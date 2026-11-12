@@ -3,32 +3,38 @@ import SwiftUI
 struct PresenceAvatar: View {
     let person: Person
     var size: CGFloat = 44
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         ZStack(alignment: .bottomTrailing) {
             Text(String(person.name.prefix(1)))
                 .font(.headline)
-                .frame(width: size, height: size)
+                .minimumScaleFactor(0.5)
+                .lineLimit(1)
+                .frame(width: dimension, height: dimension)
                 .background(SQColor.card, in: Circle())
                 .overlay(Circle().stroke(ring, lineWidth: person.inVoice || person.isOnline ? 2.5 : 1))
             if person.inGame {
-                Image(systemName: "gamecontroller.fill")
-                    .font(.caption2)
-                    .padding(3)
-                    .background(SQColor.accent, in: Circle())
-                    .foregroundStyle(.white)
-                    .accessibilityLabel("In \(person.game ?? "a game")")
+                badge("gamecontroller.fill", fill: SQColor.accent, foreground: .white)
             } else if person.inVoice {
-                Image(systemName: "speaker.wave.2.fill")
-                    .font(.caption2)
-                    .padding(3)
-                    .background(SQColor.online, in: Circle())
-                    .foregroundStyle(.black)
-                    .accessibilityLabel("In the voice room")
+                badge("speaker.wave.2.fill", fill: SQColor.online, foreground: .black)
             }
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken)
+    }
+
+    private var dimension: CGFloat {
+        typeSize.isAccessibilitySize ? size + 18 : size
+    }
+
+    private func badge(_ symbol: String, fill: Color, foreground: Color) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 9, weight: .bold))
+            .dynamicTypeSize(.large)
+            .padding(3)
+            .background(fill, in: Circle())
+            .foregroundStyle(foreground)
     }
 
     private var ring: Color {
@@ -66,28 +72,25 @@ struct RoleTag: View {
 
 struct FormingDock: View {
     let party: Party
-    let now: Date
+    var now: Date
     var body: some View {
-        HStack(spacing: SQSpace.m) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(party.game) · \(SpotRules.filled(party))/\(party.targetSize)")
-                    .font(.headline)
-                Text(timer)
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(SQColor.warning)
+        let timer = party.locked ? "Locked" : "\(SpotRules.countdownText(party, now: now)) left"
+        return HStack(spacing: SQSpace.m) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("\(party.game) · \(SpotRules.filled(party))/\(party.targetSize)")
+                        .font(.headline)
+                        .lineLimit(2)
+                    Text(timer)
+                        .font(.subheadline.monospacedDigit())
+                        .foregroundStyle(SQColor.warning)
+                }
+                Spacer(minLength: SQSpace.s)
+                Image(systemName: "chevron.right")
+                    .foregroundStyle(SQColor.muted)
             }
-            Spacer()
-            Image(systemName: "chevron.right")
-                .foregroundStyle(SQColor.muted)
-        }
-        .sqCard()
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(party.game), \(SpotRules.filled(party)) of \(party.targetSize), \(timer)")
-    }
-
-    private var timer: String {
-        let left = Int(SpotRules.remaining(party, now: now))
-        return String(format: "%d:%02d left", left / 60, left % 60)
+            .sqCard()
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("\(party.game), \(SpotRules.filled(party)) of \(party.targetSize), \(timer)")
     }
 }
 

@@ -56,6 +56,8 @@ struct Party: Identifiable, Hashable, Codable {
     var calledAt: Date
     var seats: [Seat]
     var locked: Bool
+    /// The thread this card belongs to. Other threads do not show it.
+    var conversationId: String = "general"
 
     func seat(for userId: String) -> Seat? {
         seats.first { $0.userId == userId }

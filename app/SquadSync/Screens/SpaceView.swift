@@ -7,26 +7,25 @@ struct SpaceView: View {
         List {
             Section("Channels") {
                 ForEach(store.conversations.filter { $0.kind == .channel || $0.kind == .squadSpace }) { channel in
-                    NavigationLink(channel.title) {
-                        ThreadView(store: store, conversation: channel)
+                    NavigationLink(value: channel.id) {
+                        Text(channel.title).lineLimit(2)
                     }
                 }
             }
             Section("Members") {
                 ForEach(store.people) { person in
-                    HStack(spacing: SQSpace.m) {
-                        PresenceAvatar(person: person, size: 40)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(person.name).font(.headline)
-                            Text(status(person))
-                                .font(.caption)
-                                .foregroundStyle(SQColor.muted)
-                        }
-                        Spacer()
-                        RoleTag(role: person.role)
+                    ViewThatFits(in: .horizontal) {
+                        memberRow(person, stacked: false)
+                        memberRow(person, stacked: true)
                     }
                     .accessibilityElement(children: .combine)
                 }
+            }
+        }
+        .contentMargins(.bottom, SQSpace.xl, for: .scrollContent)
+        .navigationDestination(for: String.self) { id in
+            if let conversation = store.conversations.first(where: { $0.id == id }) {
+                ThreadView(store: store, conversation: conversation)
             }
         }
         .navigationTitle("Space")
@@ -34,6 +33,34 @@ struct SpaceView: View {
             if store.screen == .empty {
                 StateBanner(title: "No members", detail: "The mock squad is empty.")
                     .padding()
+            }
+        }
+    }
+
+    private func memberRow(_ person: Person, stacked: Bool) -> some View {
+        let identity = HStack(spacing: SQSpace.m) {
+            PresenceAvatar(person: person, size: 40)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(person.name).font(.headline).lineLimit(2)
+                Text(status(person))
+                    .font(.caption)
+                    .foregroundStyle(SQColor.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        return Group {
+            if stacked {
+                VStack(alignment: .leading, spacing: SQSpace.s) {
+                    identity
+                    RoleTag(role: person.role)
+                }
+            } else {
+                HStack(spacing: SQSpace.m) {
+                    identity
+                    Spacer(minLength: SQSpace.s)
+                    RoleTag(role: person.role)
+                        .fixedSize()
+                }
             }
         }
     }

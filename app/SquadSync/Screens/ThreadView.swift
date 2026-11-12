@@ -1,4 +1,3 @@
-import Combine
 import SwiftUI
 
 struct ThreadView: View {
@@ -6,32 +5,35 @@ struct ThreadView: View {
     let conversation: Conversation
     @State private var draft = ""
     @State private var reply: ChatMessage?
-    @State private var showVoice = false
-    @State private var showHandoff = false
-    @State private var now = Date()
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    private var messages: [ChatMessage] { store.messages(in: conversation.id) }
+    private var typing: [String] { store.typingNames(in: conversation.id) }
+    private var isGroup: Bool { conversation.kind != .dm }
 
     var body: some View {
         VStack(spacing: 0) {
-            PartyCardView(store: store, now: now)
+            PartyCardView(store: store, conversation: conversation)
                 .padding(.horizontal, SQSpace.l)
                 .padding(.top, SQSpace.s)
             List {
-                ForEach(store.messages(in: conversation.id)) { message in
+                ForEach(messages) { message in
                     bubble(message)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                 }
-                if !store.typingNames.isEmpty {
-                    Text("\(store.typingNames.joined(separator: ", ")) is typing")
+                if !typing.isEmpty {
+                    Text(typingLine)
                         .font(.footnote)
                         .foregroundStyle(SQColor.muted)
-                        .accessibilityLabel("\(store.typingNames.joined(separator: ", ")) is typing")
+                        .accessibilityLabel(typingLine)
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                 }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
+            .contentMargins(.bottom, SQSpace.l, for: .scrollContent)
             .onAppear { store.markSeen(in: conversation.id) }
             composer
         }
@@ -41,29 +43,38 @@ struct ThreadView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 VStack(spacing: 0) {
-                    Text(conversation.title).font(.headline)
+                    Text(conversation.title).font(.headline).lineLimit(1).minimumScaleFactor(0.7)
                     Text("\(store.onCount) of \(SpotRules.squadCap) on")
                         .font(.caption.monospacedDigit())
                         .foregroundStyle(SQColor.muted)
                 }
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(conversation.title), \(store.onCount) of \(SpotRules.squadCap) on")
             }
-            ToolbarItemGroup(placement: .topBarTrailing) {
-                Button { showVoice = true } label: {
-                    Image(systemName: "waveform")
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { store.openVoice() } label: {
+                    Label("Voice room", systemImage: "waveform")
+                        .labelStyle(.iconOnly)
                 }
                 .accessibilityLabel("Voice room")
-                Button { showHandoff = true } label: {
-                    Image(systemName: "arrow.up.forward.app")
+                .accessibilityIdentifier("voice-room")
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button { store.handoffSheetPresented = true } label: {
+                    Label("Handoff menu", systemImage: "arrow.up.forward.app")
+                        .labelStyle(.iconOnly)
                 }
                 .accessibilityLabel("Handoff menu")
+                .accessibilityIdentifier("handoff-menu")
             }
         }
-        .sheet(isPresented: $showVoice) { VoiceRoomView(store: store) }
-        .sheet(isPresented: $showHandoff) { HandoffSheet(store: store) }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now = $0 }
+        .safeAreaPadding(.bottom, typeSize.isAccessibilitySize ? SQSpace.m : 0)
         .sensoryFeedback(.success, trigger: store.party?.locked ?? false)
+    }
+
+    private var typingLine: String {
+        let names = typing.joined(separator: ", ")
+        return typing.count == 1 ? "\(names) is typing" : "\(names) are typing"
     }
 
     private var composer: some View {
@@ -79,33 +90,81 @@ struct ThreadView: View {
                 }
                 .accessibilityElement(children: .combine)
             }
-            HStack(alignment: .bottom) {
-                Button("@here") {
-                    if !draft.contains("@here") { draft = "@here " + draft }
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: SQSpace.s) {
+                    hereButton
+                    TextField("Message", text: $draft, axis: .vertical)
+                        .lineLimit(1...5)
+                        .textFieldStyle(.roundedBorder)
+                    sendButton
                 }
-                .font(.caption.weight(.semibold))
-                .accessibilityHint("Ping everyone who is on")
-                TextField("Message", text: $draft, axis: .vertical)
-                    .lineLimit(1...5)
-                    .textFieldStyle(.roundedBorder)
-                Button("Send") {
-                    store.send(text: draft, in: conversation.id, reply: reply)
-                    draft = ""
-                    reply = nil
-                }
-                .buttonStyle(.borderedProminent)
+            } else {
+                composerRow
             }
         }
         .padding(SQSpace.m)
         .background(.ultraThinMaterial)
     }
 
+    private var composerRow: some View {
+        HStack(alignment: .bottom) {
+            hereButton
+            TextField("Message", text: $draft, axis: .vertical)
+                .lineLimit(1...5)
+                .textFieldStyle(.roundedBorder)
+            sendButton
+        }
+    }
+
+    private var hereButton: some View {
+        Button("@here") {
+            if !draft.contains("@here") { draft = "@here " + draft }
+        }
+        .font(.caption.weight(.semibold))
+        .fixedSize()
+        .accessibilityHint("Ping everyone who is on")
+    }
+
+    private var sendButton: some View {
+        Button {
+            store.send(text: draft, in: conversation.id, reply: reply)
+            draft = ""
+            reply = nil
+        } label: {
+            Image(systemName: "arrow.up.circle.fill")
+                .font(.title2)
+                .dynamicTypeSize(.large ... .xxxLarge)
+        }
+        .buttonStyle(.borderedProminent)
+        .accessibilityLabel("Send")
+        .accessibilityIdentifier("send")
+    }
+
+    private func startsRun(_ message: ChatMessage) -> Bool {
+        guard let index = messages.firstIndex(where: { $0.id == message.id }) else { return true }
+        guard index > 0 else { return true }
+        return messages[index - 1].senderId != message.senderId
+    }
+
     private func bubble(_ message: ChatMessage) -> some View {
         let mine = message.senderId == store.viewerId
         let name = store.person(message.senderId)?.name ?? (message.senderId == "system" ? "SquadSync" : "Someone")
-        return HStack {
-            if mine { Spacer(minLength: 48) }
+        let lead = isGroup && startsRun(message)
+        return HStack(alignment: .bottom, spacing: SQSpace.s) {
+            if !mine && isGroup {
+                if lead, let person = store.person(message.senderId) {
+                    PresenceAvatar(person: person, size: 28)
+                } else {
+                    Color.clear.frame(width: typeSize.isAccessibilitySize ? 0 : 28, height: 28)
+                }
+            }
+            if mine && !typeSize.isAccessibilitySize { Spacer(minLength: 24) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 4) {
+                if lead && isGroup {
+                    Text(name)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(SQColor.muted)
+                }
                 if let quote = message.replyQuote {
                     Text(quote)
                         .font(.caption)
@@ -120,20 +179,19 @@ struct ThreadView: View {
                 Text(message.text)
                     .font(.body)
                     .foregroundStyle(mine ? Color.white : SQColor.ink)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.horizontal, SQSpace.m)
                     .padding(.vertical, SQSpace.s)
                     .background(mine ? SQColor.mine : SQColor.theirs, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                if !message.tapbacks.isEmpty {
-                    Text(message.tapbacks.values.map(\.spoken).joined(separator: ", "))
-                        .font(.caption2)
-                        .foregroundStyle(SQColor.muted)
-                }
+                tapbackChips(message)
                 if mine, !message.seenBy.isEmpty {
                     Text("Seen by \(message.seenBy.compactMap { store.person($0)?.name }.joined(separator: ", "))")
                         .font(.caption2)
                         .foregroundStyle(SQColor.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .frame(maxWidth: typeSize.isAccessibilitySize ? .infinity : nil, alignment: mine ? .trailing : .leading)
             .contextMenu {
                 ForEach(Tapback.allCases) { reaction in
                     Button(reaction.spoken) { store.tapback(reaction, on: message.id, in: conversation.id) }
@@ -144,11 +202,53 @@ struct ThreadView: View {
                 Button("Reply") { reply = message }
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(name) said \(message.text)")
+            .accessibilityLabel(spoken(name: name, message: message))
             .accessibilityHint("Long press for tapbacks. Swipe to reply.")
-            if !mine { Spacer(minLength: 48) }
+            if !mine && !typeSize.isAccessibilitySize { Spacer(minLength: 24) }
         }
     }
+
+    private func spoken(name: String, message: ChatMessage) -> String {
+        var line = "\(name) said \(message.text)"
+        let chips = Tapback.allCases.compactMap { reaction -> String? in
+            let count = message.tapbacks.values.filter { $0 == reaction }.count
+            guard count > 0 else { return nil }
+            return "\(reaction.spoken) \(count)"
+        }
+        if !chips.isEmpty { line += ". " + chips.joined(separator: ", ") }
+        return line
+    }
+
+    @ViewBuilder
+    private func tapbackChips(_ message: ChatMessage) -> some View {
+        let chips = Tapback.allCases.compactMap { reaction -> TapbackChip? in
+            let count = message.tapbacks.values.filter { $0 == reaction }.count
+            guard count > 0 else { return nil }
+            return TapbackChip(reaction: reaction, count: count)
+        }
+        if !chips.isEmpty {
+            HStack(spacing: 4) {
+                ForEach(chips) { chip in
+                    HStack(spacing: 3) {
+                        Image(systemName: chip.reaction.rawValue)
+                        Text("\(chip.count)")
+                    }
+                    .font(.caption2.weight(.semibold))
+                    .dynamicTypeSize(.xSmall ... .xxxLarge)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(SQColor.card, in: Capsule())
+                    .accessibilityLabel("\(chip.reaction.spoken), \(chip.count)")
+                }
+            }
+        }
+    }
+}
+
+private struct TapbackChip: Identifiable {
+    let reaction: Tapback
+    let count: Int
+    var id: String { reaction.id }
 }
 
 #Preview("Thread") {

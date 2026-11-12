@@ -70,18 +70,20 @@ struct InboxView: View {
 
     private var presence: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: SQSpace.m) {
+            HStack(alignment: .top, spacing: SQSpace.m) {
                 ForEach(store.people) { person in
                     VStack(spacing: 4) {
                         PresenceAvatar(person: person)
                         Text(person.name)
                             .font(.caption2)
-                            .lineLimit(2)
                             .multilineTextAlignment(.center)
-                            .frame(maxWidth: typeSize.isAccessibilitySize ? 110 : 72)
+                            .fixedSize(horizontal: true, vertical: true)
                     }
+                    .accessibilityElement(children: .combine)
                 }
             }
+            .padding(.horizontal, SQSpace.s)
+            .padding(.trailing, SQSpace.l)
         }
         .accessibilityLabel("Who is around")
     }

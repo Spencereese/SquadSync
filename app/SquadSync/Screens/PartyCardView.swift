@@ -3,11 +3,22 @@ import SwiftUI
 struct PartyCardView: View {
     @Bindable var store: MockStore
     let conversation: Conversation
+    var showsFullCard = false
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var open = false
+
+    private var useCompactSummary: Bool {
+        !showsFullCard && typeSize.isAccessibilitySize
+    }
 
     var body: some View {
         if let party = store.party, store.showsParty(in: conversation) {
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                card(party, now: context.date)
+                if useCompactSummary {
+                    compact(party, now: context.date)
+                } else {
+                    card(party, now: context.date)
+                }
             }
         } else if let party = store.party, party.conversationId != conversation.id, isSquadThread {
             let home = store.conversations.first { $0.id == party.conversationId }?.title ?? "the squad thread"
@@ -17,9 +28,50 @@ struct PartyCardView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityLabel("\(party.game) is already forming in \(home)")
         } else if store.canOfferCall(in: conversation) {
-            Button("Call a spot") { _ = store.callSpot(game: "Warzone", size: 4, in: conversation.id) }
-                .buttonStyle(.borderedProminent)
-                .accessibilityHint("Starts a Warzone card for four in this thread")
+            Button { _ = store.callSpot(game: "Warzone", size: 4, in: conversation.id) } label: {
+                Text("Call a spot")
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityHint("Starts a Warzone card for four in this thread")
+        }
+    }
+
+    private func compact(_ party: Party, now: Date) -> some View {
+        Button { open = true } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(party.game)
+                    .font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("\(SpotRules.filled(party))/\(party.targetSize) · \(party.locked ? "Locked" : SpotRules.countdownText(party, now: now))")
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(party.locked ? SQColor.online : SQColor.warning)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Open the party card")
+                    .font(.caption)
+                    .foregroundStyle(SQColor.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .sqCard()
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens the party card")
+        .sheet(isPresented: $open) {
+            NavigationStack {
+                ScrollView {
+                    PartyCardView(store: store, conversation: conversation, showsFullCard: true)
+                        .padding(SQSpace.l)
+                }
+                .background(SQColor.canvas)
+                .navigationTitle(party.game)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .cancellationAction) {
+                        Button("Close") { open = false }
+                            .accessibilityIdentifier("party-close")
+                    }
+                }
+            }
         }
     }
 
@@ -56,11 +108,15 @@ struct PartyCardView: View {
                     .font(.subheadline)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Button("Spot already up") {}
-                .buttonStyle(.bordered)
-                .disabled(true)
-                .accessibilityLabel("Spot already up")
-                .accessibilityHint("The \(party.game) card above is the one in play")
+            Button {} label: {
+                Text("Spot already up")
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .buttonStyle(.bordered)
+            .disabled(true)
+            .accessibilityLabel("Spot already up")
+            .accessibilityHint("The \(party.game) card above is the one in play")
         }
         .sqCard()
     }
@@ -90,8 +146,7 @@ struct PartyCardView: View {
                         PresenceAvatar(person: person, size: 36)
                         Text(seat.status == .ready ? "Ready" : "In")
                             .font(.caption2)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.7)
+                            .fixedSize(horizontal: true, vertical: true)
                     }
                 }
             }
@@ -108,28 +163,36 @@ struct PartyCardView: View {
     private func actionRow(_ party: Party, now: Date) -> some View {
         let me = store.viewer
         let actions = Group {
-            Button("I'm in") { _ = store.joinParty(personId: me.id, now: now) }
-                .buttonStyle(.borderedProminent)
-                .fixedSize(horizontal: true, vertical: false)
-                .disabled(!SpotRules.canJoin(party: party, person: me, now: now))
-                .accessibilityHint(SpotRules.isStarterExempt(me) ? "In-game starters can still join" : "Five minute window")
-            Button(store.readyButtonTitle) { _ = store.toggleReady(personId: me.id) }
-                .buttonStyle(.bordered)
-                .fixedSize(horizontal: true, vertical: false)
-                .disabled(!store.canPressReady)
-                .accessibilityHint(store.viewerSeat?.status == .ready ? "You are ready. Tap to unready." : "Mark yourself ready")
-            Button("Lock") { _ = store.lockParty() }
-                .buttonStyle(.bordered)
-                .fixedSize(horizontal: true, vertical: false)
-                .disabled(!SpotRules.canLock(party: party, actor: me))
-                .accessibilityHint("Locks once enough people are Ready")
+            Button { _ = store.joinParty(personId: me.id, now: now) } label: {
+                Text("I'm in").fixedSize(horizontal: false, vertical: true)
+            }
+            .buttonStyle(.borderedProminent)
+            .disabled(!SpotRules.canJoin(party: party, person: me, now: now))
+            .accessibilityHint(SpotRules.isStarterExempt(me) ? "In-game starters can still join" : "Five minute window")
+            Button { _ = store.toggleReady(personId: me.id) } label: {
+                Text(store.readyButtonTitle).fixedSize(horizontal: false, vertical: true)
+            }
+            .buttonStyle(.bordered)
+            .disabled(!store.canPressReady)
+            .accessibilityHint(store.viewerSeat?.status == .ready ? "You are ready. Tap to unready." : "Mark yourself ready")
+            Button { _ = store.lockParty() } label: {
+                Text("Lock").fixedSize(horizontal: false, vertical: true)
+            }
+            .buttonStyle(.bordered)
+            .disabled(!SpotRules.canLock(party: party, actor: me))
+            .accessibilityHint("Locks once enough people are Ready")
         }
-        return ViewThatFits(in: .horizontal) {
-            HStack { actions }
-            VStack(alignment: .leading, spacing: SQSpace.s) { actions }
+        return Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: SQSpace.s) { actions }
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack { actions }
+                    VStack(alignment: .leading, spacing: SQSpace.s) { actions }
+                }
+            }
         }
         .font(.subheadline.weight(.semibold))
-        .lineLimit(1)
     }
 }
 

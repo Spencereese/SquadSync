@@ -7,6 +7,9 @@ enum SQSpace {
     static let l: CGFloat = 16
     static let xl: CGFloat = 24
     static let xxl: CGFloat = 32
+    /// Room under the floating tab bar so the last row stays visible.
+    static let tabClearance: CGFloat = 96
+    static let tabClearanceAX: CGFloat = 160
 }
 
 enum SQColor {

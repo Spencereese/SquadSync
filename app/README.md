@@ -45,6 +45,8 @@ xcodebuild -project app/SquadSync.xcodeproj -scheme SquadSync -destination "$DES
 xcodebuild -project app/SquadSync.xcodeproj -scheme SquadSync -destination "$DEST" test
 ```
 
+That runs the unit tests and `AccessibilityUITests`, which looks up `tab-inbox`, `tab-space`, `voice-room`, and `handoff-menu`.
+
 ## Run in the Simulator
 
 ```bash

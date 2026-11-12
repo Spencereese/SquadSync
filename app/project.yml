@@ -25,6 +25,7 @@ targets:
     scheme:
       testTargets:
         - SquadSyncTests
+        - SquadSyncUITests
   SquadSyncTests:
     type: bundle.unit-test
     platform: iOS
@@ -37,3 +38,17 @@ targets:
       GENERATE_INFOPLIST_FILE: YES
       TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SquadSync.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SquadSync"
       BUNDLE_LOADER: "$(TEST_HOST)"
+  SquadSyncUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - SquadSyncUITests
+    dependencies:
+      - target: SquadSync
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.spencereese.squadsync.uitests
+      GENERATE_INFOPLIST_FILE: YES
+      TEST_TARGET_NAME: SquadSync
+      CODE_SIGNING_ALLOWED: NO
+      CODE_SIGNING_REQUIRED: NO
+      TARGETED_DEVICE_FAMILY: "1"

@@ -75,6 +75,7 @@ struct RootView: View {
     var launch: LaunchOptions = LaunchOptions()
     @State private var tab: AppTab
     @State private var path: [String]
+    @State private var spacePath: [String] = []
     @State private var appliedLaunch = false
 
     init(store: MockStore, launch: LaunchOptions = LaunchOptions()) {
@@ -89,24 +90,27 @@ struct RootView: View {
             NavigationStack(path: $path) {
                 InboxView(store: store)
             }
-            .safeAreaInset(edge: .bottom, spacing: SQSpace.s) { voicePill }
-            .tabItem {
-                Label("Inbox", systemImage: "bubble.left.and.bubble.right")
-                    .accessibilityLabel("Inbox")
-                    .accessibilityIdentifier("tab-inbox")
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if path.isEmpty { voicePill }
             }
+            .tabItem { InboxTabLabel() }
             .tag(AppTab.inbox)
 
-            NavigationStack {
+            NavigationStack(path: $spacePath) {
                 SpaceView(store: store)
             }
-            .safeAreaInset(edge: .bottom, spacing: SQSpace.s) { voicePill }
-            .tabItem {
-                Label("Space", systemImage: "person.3")
-                    .accessibilityLabel("Space")
-                    .accessibilityIdentifier("tab-space")
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if spacePath.isEmpty { voicePill }
             }
+            .tabItem { SpaceTabLabel() }
             .tag(AppTab.space)
+        }
+        .overlay(alignment: .topLeading) {
+            TabBarAccessibility()
+                .frame(width: 1, height: 1)
+                .opacity(0.01)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
         .tint(SQColor.accent)
         .toolbar(.visible, for: .tabBar)
@@ -152,6 +156,100 @@ struct RootView: View {
         default:
             break
         }
+    }
+}
+
+private struct InboxTabLabel: View {
+    var body: some View {
+        Label("Inbox", systemImage: "bubble.left.and.bubble.right")
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("Inbox")
+            .accessibilityIdentifier("tab-inbox")
+    }
+}
+
+private struct SpaceTabLabel: View {
+    var body: some View {
+        Label("Space", systemImage: "person.3")
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityLabel("Space")
+            .accessibilityIdentifier("tab-space")
+    }
+}
+
+/// SwiftUI's tab item does not publish an identifier to the real tab bar.
+/// Copy Inbox and Space onto the UITabBar items the accessibility tree uses.
+private struct TabBarAccessibility: UIViewRepresentable {
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        var started = false
+    }
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        view.isAccessibilityElement = false
+        view.accessibilityElementsHidden = true
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        guard !context.coordinator.started else { return }
+        context.coordinator.started = true
+        stampLater(view: uiView, tries: 20)
+    }
+
+    private func stampLater(view: UIView, tries: Int) {
+        DispatchQueue.main.async {
+            let stamped = self.stamp(from: view)
+            if !stamped, tries > 0 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    self.stampLater(view: view, tries: tries - 1)
+                }
+            }
+        }
+    }
+
+    @discardableResult
+    private func stamp(from view: UIView) -> Bool {
+        let bars = tabBars(from: view)
+        let named = [("Inbox", "tab-inbox"), ("Space", "tab-space")]
+        for bar in bars {
+            for (item, pair) in zip(bar.items ?? [], named) {
+                item.title = pair.0
+                item.accessibilityLabel = pair.0
+                item.accessibilityIdentifier = pair.1
+                var traits = item.accessibilityTraits
+                traits.insert(.button)
+                item.accessibilityTraits = traits
+            }
+        }
+        return !bars.isEmpty && bars.contains { !($0.items ?? []).isEmpty }
+    }
+
+    private func tabBars(from view: UIView) -> [UITabBar] {
+        var found: [UITabBar] = []
+        var responder: UIResponder? = view
+        while let next = responder {
+            if let controller = next as? UITabBarController {
+                found.append(controller.tabBar)
+            }
+            responder = next.next
+        }
+        if let window = view.window {
+            found.append(contentsOf: collectTabBars(in: window))
+        }
+        return found
+    }
+
+    private func collectTabBars(in view: UIView) -> [UITabBar] {
+        var found: [UITabBar] = []
+        if let bar = view as? UITabBar { found.append(bar) }
+        for child in view.subviews { found.append(contentsOf: collectTabBars(in: child)) }
+        return found
     }
 }
 

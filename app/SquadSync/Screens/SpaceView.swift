@@ -2,6 +2,7 @@ import SwiftUI
 
 struct SpaceView: View {
     @Bindable var store: MockStore
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         List {
@@ -21,8 +22,15 @@ struct SpaceView: View {
                     .accessibilityElement(children: .combine)
                 }
             }
+            Section {
+                Color.clear
+                    .frame(height: typeSize.isAccessibilitySize ? SQSpace.tabClearanceAX : SQSpace.tabClearance)
+                    .accessibilityHidden(true)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
         }
-        .contentMargins(.bottom, SQSpace.xl, for: .scrollContent)
+        .contentMargins(.bottom, typeSize.isAccessibilitySize ? SQSpace.tabClearanceAX : SQSpace.tabClearance, for: .scrollContent)
         .navigationDestination(for: String.self) { id in
             if let conversation = store.conversations.first(where: { $0.id == id }) {
                 ThreadView(store: store, conversation: conversation)

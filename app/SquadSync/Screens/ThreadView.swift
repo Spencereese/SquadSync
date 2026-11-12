@@ -13,6 +13,13 @@ struct ThreadView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            Text("\(store.onCount) of \(SpotRules.squadCap) on")
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(SQColor.muted)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, SQSpace.l)
+                .padding(.top, SQSpace.s)
+                .accessibilityLabel("\(store.onCount) of \(SpotRules.squadCap) on")
             PartyCardView(store: store, conversation: conversation)
                 .padding(.horizontal, SQSpace.l)
                 .padding(.top, SQSpace.s)
@@ -22,53 +29,50 @@ struct ThreadView: View {
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
                 }
-                if !typing.isEmpty {
-                    Text(typingLine)
-                        .font(.footnote)
-                        .foregroundStyle(SQColor.muted)
-                        .accessibilityLabel(typingLine)
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
-            .contentMargins(.bottom, SQSpace.l, for: .scrollContent)
+            .frame(maxHeight: .infinity)
             .onAppear { store.markSeen(in: conversation.id) }
+            if store.showsVoicePill {
+                VoicePill(room: store.voice) { store.openVoice() }
+                    .padding(.top, SQSpace.s)
+                    .accessibilityIdentifier("voice-pill")
+                    .layoutPriority(1)
+            }
+            if !typing.isEmpty {
+                Text(typingLine)
+                    .font(.footnote)
+                    .foregroundStyle(SQColor.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, SQSpace.l)
+                    .padding(.top, SQSpace.s)
+                    .accessibilityLabel(typingLine)
+                    .accessibilityIdentifier("typing-indicator")
+                    .layoutPriority(1)
+            }
             composer
+                .layoutPriority(1)
         }
         .background(SQColor.canvas)
         .navigationTitle(conversation.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbarBackground(.visible, for: .navigationBar)
+        .toolbar(.hidden, for: .tabBar)
         .toolbar {
-            ToolbarItem(placement: .principal) {
-                VStack(spacing: 0) {
-                    Text(conversation.title).font(.headline).lineLimit(1).minimumScaleFactor(0.7)
-                    Text("\(store.onCount) of \(SpotRules.squadCap) on")
-                        .font(.caption.monospacedDigit())
-                        .foregroundStyle(SQColor.muted)
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel("\(conversation.title), \(store.onCount) of \(SpotRules.squadCap) on")
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Voice room") { store.openVoice() }
+                    .accessibilityLabel("Voice room")
+                    .accessibilityIdentifier("voice-room")
+                    .accessibilityAddTraits(.isButton)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button { store.openVoice() } label: {
-                    Label("Voice room", systemImage: "waveform")
-                        .labelStyle(.iconOnly)
-                }
-                .accessibilityLabel("Voice room")
-                .accessibilityIdentifier("voice-room")
-            }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { store.handoffSheetPresented = true } label: {
-                    Label("Handoff menu", systemImage: "arrow.up.forward.app")
-                        .labelStyle(.iconOnly)
-                }
-                .accessibilityLabel("Handoff menu")
-                .accessibilityIdentifier("handoff-menu")
+                Button("Handoff menu") { store.handoffSheetPresented = true }
+                    .accessibilityLabel("Handoff menu")
+                    .accessibilityIdentifier("handoff-menu")
+                    .accessibilityAddTraits(.isButton)
             }
         }
-        .safeAreaPadding(.bottom, typeSize.isAccessibilitySize ? SQSpace.m : 0)
         .sensoryFeedback(.success, trigger: store.party?.locked ?? false)
     }
 

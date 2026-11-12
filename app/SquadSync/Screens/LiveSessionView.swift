@@ -501,14 +501,6 @@ struct LiveSessionView: View {
                 }
             }
             .padding(SQSpace.l)
-            .safeAreaInset(edge: .bottom, spacing: 0) {
-                if model.phase == .ready, model.squad != nil {
-                    composer
-                        .padding(.horizontal, SQSpace.l)
-                        .padding(.vertical, SQSpace.s)
-                        .background(SQColor.canvas)
-                }
-            }
             .navigationTitle("SquadSync")
             .toolbar {
                 if model.phase == .ready {
@@ -557,52 +549,67 @@ struct LiveSessionView: View {
 
     private var ready: some View {
         VStack(alignment: .leading, spacing: SQSpace.m) {
-            if model.profile != nil {
-                TextField("Display name", text: Binding(get: { model.displayName }, set: { model.displayName = $0 }))
-                    .textFieldStyle(.roundedBorder)
-                TextField("Default game", text: Binding(get: { model.defaultGame }, set: { model.defaultGame = $0 }))
-                    .textFieldStyle(.roundedBorder)
-                Button("Save profile") { Task { await model.saveProfile() } }
-                    .disabled(model.busy)
+            ScrollView {
+                VStack(alignment: .leading, spacing: SQSpace.m) {
+                    if model.profile != nil {
+                        TextField("Display name", text: Binding(get: { model.displayName }, set: { model.displayName = $0 }))
+                            .textFieldStyle(.roundedBorder)
+                        TextField("Default game", text: Binding(get: { model.defaultGame }, set: { model.defaultGame = $0 }))
+                            .textFieldStyle(.roundedBorder)
+                        Button("Save profile") { Task { await model.saveProfile() } }
+                            .disabled(model.busy)
+                    }
+                    if let squad = model.squad {
+                        Text(SquadTitle.line(name: squad.name, memberCount: squad.members.count))
+                            .font(.headline)
+                        ForEach(squad.members) { member in
+                            Text(member.isOwner ? "\(member.displayName) · Owner" : member.displayName)
+                        }
+                        if squad.ownerId == (model.profile?.id ?? model.viewerId) {
+                            inviteControls
+                        }
+                        joinControls
+                        if let notice = liveNotice {
+                            Text(notice).font(.caption).foregroundStyle(SQColor.muted)
+                        }
+                    } else {
+                        joinControls
+                        Text("You're not in a squad yet.")
+                        TextField("Squad name", text: Binding(get: { model.squadName }, set: { model.squadName = $0 }))
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityIdentifier("squad-name")
+                        if !model.squadNameError.isEmpty {
+                            Text(model.squadNameError)
+                                .font(.footnote)
+                                .foregroundStyle(SQColor.danger)
+                        }
+                        Button("Create squad") { Task { await model.createSquad() } }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(model.busy)
+                    }
+                    if !model.status.isEmpty {
+                        Text(model.status).font(.footnote).foregroundStyle(SQColor.muted)
+                    }
+                    notes
+                }
             }
-            if let squad = model.squad {
-                Text(SquadTitle.line(name: squad.name, memberCount: squad.members.count))
-                    .font(.headline)
-                ForEach(squad.members) { member in
-                    Text(member.isOwner ? "\(member.displayName) · Owner" : member.displayName)
-                }
-                if squad.ownerId == (model.profile?.id ?? model.viewerId) {
-                    inviteControls
-                }
-                joinControls
-                if let notice = liveNotice {
-                    Text(notice).font(.caption).foregroundStyle(SQColor.muted)
-                }
+            if model.squad != nil {
                 chatList
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .safeAreaInset(edge: .bottom, spacing: SQSpace.s) {
+                        VStack(alignment: .leading, spacing: SQSpace.xs) {
+                            Text("Unread \(model.log.unreadCount(viewerId: model.profile?.id ?? UUID()))")
+                                .font(.caption)
+                            composer
+                        }
+                        .padding(.top, SQSpace.s)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(SQColor.canvas)
+                    }
+                    .frame(minHeight: 180, maxHeight: .infinity, alignment: .top)
                     .layoutPriority(1)
-                Text("Unread \(model.log.unreadCount(viewerId: model.profile?.id ?? UUID()))")
-                    .font(.caption)
-            } else {
-                joinControls
-                Text("You're not in a squad yet.")
-                TextField("Squad name", text: Binding(get: { model.squadName }, set: { model.squadName = $0 }))
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier("squad-name")
-                if !model.squadNameError.isEmpty {
-                    Text(model.squadNameError)
-                        .font(.footnote)
-                        .foregroundStyle(SQColor.danger)
-                }
-                Button("Create squad") { Task { await model.createSquad() } }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.busy)
             }
-            if !model.status.isEmpty {
-                Text(model.status).font(.footnote).foregroundStyle(SQColor.muted)
-            }
-            notes
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
     private var notes: some View {
@@ -631,7 +638,6 @@ struct LiveSessionView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(ChatContentFrame())
                 }
-                .frame(minHeight: 120)
                 .coordinateSpace(name: "chat")
                 .scrollDismissesKeyboard(.interactively)
                 .modifier(ChatPinModifier(pinned: $pinnedToBottom))

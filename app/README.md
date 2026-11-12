@@ -64,7 +64,7 @@ Arguments go after the bundle id. `-screen` jumps to a state. `-scenario` picks 
 
 Screens: `inbox`, `thread-general`, `thread-warzone`, `party`, `voice`, `voice-pill`, `space`, `handoff`.
 
-Scenarios: `seated` (viewer is Ready), `unseated` (I'm in can be tapped), `ready4` (Lock can be tapped), `noSquad` (create-squad form on the mock backend).
+Scenarios: `seated` (viewer is Ready), `unseated` (I'm in can be tapped), `ready4` (Lock can be tapped), `noSquad` (create-squad form on the mock backend), `invite` (invite and join on the mock backend).
 
 ```bash
 xcrun simctl launch "$UDID" com.spencereese.squadsync -screen inbox -scenario seated
@@ -77,9 +77,12 @@ xcrun simctl launch "$UDID" com.spencereese.squadsync -screen space
 xcrun simctl launch "$UDID" com.spencereese.squadsync -screen handoff
 xcrun simctl launch "$UDID" com.spencereese.squadsync -uitest-largeText -screen inbox
 xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario noSquad
+xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario invite
 ```
 
 `-backend mock -scenario noSquad` opens the live session screen against the in-memory mock, already signed in and not in a squad. The create-squad form is on screen. It does not write to Supabase.
+
+`-backend mock -scenario invite` opens that screen as the owner of a mock squad named Friday. Create invite, share or copy the code, and the join field are on screen. Codes `EXPIRED2`, `REVOKED2`, `FULL2345`, and `ALREADY2` show those errors. Any other code adds Riley. Nothing is written to Supabase.
 
 The voice lounge is mock-only. `VoiceRoomService` is the seam for a later hosted room: join, leave, mute, participants, speaking levels, and a connection state of idle, connecting, connected, reconnecting, or failed. `InMemoryVoiceRoomService` is the fake. No voice SDK, account, or provider is included.
 

@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 @MainActor
 @Observable
@@ -14,6 +15,12 @@ final class LiveSessionModel {
     var draft = ""
     var squadName = ""
     var squadNameError = ""
+    var inviteCode = ""
+    var joinCode = ""
+    var board = ReactionBoard()
+    var reads: [MemberRead] = []
+    var link: RealtimeLink = .down
+    var viewerId: UUID?
     var status = ""
     var notes: [String] = [
         "Voice, spots, presence, and push stay mock. Leave off -backend live to use that shell."
@@ -26,6 +33,8 @@ final class LiveSessionModel {
     private let mockProfiles: ProfileService?
     private let mockSquads: SquadService?
     private let mockChat: ChatService?
+    private let mockInvites: InviteServing?
+    private var realtime: RealtimeClient?
     private var poll: Task<Void, Never>?
 
     enum Phase {
@@ -34,7 +43,7 @@ final class LiveSessionModel {
         case ready
     }
 
-    init(config: BackendConfig, backend: BackendMode = .live, sessionStore: SessionStoring? = nil) {
+    init(config: BackendConfig, backend: BackendMode = .live, scenario: LaunchScenario = .seated, sessionStore: SessionStoring? = nil) {
         self.config = config
         if backend == .mock {
             let store = sessionStore ?? MemorySessionStore()
@@ -45,13 +54,19 @@ final class LiveSessionModel {
                 email: "spencer@squadsync.app"
             )
             try? store.save(session)
+            let squads = MockSquadService()
             self.sessionStore = store
             self.auth = MockAuthService(store: store)
             self.mockProfiles = MockProfileService()
-            self.mockSquads = MockSquadService()
+            self.mockSquads = squads
             self.mockChat = MockChatService()
+            self.mockInvites = MockInviteService(squads: squads)
             self.phase = .ready
             self.email = session.email
+            self.viewerId = session.userId
+            if scenario == .invite {
+                self.squad = squads.seed(ownerId: session.userId, name: "Friday")
+            }
         } else {
             let store = sessionStore ?? KeychainSessionStore()
             self.sessionStore = store
@@ -59,7 +74,12 @@ final class LiveSessionModel {
             self.mockProfiles = nil
             self.mockSquads = nil
             self.mockChat = nil
+            self.mockInvites = nil
         }
+    }
+
+    private func inviteService(_ session: AuthSession) -> InviteServing {
+        mockInvites ?? SupabaseInviteService(config: config, accessToken: session.accessToken)
     }
 
     func restore() async {
@@ -67,8 +87,9 @@ final class LiveSessionModel {
             guard let session = try auth.restore() else { return }
             phase = .ready
             email = session.email
+            viewerId = session.userId
             await refresh(session)
-            startPolling(session)
+            startLive(session)
         } catch {
             status = (error as? SessionStoreError)?.message ?? "Session restore failed. \(error)"
         }
@@ -94,7 +115,7 @@ final class LiveSessionModel {
             phase = .ready
             status = ""
             await refresh(session)
-            startPolling(session)
+            startLive(session)
         }
     }
 
@@ -123,6 +144,65 @@ final class LiveSessionModel {
             squad = try await service.createSquad(ownerId: session.userId, name: name)
             status = "Squad created."
             await loadChat(session)
+            startLive(session)
+        }
+    }
+
+    func createInvite() async {
+        await run {
+            let session = try requiredSession()
+            do {
+                let ticket = try await inviteService(session).createInvite()
+                inviteCode = ticket.code
+                status = "Invite \(ticket.code) is ready."
+            } catch let problem as InviteProblem {
+                status = problem.message
+            }
+        }
+    }
+
+    func joinSquad() async {
+        let trimmed = joinCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            status = InviteProblem.revokedOrUnknown.message
+            return
+        }
+        await run {
+            let session = try requiredSession()
+            let existing = squad?.id
+            do {
+                let joined = try await inviteService(session).join(code: trimmed)
+                squad = try await squadService(session).currentSquad(userId: session.userId)
+                status = existing == joined ? "You're already in this squad." : "Joined."
+                await loadChat(session)
+                startLive(session)
+            } catch let problem as InviteProblem {
+                status = problem.message
+            }
+        }
+    }
+
+    func tap(_ reaction: Tapback, on id: UUID) async {
+        guard let squad, let session = try? requiredSession() else { return }
+        let emoji = SquadReaction.emoji(for: reaction)
+        let changes = board.toggle(messageId: id, userId: session.userId, emoji: emoji)
+        do {
+            let chat = chatService(session)
+            for change in changes {
+                switch change {
+                case .insert(let symbol):
+                    try await chat.setReaction(squadId: squad.id, messageId: id, userId: session.userId, emoji: symbol, active: true)
+                case .remove(let symbol):
+                    try await chat.setReaction(squadId: squad.id, messageId: id, userId: session.userId, emoji: symbol, active: false)
+                }
+            }
+        } catch let failure as BackendFailure {
+            note(failure)
+            if let marks = try? await chatService(session).reactions(squadId: squad.id) {
+                board.replace(with: marks)
+            }
+        } catch {
+            status = error.localizedDescription
         }
     }
 
@@ -158,6 +238,8 @@ final class LiveSessionModel {
     }
 
     func signOut() async {
+        realtime?.stop()
+        realtime = nil
         poll?.cancel()
         poll = nil
         do {
@@ -211,8 +293,18 @@ final class LiveSessionModel {
             let chat = chatService(session)
             let rows = try await chat.history(squadId: squad.id)
             log.ingest(rows.map { $0.entry() })
-            log.markRead(at: Date())
-            try? await chat.markRead(squadId: squad.id, userId: session.userId, at: Date(), messageId: log.ordered.last?.id)
+            if let cursor = try? await chat.ownReadAt(squadId: squad.id, userId: session.userId) {
+                log.markRead(at: cursor)
+            }
+            let caughtUp = Date()
+            log.markRead(at: caughtUp)
+            try? await chat.markRead(squadId: squad.id, userId: session.userId, at: caughtUp, messageId: log.ordered.last?.id)
+            if let marks = try? await chat.reactions(squadId: squad.id) {
+                board.replace(with: marks)
+            }
+            if let remoteReads = try? await chat.reads(squadId: squad.id) {
+                reads = remoteReads
+            }
         } catch let failure as BackendFailure {
             note(failure)
         } catch {
@@ -220,16 +312,76 @@ final class LiveSessionModel {
         }
     }
 
-    private func startPolling(_ session: AuthSession) {
+    var usesLiveSocket: Bool { mockChat == nil }
+
+    private var usesSocket: Bool { usesLiveSocket }
+
+    private func startLive(_ session: AuthSession) {
+        realtime?.stop()
+        realtime = nil
+        poll?.cancel()
+        guard let squad else { return }
+        guard usesSocket else {
+            link = .down
+            beginPoll(session)
+            return
+        }
+        let client = RealtimeClient()
+        client.onEvent = { [weak self] event in
+            Task { await self?.handle(event, session: session) }
+        }
+        realtime = client
+        client.start(config: config, accessToken: session.accessToken, squadId: squad.id)
+        beginPoll(session)
+    }
+
+    private func handle(_ event: RealtimeClient.Event, session: AuthSession) async {
+        switch event {
+        case .phase(let next):
+            let opened = next == .connected && link != .connected
+            link = next
+            if next.polls {
+                beginPoll(session)
+            } else {
+                poll?.cancel()
+                poll = nil
+            }
+            if opened { await loadChat(session) }
+        case .message(let message):
+            guard message.squadId == squad?.id else { return }
+            log.ingest([message.entry()])
+            if message.senderId != session.userId {
+                let seenAt = max(Date(), message.sentAt)
+                log.markRead(at: seenAt)
+                try? await chatService(session).markRead(
+                    squadId: message.squadId,
+                    userId: session.userId,
+                    at: seenAt,
+                    messageId: message.id
+                )
+            }
+        case .messageRemoved(let id):
+            log.remove(id: id)
+        case .roster:
+            squad = try? await squadService(session).currentSquad(userId: session.userId)
+        case .reaction(let mark, let removed):
+            if removed { board.remove(mark) } else { board.add(mark) }
+        case .read(let read):
+            if let index = reads.firstIndex(where: { $0.userId == read.userId }) {
+                reads[index] = read
+            } else {
+                reads.append(read)
+            }
+        }
+    }
+
+    private func beginPoll(_ session: AuthSession) {
         poll?.cancel()
         poll = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 await self?.pollOnce(session)
             }
-        }
-        if !notes.contains(where: { $0.contains("every few seconds") }) {
-            notes.append("New messages are checked every few seconds. A live realtime publication for chat is not confirmed on this project.")
         }
     }
 
@@ -290,8 +442,8 @@ final class LiveSessionModel {
 struct LiveSessionView: View {
     @State private var model: LiveSessionModel
 
-    init(config: BackendConfig = .fromBundle(), backend: BackendMode = .live) {
-        _model = State(initialValue: LiveSessionModel(config: config, backend: backend))
+    init(config: BackendConfig = .fromBundle(), backend: BackendMode = .live, scenario: LaunchScenario = .seated) {
+        _model = State(initialValue: LiveSessionModel(config: config, backend: backend, scenario: scenario))
     }
 
     var body: some View {
@@ -360,18 +512,16 @@ struct LiveSessionView: View {
                 ForEach(squad.members) { member in
                     Text(member.isOwner ? "\(member.displayName) · Owner" : member.displayName)
                 }
+                if squad.ownerId == (model.profile?.id ?? model.viewerId) {
+                    inviteControls
+                }
+                joinControls
+                if let notice = model.link.notice, model.usesLiveSocket {
+                    Text(notice).font(.caption).foregroundStyle(SQColor.muted)
+                }
                 ScrollView {
                     ForEach(model.log.ordered) { entry in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(entry.body).frame(maxWidth: .infinity, alignment: .leading)
-                            Text(label(for: entry))
-                                .font(.caption)
-                                .foregroundStyle(SQColor.muted)
-                            if entry.delivery == .failed {
-                                Button("Retry") { Task { await model.retry(entry.id) } }
-                            }
-                        }
-                        .padding(.vertical, SQSpace.xs)
+                        messageRow(entry)
                     }
                 }
                 Text("Unread \(model.log.unreadCount(viewerId: model.profile?.id ?? UUID()))")
@@ -382,6 +532,7 @@ struct LiveSessionView: View {
                     Button("Send") { Task { await model.send() } }
                 }
             } else {
+                joinControls
                 Text("You're not in a squad yet.")
                 TextField("Squad name", text: Binding(get: { model.squadName }, set: { model.squadName = $0 }))
                     .textFieldStyle(.roundedBorder)
@@ -408,6 +559,95 @@ struct LiveSessionView: View {
                 Text(note).font(.caption).foregroundStyle(SQColor.muted)
             }
         }
+    }
+
+    private var inviteControls: some View {
+        VStack(alignment: .leading, spacing: SQSpace.s) {
+            Button("Create invite") { Task { await model.createInvite() } }
+                .disabled(model.busy)
+            if !model.inviteCode.isEmpty {
+                Text(model.inviteCode)
+                    .font(.body.monospaced())
+                    .accessibilityIdentifier("invite-code")
+                ShareLink(item: model.inviteCode) {
+                    Text("Share")
+                }
+                Button("Copy") {
+                    UIPasteboard.general.string = model.inviteCode
+                    model.status = "Copied."
+                }
+            }
+        }
+    }
+
+    private var joinControls: some View {
+        VStack(alignment: .leading, spacing: SQSpace.s) {
+            TextField("Invite code", text: Binding(get: { model.joinCode }, set: { model.joinCode = $0 }))
+                .textFieldStyle(.roundedBorder)
+                .textInputAutocapitalization(.characters)
+                .accessibilityIdentifier("join-code")
+            Button("Join") { Task { await model.joinSquad() } }
+                .disabled(model.busy)
+        }
+    }
+
+    private func messageRow(_ entry: ChatEntry) -> some View {
+        let mine = entry.senderId == model.profile?.id
+        let lastMine = model.log.ordered.last { $0.senderId == model.profile?.id && $0.delivery == .sent }?.id
+        let names = seenNames(for: entry)
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(entry.body).frame(maxWidth: .infinity, alignment: .leading)
+            Text(label(for: entry))
+                .font(.caption)
+                .foregroundStyle(SQColor.muted)
+            chips(for: entry)
+            if mine, entry.id == lastMine, !names.isEmpty {
+                Text("Seen by \(names.joined(separator: ", "))")
+                    .font(.caption2)
+                    .foregroundStyle(SQColor.muted)
+            }
+            if entry.delivery == .failed {
+                Button("Retry") { Task { await model.retry(entry.id) } }
+            }
+        }
+        .padding(.vertical, SQSpace.xs)
+        .contextMenu {
+            ForEach(Tapback.allCases) { reaction in
+                Button(reaction.spoken) { Task { await model.tap(reaction, on: entry.id) } }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func chips(for entry: ChatEntry) -> some View {
+        let rows = Tapback.allCases.compactMap { reaction -> (Tapback, Int)? in
+            let emoji = SquadReaction.emoji(for: reaction)
+            let count = model.board.marks.filter { $0.messageId == entry.id && $0.emoji == emoji }.count
+            guard count > 0 else { return nil }
+            return (reaction, count)
+        }
+        if !rows.isEmpty {
+            HStack(spacing: 4) {
+                ForEach(rows, id: \.0.id) { reaction, count in
+                    HStack(spacing: 3) {
+                        Image(systemName: reaction.rawValue)
+                        Text("\(count)")
+                    }
+                    .font(.caption2.weight(.semibold))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(SQColor.card, in: Capsule())
+                }
+            }
+        }
+    }
+
+    private func seenNames(for entry: ChatEntry) -> [String] {
+        let people = model.reads.map { read in
+            let name = model.squad?.members.first { $0.id == read.userId }?.displayName ?? "Player"
+            return (id: read.userId, name: name, at: read.lastReadAt)
+        }
+        return Receipts.seenNames(messageSentAt: entry.sentAt, reads: people, viewerId: model.profile?.id ?? UUID())
     }
 
     private func label(for entry: ChatEntry) -> String {

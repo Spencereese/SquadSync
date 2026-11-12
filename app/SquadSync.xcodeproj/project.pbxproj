@@ -30,6 +30,7 @@
 		A10000000000000000000044 /* SupabaseHTTP.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000054 /* SupabaseHTTP.swift */; };
 		A10000000000000000000045 /* SupabaseBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000055 /* SupabaseBackend.swift */; };
 		A10000000000000000000046 /* LiveSessionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000056 /* LiveSessionView.swift */; };
+		A10000000000000000000048 /* RealtimeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000058 /* RealtimeClient.swift */; };
 		A10000000000000000000047 /* ChatLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000057 /* ChatLogTests.swift */; };
 /* End PBXBuildFile section */
 
@@ -57,6 +58,7 @@
 		A10000000000000000000054 /* SupabaseHTTP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseHTTP.swift; sourceTree = "<group>"; };
 		A10000000000000000000055 /* SupabaseBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseBackend.swift; sourceTree = "<group>"; };
 		A10000000000000000000056 /* LiveSessionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveSessionView.swift; sourceTree = "<group>"; };
+		A10000000000000000000058 /* RealtimeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RealtimeClient.swift; sourceTree = "<group>"; };
 		A10000000000000000000057 /* ChatLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatLogTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000059 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
 		A10000000000000000000932 /* SquadSyncUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SquadSyncUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -143,6 +145,7 @@
 				A10000000000000000000053 /* SessionStore.swift */,
 				A10000000000000000000054 /* SupabaseHTTP.swift */,
 				A10000000000000000000055 /* SupabaseBackend.swift */,
+				A10000000000000000000058 /* RealtimeClient.swift */,
 			);
 			path = Backend;
 			sourceTree = "<group>";
@@ -295,6 +298,7 @@
 				A10000000000000000000043 /* SessionStore.swift in Sources */,
 				A10000000000000000000044 /* SupabaseHTTP.swift in Sources */,
 				A10000000000000000000045 /* SupabaseBackend.swift in Sources */,
+				A10000000000000000000048 /* RealtimeClient.swift in Sources */,
 				A10000000000000000000046 /* LiveSessionView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

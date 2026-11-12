@@ -291,6 +291,8 @@ enum LaunchScenario: String {
     case ready4
     /// Signed-in mock session with no squad, so the create-squad form is on screen.
     case noSquad
+    /// Signed-in owner with a mock squad, so invite and join are on screen.
+    case invite
 }
 
 enum Seed {
@@ -334,7 +336,7 @@ enum Seed {
                 Seat(userId: "jordan", status: .ready),
                 Seat(userId: "quinn", status: .ready)
             ]
-        case .noSquad:
+        case .noSquad, .invite:
             seats = []
         }
         return Party(

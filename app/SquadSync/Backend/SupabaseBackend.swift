@@ -296,13 +296,109 @@ final class SupabaseChatService: ChatService {
 
     func markRead(squadId: UUID, userId: UUID, at: Date, messageId: UUID?) async throws {
         let body = try BackendJSON.encoder.encode(ReadWrite(userId: userId, squadId: squadId, lastReadAt: at, lastReadId: messageId))
+        do {
+            _ = try await http.send(
+                path: "rest/v1/sq8_chat_read_state",
+                method: "POST",
+                body: body,
+                prefer: "resolution=merge-duplicates,return=minimal",
+                feature: .readState
+            )
+        } catch let failure as BackendFailure where isMissing(failure) {
+        }
+        do {
+            _ = try await http.send(
+                path: "rest/v1/sq8_message_reads",
+                method: "POST",
+                body: body,
+                prefer: "resolution=merge-duplicates,return=minimal",
+                feature: .readState
+            )
+        } catch let failure as BackendFailure where isMissing(failure) {
+        }
+    }
+
+    func reactions(squadId: UUID) async throws -> [ReactionMark] {
+        let data = try await http.send(
+            path: "rest/v1/sq8_message_reactions",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "squad_id", value: "eq.\(squadId.uuidString)"),
+                URLQueryItem(name: "select", value: "message_id,user_id,emoji")
+            ],
+            feature: .messages
+        )
+        return try BackendJSON.decoder.decode([ReactionRow].self, from: data).map {
+            ReactionMark(messageId: $0.messageId, userId: $0.userId, emoji: $0.emoji)
+        }
+    }
+
+    func setReaction(squadId: UUID, messageId: UUID, userId: UUID, emoji: String, active: Bool) async throws {
+        if !active {
+            _ = try await http.send(
+                path: "rest/v1/sq8_message_reactions",
+                method: "DELETE",
+                query: [
+                    URLQueryItem(name: "message_id", value: "eq.\(messageId.uuidString)"),
+                    URLQueryItem(name: "user_id", value: "eq.\(userId.uuidString)"),
+                    URLQueryItem(name: "emoji", value: "eq.\(emoji)")
+                ],
+                feature: .messages
+            )
+            return
+        }
+        let body = try BackendJSON.encoder.encode(ReactionWrite(messageId: messageId, squadId: squadId, userId: userId, emoji: emoji))
         _ = try await http.send(
-            path: "rest/v1/sq8_chat_read_state",
+            path: "rest/v1/sq8_message_reactions",
             method: "POST",
             body: body,
-            prefer: "resolution=merge-duplicates,return=minimal",
+            prefer: "return=minimal,resolution=ignore-duplicates",
+            feature: .messages
+        )
+    }
+
+    func reads(squadId: UUID) async throws -> [MemberRead] {
+        let data = try await http.send(
+            path: "rest/v1/sq8_message_reads",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "squad_id", value: "eq.\(squadId.uuidString)"),
+                URLQueryItem(name: "select", value: "user_id,last_read_at")
+            ],
             feature: .readState
         )
+        return try BackendJSON.decoder.decode([ReadRow].self, from: data).map {
+            MemberRead(userId: $0.userId, lastReadAt: $0.lastReadAt)
+        }
+    }
+
+    func ownReadAt(squadId: UUID, userId: UUID) async throws -> Date? {
+        let shared = try await readStamp(path: "rest/v1/sq8_message_reads", squadId: squadId, userId: userId)
+        let own = try await readStamp(path: "rest/v1/sq8_chat_read_state", squadId: squadId, userId: userId)
+        return [shared, own].compactMap { $0 }.max()
+    }
+
+    private func readStamp(path: String, squadId: UUID, userId: UUID) async throws -> Date? {
+        do {
+            let data = try await http.send(
+                path: path,
+                method: "GET",
+                query: [
+                    URLQueryItem(name: "squad_id", value: "eq.\(squadId.uuidString)"),
+                    URLQueryItem(name: "user_id", value: "eq.\(userId.uuidString)"),
+                    URLQueryItem(name: "select", value: "last_read_at")
+                ],
+                feature: .readState
+            )
+            return try BackendJSON.decoder.decode([StampRow].self, from: data).map(\.lastReadAt).max()
+        } catch let failure as BackendFailure where isMissing(failure) {
+            return nil
+        }
+    }
+
+    private func isMissing(_ failure: BackendFailure) -> Bool {
+        if case .notSetUp = failure { return true }
+        return false
     }
 
     private func fetch(squadId: UUID, after: Date?) async throws -> [RemoteMessage] {
@@ -324,6 +420,44 @@ final class SupabaseChatService: ChatService {
         return try BackendJSON.decoder.decode([RemoteMessage].self, from: data)
     }
 
+    private struct ReactionRow: Decodable {
+        let messageId: UUID
+        let userId: UUID
+        let emoji: String
+        enum CodingKeys: String, CodingKey {
+            case messageId = "message_id"
+            case userId = "user_id"
+            case emoji
+        }
+    }
+
+    private struct ReactionWrite: Encodable {
+        let messageId: UUID
+        let squadId: UUID
+        let userId: UUID
+        let emoji: String
+        enum CodingKeys: String, CodingKey {
+            case messageId = "message_id"
+            case squadId = "squad_id"
+            case userId = "user_id"
+            case emoji
+        }
+    }
+
+    private struct ReadRow: Decodable {
+        let userId: UUID
+        let lastReadAt: Date
+        enum CodingKeys: String, CodingKey {
+            case userId = "user_id"
+            case lastReadAt = "last_read_at"
+        }
+    }
+
+    private struct StampRow: Decodable {
+        let lastReadAt: Date
+        enum CodingKeys: String, CodingKey { case lastReadAt = "last_read_at" }
+    }
+
     private struct ReadWrite: Encodable {
         let userId: UUID
         let squadId: UUID
@@ -334,6 +468,58 @@ final class SupabaseChatService: ChatService {
             case squadId = "squad_id"
             case lastReadAt = "last_read_at"
             case lastReadId = "last_read_id"
+        }
+    }
+}
+
+final class SupabaseInviteService: InviteServing {
+    private let http: SupabaseHTTP
+
+    init(config: BackendConfig, accessToken: String) {
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken)
+    }
+
+    func createInvite() async throws -> InviteTicket {
+        let data = try await http.send(
+            path: "rest/v1/rpc/sq8_create_invite",
+            method: "POST",
+            body: Data("{}".utf8),
+            feature: .squad
+        )
+        let payload = try JSONDecoder().decode(InvitePayload.self, from: data)
+        guard payload.ok, let code = payload.code, let squadId = payload.squadId else {
+            throw InviteProblem.from(serverCode: payload.error ?? "not_owner")
+        }
+        return InviteTicket(code: code, squadId: squadId)
+    }
+
+    func join(code: String) async throws -> UUID {
+        let body = try JSONEncoder().encode(JoinBody(code: code))
+        let data = try await http.send(
+            path: "rest/v1/rpc/sq8_join_with_code",
+            method: "POST",
+            body: body,
+            feature: .squad
+        )
+        let payload = try JSONDecoder().decode(InvitePayload.self, from: data)
+        guard payload.ok, let squadId = payload.squadId else {
+            throw InviteProblem.from(serverCode: payload.error ?? "invalid")
+        }
+        return squadId
+    }
+
+    private struct JoinBody: Encodable {
+        let code: String
+    }
+
+    private struct InvitePayload: Decodable {
+        let ok: Bool
+        let error: String?
+        let code: String?
+        let squadId: UUID?
+        enum CodingKeys: String, CodingKey {
+            case ok, error, code
+            case squadId = "squad_id"
         }
     }
 }

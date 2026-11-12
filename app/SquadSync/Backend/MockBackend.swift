@@ -53,6 +53,24 @@ final class MockSquadService: SquadService {
 
     func currentSquad(userId: UUID) async throws -> SquadRecord? { squad }
 
+    func seed(ownerId: UUID, name: String) -> SquadRecord {
+        let created = SquadRecord(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000010")!,
+            ownerId: ownerId,
+            name: name,
+            members: [SquadMemberRecord(id: ownerId, displayName: "You", defaultGame: "Call of Duty", isOwner: true)]
+        )
+        squad = created
+        return created
+    }
+
+    func addMember(id: UUID, name: String) {
+        guard var squad else { return }
+        guard !squad.members.contains(where: { $0.id == id }) else { return }
+        squad.members.append(SquadMemberRecord(id: id, displayName: name, defaultGame: "", isOwner: false))
+        self.squad = squad
+    }
+
     func createSquad(ownerId: UUID, name: String) async throws -> SquadRecord {
         let trimmed = SquadName.normalized(name)
         if let error = SquadName.validationError(trimmed) {
@@ -85,5 +103,57 @@ final class MockChatService: ChatService {
         stored.filter { $0.squadId == squadId && $0.sentAt > after }
     }
 
-    func markRead(squadId: UUID, userId: UUID, at: Date, messageId: UUID?) async throws {}
+    func markRead(squadId: UUID, userId: UUID, at: Date, messageId: UUID?) async throws {
+        reads[userId] = at
+    }
+
+    func reactions(squadId: UUID) async throws -> [ReactionMark] { reactionMarks }
+
+    func setReaction(squadId: UUID, messageId: UUID, userId: UUID, emoji: String, active: Bool) async throws {
+        if active {
+            reactionMarks.removeAll { $0.messageId == messageId && $0.userId == userId }
+            reactionMarks.append(ReactionMark(messageId: messageId, userId: userId, emoji: emoji))
+        } else {
+            reactionMarks.removeAll { $0.messageId == messageId && $0.userId == userId && $0.emoji == emoji }
+        }
+    }
+
+    func reads(squadId: UUID) async throws -> [MemberRead] {
+        reads.map { MemberRead(userId: $0.key, lastReadAt: $0.value) }
+    }
+
+    func ownReadAt(squadId: UUID, userId: UUID) async throws -> Date? { reads[userId] }
+
+    private var reactionMarks: [ReactionMark] = []
+    private var reads: [UUID: Date] = [:]
+}
+
+final class MockInviteService: InviteServing {
+    private let squads: MockSquadService
+
+    init(squads: MockSquadService) {
+        self.squads = squads
+    }
+
+    func createInvite() async throws -> InviteTicket {
+        guard let squad = try await squads.currentSquad(userId: UUID()) else { throw InviteProblem.notOwner }
+        return InviteTicket(code: "ABCD2345", squadId: squad.id)
+    }
+
+    func join(code: String) async throws -> UUID {
+        if let problem = Self.problem(for: code) { throw problem }
+        guard let squad = try await squads.currentSquad(userId: UUID()) else { throw InviteProblem.revokedOrUnknown }
+        squads.addMember(id: UUID(uuidString: "00000000-0000-0000-0000-000000000011")!, name: "Riley")
+        return squad.id
+    }
+
+    static func problem(for code: String) -> InviteProblem? {
+        switch code.uppercased() {
+        case "EXPIRED2": .expired
+        case "REVOKED2": .revokedOrUnknown
+        case "FULL2345": .full
+        case "ALREADY2": .alreadyInASquad
+        default: nil
+        }
+    }
 }

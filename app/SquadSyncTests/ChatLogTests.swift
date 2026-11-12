@@ -164,6 +164,78 @@ final class SquadNameTests: XCTestCase {
         }
     }
 
+    func testPollAndRealtimeDedupeById() {
+        let them = UUID()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var log = ChatLog()
+        let id = UUID()
+        let row = ChatEntry(id: id, senderId: them, body: "hi", sentAt: start, delivery: .sent)
+        log.ingest([row])
+        ChatBackfill.apply(&log, history: [row, row])
+        XCTAssertEqual(log.entries.count, 1)
+        XCTAssertEqual(RealtimeLink.connected.polls, false)
+        XCTAssertEqual(RealtimeLink.reconnecting.polls, true)
+        XCTAssertEqual(RealtimeLink.down.polls, true)
+    }
+
+    func testReconnectBackfillAddsTheMissedRow() {
+        let them = UUID()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var log = ChatLog()
+        let kept = UUID()
+        let missed = UUID()
+        log.ingest([ChatEntry(id: kept, senderId: them, body: "kept", sentAt: start, delivery: .sent)])
+        ChatBackfill.apply(&log, history: [
+            ChatEntry(id: kept, senderId: them, body: "kept", sentAt: start, delivery: .sent),
+            ChatEntry(id: missed, senderId: them, body: "missed", sentAt: start.addingTimeInterval(5), delivery: .sent)
+        ])
+        XCTAssertEqual(log.ordered.map(\.body), ["kept", "missed"])
+    }
+
+    func testInviteErrorsMatchTheServerCodes() {
+        XCTAssertEqual(InviteProblem.from(serverCode: "expired"), .expired)
+        XCTAssertEqual(InviteProblem.from(serverCode: "invalid"), .revokedOrUnknown)
+        XCTAssertEqual(InviteProblem.from(serverCode: "full"), .full)
+        XCTAssertEqual(InviteProblem.from(serverCode: "already_in_squad"), .alreadyInASquad)
+        XCTAssertEqual(InviteProblem.expired.message, "This invite has expired.")
+        XCTAssertEqual(InviteProblem.full.message, "That squad is full (8).")
+        XCTAssertTrue(InviteProblem.revokedOrUnknown.message.contains("revoked"))
+        XCTAssertEqual(InviteProblem.alreadyInASquad.message, "You're already in a squad.")
+    }
+
+    func testReactionToggleReplacesAndRemoves() {
+        var board = ReactionBoard()
+        let message = UUID()
+        let user = UUID()
+        XCTAssertEqual(board.toggle(messageId: message, userId: user, emoji: "👍"), [.insert("👍")])
+        XCTAssertEqual(board.toggle(messageId: message, userId: user, emoji: "🎮"), [.remove("👍"), .insert("🎮")])
+        XCTAssertEqual(board.marks.map(\.emoji), ["🎮"])
+        XCTAssertEqual(board.toggle(messageId: message, userId: user, emoji: "🎮"), [.remove("🎮")])
+        XCTAssertTrue(board.marks.isEmpty)
+    }
+
+    func testUnreadIgnoresTheCursorInstantAndOwnMessages() {
+        let me = UUID()
+        let them = UUID()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var log = ChatLog()
+        log.ingest([
+            ChatEntry(id: UUID(), senderId: them, body: "at cursor", sentAt: start, delivery: .sent),
+            ChatEntry(id: UUID(), senderId: me, body: "mine later", sentAt: start.addingTimeInterval(5), delivery: .sent),
+            ChatEntry(id: UUID(), senderId: them, body: "after", sentAt: start.addingTimeInterval(5), delivery: .sent)
+        ])
+        log.markRead(at: start)
+        XCTAssertEqual(log.unreadCount(viewerId: me), 1)
+        XCTAssertEqual(
+            Receipts.seenNames(
+                messageSentAt: start,
+                reads: [(id: them, name: "Riley", at: start)],
+                viewerId: me
+            ),
+            ["Riley"]
+        )
+    }
+
     func testEmptySquadNameUsesYourSquad() {
         XCTAssertEqual(SquadTitle.line(name: "", memberCount: 1), "Your squad · 1 of 8")
         XCTAssertEqual(SquadTitle.line(name: "   ", memberCount: 1), "Your squad · 1 of 8")

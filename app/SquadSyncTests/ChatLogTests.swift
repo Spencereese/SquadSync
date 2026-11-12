@@ -261,6 +261,23 @@ final class SquadNameTests: XCTestCase {
         XCTAssertFalse(RequestNoise.isCancellation(BackendFailure.rejected("Squad is full.")))
     }
 
+    func testMockSendAppendsTheRow() async throws {
+        let chat = MockChatService()
+        let id = UUID()
+        let me = UUID()
+        let sentAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let message = RemoteMessage(id: id, squadId: ChatSeed.squadId, senderId: me, body: "hello", sentAt: sentAt)
+        try await chat.send(message)
+        let stored = try await chat.history(squadId: ChatSeed.squadId)
+        XCTAssertEqual(stored.map(\.body), ["hello"])
+        var log = ChatLog()
+        log.beginSend(id: id, senderId: me, body: "hello", now: sentAt)
+        XCTAssertEqual(OutboundSend.result(error: nil), .sent)
+        log.markSent(id: id)
+        XCTAssertEqual(log.entries.map(\.body), ["hello"])
+        XCTAssertEqual(log.entries.first?.delivery, .sent)
+    }
+
     func testSendIsConfirmedWithoutAnEcho() {
         var log = ChatLog()
         let id = UUID()

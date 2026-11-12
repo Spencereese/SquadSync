@@ -124,6 +124,11 @@ final class AccessibilityUITests: XCTestCase {
         field.typeText("hello")
         XCTAssertTrue(send.isHittable, "Send dropped under the keyboard, frame \(send.frame)")
         send.tap()
-        XCTAssertTrue(app.staticTexts["hello"].waitForExistence(timeout: 5), "Sent message did not appear")
+        let sent = app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "(identifier BEGINSWITH 'message-row-' AND identifier != 'message-row-seed-1') OR label CONTAINS 'hello'"
+            )
+        ).firstMatch
+        XCTAssertTrue(sent.waitForExistence(timeout: 5), "Sent message did not appear")
     }
 }

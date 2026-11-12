@@ -7,8 +7,8 @@ enum SQSpace {
     static let l: CGFloat = 16
     static let xl: CGFloat = 24
     static let xxl: CGFloat = 32
-    /// Shrinks the Space list so its frame ends above the floating tab bar.
-    static let tabOverlapAX: CGFloat = 128
+    /// Extra scroll-content inset so the last row can sit above the floating tab bar.
+    static let tabBarInset: CGFloat = 96
 }
 
 enum SQColor {

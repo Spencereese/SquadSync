@@ -36,4 +36,20 @@ final class AccessibilityUITests: XCTestCase {
             "Spencer's row ends at \(row.frame.maxY), under the tab bar at \(tab.frame.minY)"
         )
     }
+
+    func testInboxFridayCrewClearsTheTabBarAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-screen", "inbox", "-uitest-largeText"]
+        app.launch()
+
+        let row = app.descendants(matching: .any)["inbox-friday"]
+        XCTAssertTrue(row.waitForExistence(timeout: 15), "Friday crew was not in the accessibility tree")
+        let tab = app.descendants(matching: .any)["tab-inbox"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 15), "Inbox tab was not in the accessibility tree")
+        XCTAssertLessThanOrEqual(
+            row.frame.maxY,
+            tab.frame.minY + 1,
+            "Friday crew ends at \(row.frame.maxY), under the tab bar at \(tab.frame.minY)"
+        )
+    }
 }

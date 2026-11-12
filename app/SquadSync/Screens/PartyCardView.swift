@@ -6,7 +6,6 @@ struct PartyCardView: View {
     var showsFullCard = false
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var open = false
-    @State private var actionBarHeight: CGFloat = 0
 
     private var useCompactSummary: Bool {
         !showsFullCard && typeSize.isAccessibilitySize
@@ -59,26 +58,20 @@ struct PartyCardView: View {
     private func partySheet(_ party: Party) -> some View {
         NavigationStack {
             TimelineView(.periodic(from: .now, by: 1)) { context in
-                VStack(spacing: 0) {
-                    ScrollView {
-                        sheetDetails(party, now: context.date)
-                            .padding(SQSpace.l)
-                            .padding(.bottom, actionBarHeight > 0 ? actionBarHeight : SQSpace.xxl)
-                    }
+                ScrollView {
+                    sheetDetails(party, now: context.date)
+                        .padding(SQSpace.l)
+                }
+                .background(SQColor.canvas)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
                     if !party.locked {
                         actionRow(party, now: context.date)
                             .padding(SQSpace.m)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(.ultraThinMaterial)
-                            .background {
-                                GeometryReader { geo in
-                                    Color.clear.preference(key: ActionBarHeightKey.self, value: geo.size.height)
-                                }
-                            }
                     }
                 }
             }
-            .background(SQColor.canvas)
             .navigationTitle(party.game)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -90,7 +83,6 @@ struct PartyCardView: View {
         }
         .presentationDetents(typeSize.isAccessibilitySize ? [.large] : [.medium, .large])
         .presentationDragIndicator(.visible)
-        .onPreferenceChange(ActionBarHeightKey.self) { actionBarHeight = $0 }
     }
 
     private func sheetDetails(_ party: Party, now: Date) -> some View {
@@ -238,13 +230,6 @@ struct PartyCardView: View {
         .font(.subheadline.weight(.semibold))
         .dynamicTypeSize(.large ... (typeSize.isAccessibilitySize ? .xxxLarge : .accessibility5))
         .controlSize(typeSize.isAccessibilitySize ? .small : .regular)
-    }
-}
-
-private struct ActionBarHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
     }
 }
 

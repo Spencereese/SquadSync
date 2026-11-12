@@ -93,9 +93,18 @@ struct RoleTag: View {
 struct FormingDock: View {
     let party: Party
     var now: Date
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         let timer = party.locked ? "Locked" : "\(SpotRules.countdownText(party, now: now)) left"
         return HStack(spacing: SQSpace.m) {
+            if typeSize.isAccessibilitySize {
+                Text("\(party.game) · \(SpotRules.filled(party))/\(party.targetSize) · \(timer)")
+                    .font(.headline)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+                Spacer(minLength: SQSpace.s)
+            } else {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("\(party.game) · \(SpotRules.filled(party))/\(party.targetSize)")
                         .font(.headline)
@@ -105,12 +114,13 @@ struct FormingDock: View {
                         .foregroundStyle(SQColor.warning)
                 }
                 Spacer(minLength: SQSpace.s)
-                Image(systemName: "chevron.right")
-                    .foregroundStyle(SQColor.muted)
             }
-            .sqCard()
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(party.game), \(SpotRules.filled(party)) of \(party.targetSize), \(timer)")
+            Image(systemName: "chevron.right")
+                .foregroundStyle(SQColor.muted)
+        }
+        .sqCard()
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(party.game), \(SpotRules.filled(party)) of \(party.targetSize), \(timer)")
     }
 }
 

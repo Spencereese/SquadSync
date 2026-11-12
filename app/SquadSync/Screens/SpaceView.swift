@@ -6,24 +6,16 @@ struct SpaceView: View {
 
     var body: some View {
         List {
-            Section("Channels") {
-                ForEach(store.conversations.filter { $0.kind == .channel || $0.kind == .squadSpace }) { channel in
-                    NavigationLink(value: channel.id) {
-                        Text(channel.title).lineLimit(typeSize.isAccessibilitySize ? 1 : 2)
-                    }
-                }
-            }
-            Section("Members") {
-                ForEach(store.people) { person in
-                    memberRow(person)
-                        .accessibilityElement(children: .combine)
-                        .accessibilityIdentifier("member-\(person.id)")
-                }
+            if typeSize.isAccessibilitySize {
+                members
+                channels
+            } else {
+                channels
+                members
             }
         }
         .listRowSpacing(typeSize.isAccessibilitySize ? 4 : 8)
-        .contentMargins(.bottom, typeSize.isAccessibilitySize ? SQSpace.l : SQSpace.s, for: .scrollContent)
-        .padding(.bottom, typeSize.isAccessibilitySize ? SQSpace.tabOverlapAX : 0)
+        .contentMargins(.bottom, typeSize.isAccessibilitySize ? SQSpace.tabBarInset : SQSpace.s, for: .scrollContent)
         .navigationDestination(for: String.self) { id in
             if let conversation = store.conversations.first(where: { $0.id == id }) {
                 ThreadView(store: store, conversation: conversation)
@@ -34,6 +26,26 @@ struct SpaceView: View {
             if store.screen == .empty {
                 StateBanner(title: "No members", detail: "The mock squad is empty.")
                     .padding()
+            }
+        }
+    }
+
+    private var channels: some View {
+        Section("Channels") {
+            ForEach(store.conversations.filter { $0.kind == .channel || $0.kind == .squadSpace }) { channel in
+                NavigationLink(value: channel.id) {
+                    Text(channel.title).lineLimit(typeSize.isAccessibilitySize ? 1 : 2)
+                }
+            }
+        }
+    }
+
+    private var members: some View {
+        Section("Members") {
+            ForEach(store.people) { person in
+                memberRow(person)
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("member-\(person.id)")
             }
         }
     }

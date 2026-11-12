@@ -62,7 +62,7 @@ struct InboxView: View {
             }
             .padding(SQSpace.l)
         }
-        .contentMargins(.bottom, typeSize.isAccessibilitySize ? SQSpace.xl : SQSpace.m, for: .scrollContent)
+        .contentMargins(.bottom, typeSize.isAccessibilitySize ? SQSpace.tabBarInset : SQSpace.m, for: .scrollContent)
         .navigationDestination(for: String.self) { id in
             thread(for: id)
         }
@@ -121,6 +121,7 @@ struct InboxView: View {
             .padding(.vertical, SQSpace.s)
         }
         .buttonStyle(.plain)
+        .accessibilityIdentifier("inbox-\(conversation.id)")
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
@@ -157,23 +158,6 @@ private struct PresenceStrip: View {
                 }
                 if !plan.hidden.isEmpty {
                     overflow(plan.hidden)
-                }
-            }
-            .overlay(alignment: .trailing) {
-                if !plan.hidden.isEmpty {
-                    LinearGradient(
-                        stops: [
-                            .init(color: SQColor.canvas.opacity(0), location: 0),
-                            .init(color: SQColor.canvas.opacity(0.55), location: 0.45),
-                            .init(color: SQColor.canvas, location: 1)
-                        ],
-                        startPoint: .leading,
-                        endPoint: .trailing
-                    )
-                    .frame(width: 72)
-                    .padding(.trailing, cueWidth)
-                    .allowsHitTesting(false)
-                    .accessibilityHidden(true)
                 }
             }
         }
@@ -222,7 +206,17 @@ private struct PresenceStrip: View {
                 .fixedSize(horizontal: true, vertical: false)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(SQColor.card, in: Capsule())
+                .background {
+                    ZStack {
+                        Capsule().fill(SQColor.card)
+                        LinearGradient(
+                            colors: [SQColor.canvas.opacity(0.2), SQColor.canvas.opacity(0.85)],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .clipShape(Capsule())
+                    }
+                }
                 .overlay(Capsule().stroke(SQColor.line, lineWidth: 1))
         }
         .buttonStyle(.plain)

@@ -22,15 +22,13 @@ struct SpaceView: View {
                     .accessibilityElement(children: .combine)
                 }
             }
-            Section {
-                Color.clear
-                    .frame(height: typeSize.isAccessibilitySize ? SQSpace.tabClearanceAX : SQSpace.tabClearance)
-                    .accessibilityHidden(true)
-                    .listRowBackground(Color.clear)
-                    .listRowSeparator(.hidden)
-            }
         }
-        .contentMargins(.bottom, typeSize.isAccessibilitySize ? SQSpace.tabClearanceAX : SQSpace.tabClearance, for: .scrollContent)
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            Color.clear
+                .frame(height: typeSize.isAccessibilitySize ? SQSpace.tabClearanceAX : SQSpace.tabClearance)
+                .accessibilityHidden(true)
+        }
+        .safeAreaPadding(.bottom, typeSize.isAccessibilitySize ? SQSpace.m : SQSpace.s)
         .navigationDestination(for: String.self) { id in
             if let conversation = store.conversations.first(where: { $0.id == id }) {
                 ThreadView(store: store, conversation: conversation)

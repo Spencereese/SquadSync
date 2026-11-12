@@ -69,23 +69,8 @@ struct InboxView: View {
     }
 
     private var presence: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(alignment: .top, spacing: SQSpace.m) {
-                ForEach(store.people) { person in
-                    VStack(spacing: 4) {
-                        PresenceAvatar(person: person)
-                        Text(person.name)
-                            .font(.caption2)
-                            .multilineTextAlignment(.center)
-                            .fixedSize(horizontal: true, vertical: true)
-                    }
-                    .accessibilityElement(children: .combine)
-                }
-            }
-            .padding(.horizontal, SQSpace.s)
-            .padding(.trailing, SQSpace.l)
-        }
-        .accessibilityLabel("Who is around")
+        PresenceStrip(people: store.people)
+            .padding(.horizontal, -SQSpace.s)
     }
 
     private func spaceRow(_ visible: [Conversation]) -> some View {
@@ -155,6 +140,108 @@ struct InboxView: View {
         } else {
             StateBanner(title: "Missing thread", detail: "That chat is not in the mock.")
         }
+    }
+}
+
+private struct PresenceStrip: View {
+    let people: [Person]
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var showRest = false
+
+    var body: some View {
+        GeometryReader { proxy in
+            let plan = layout(width: proxy.size.width)
+            HStack(alignment: .top, spacing: spacing) {
+                ForEach(plan.visible) { person in
+                    cell(person)
+                }
+                if !plan.hidden.isEmpty {
+                    overflow(plan.hidden)
+                }
+            }
+            .overlay(alignment: .trailing) {
+                if !plan.hidden.isEmpty {
+                    LinearGradient(
+                        colors: [SQColor.canvas.opacity(0), SQColor.canvas],
+                        startPoint: .leading,
+                        endPoint: .trailing
+                    )
+                    .frame(width: 32)
+                    .padding(.trailing, cueWidth)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                }
+            }
+        }
+        .frame(height: typeSize.isAccessibilitySize ? 112 : 64)
+        .accessibilityElement(children: .contain)
+        .sheet(isPresented: $showRest) { restSheet }
+    }
+
+    private var cellWidth: CGFloat { typeSize.isAccessibilitySize ? 84 : 52 }
+    private var avatarSize: CGFloat { typeSize.isAccessibilitySize ? 40 : 32 }
+    private var cueWidth: CGFloat { 48 }
+    private var spacing: CGFloat { SQSpace.s }
+
+    private func layout(width: CGFloat) -> (visible: [Person], hidden: [Person]) {
+        let stride = cellWidth + spacing
+        guard stride > 0, !people.isEmpty else { return ([], []) }
+        if CGFloat(people.count) * stride - spacing <= width {
+            return (people, [])
+        }
+        let room = max(stride, width - cueWidth)
+        let count = min(people.count, max(1, Int(room / stride)))
+        return (Array(people.prefix(count)), Array(people.dropFirst(count)))
+    }
+
+    private func cell(_ person: Person) -> some View {
+        VStack(spacing: 4) {
+            PresenceAvatar(person: person, size: avatarSize)
+            Text(person.name)
+                .font(.caption2)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .frame(width: cellWidth)
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func overflow(_ hidden: [Person]) -> some View {
+        Button { showRest = true } label: {
+            Text("+\(hidden.count)")
+                .font(.subheadline.weight(.semibold))
+                .frame(width: avatarSize, height: avatarSize)
+                .background(SQColor.card, in: Circle())
+                .overlay(Circle().stroke(SQColor.line, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(hidden.count) more: \(hidden.map(\.name).joined(separator: ", "))")
+        .accessibilityHint("Shows the rest of the squad")
+    }
+
+    private var restSheet: some View {
+        NavigationStack {
+            List(people) { person in
+                HStack(spacing: SQSpace.m) {
+                    PresenceAvatar(person: person, size: 36)
+                    Text(person.name)
+                        .font(.headline)
+                        .lineLimit(nil)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: SQSpace.s)
+                    RoleTag(role: person.role)
+                }
+                .accessibilityElement(children: .combine)
+            }
+            .navigationTitle("Who's around")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { showRest = false }
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 

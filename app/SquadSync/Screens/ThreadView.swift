@@ -13,6 +13,16 @@ struct ThreadView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if typeSize.isAccessibilitySize {
+                Text(conversation.title)
+                    .font(.title3.weight(.semibold))
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, SQSpace.l)
+                    .padding(.top, SQSpace.s)
+                    .accessibilityAddTraits(.isHeader)
+            }
             Text("\(store.onCount) of \(SpotRules.squadCap) on")
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(SQColor.muted)
@@ -23,17 +33,38 @@ struct ThreadView: View {
             PartyCardView(store: store, conversation: conversation)
                 .padding(.horizontal, SQSpace.l)
                 .padding(.top, SQSpace.s)
-            List {
-                ForEach(messages) { message in
-                    bubble(message)
+                .fixedSize(horizontal: false, vertical: true)
+            ScrollViewReader { proxy in
+                List {
+                    ForEach(messages) { message in
+                        bubble(message)
+                            .id(message.id)
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                    }
+                    Color.clear
+                        .frame(height: store.showsVoicePill ? SQSpace.xl : SQSpace.m)
+                        .id("thread-bottom")
                         .listRowSeparator(.hidden)
                         .listRowBackground(Color.clear)
+                        .accessibilityHidden(true)
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .contentMargins(.bottom, SQSpace.l, for: .scrollContent)
+                .frame(maxHeight: .infinity)
+                .onAppear {
+                    store.markSeen(in: conversation.id)
+                    if store.showsVoicePill {
+                        proxy.scrollTo("thread-bottom", anchor: .bottom)
+                    }
+                }
+                .onChange(of: store.showsVoicePill) { _, showing in
+                    if showing {
+                        withAnimation { proxy.scrollTo("thread-bottom", anchor: .bottom) }
+                    }
                 }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .frame(maxHeight: .infinity)
-            .onAppear { store.markSeen(in: conversation.id) }
             if store.showsVoicePill {
                 VoicePill(room: store.voice) { store.openVoice() }
                     .padding(.top, SQSpace.s)
@@ -61,16 +92,26 @@ struct ThreadView: View {
         .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Voice room") { store.openVoice() }
-                    .accessibilityLabel("Voice room")
-                    .accessibilityIdentifier("voice-room")
-                    .accessibilityAddTraits(.isButton)
+                Button { store.openVoice() } label: {
+                    Image(systemName: "waveform")
+                        .font(.body)
+                        .dynamicTypeSize(.medium ... .xxLarge)
+                        .accessibilityHidden(true)
+                }
+                .accessibilityLabel("Voice room")
+                .accessibilityIdentifier("voice-room")
+                .accessibilityAddTraits(.isButton)
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button("Handoff menu") { store.handoffSheetPresented = true }
-                    .accessibilityLabel("Handoff menu")
-                    .accessibilityIdentifier("handoff-menu")
-                    .accessibilityAddTraits(.isButton)
+                Button { store.handoffSheetPresented = true } label: {
+                    Image(systemName: "arrow.up.forward.app")
+                        .font(.body)
+                        .dynamicTypeSize(.medium ... .xxLarge)
+                        .accessibilityHidden(true)
+                }
+                .accessibilityLabel("Handoff menu")
+                .accessibilityIdentifier("handoff-menu")
+                .accessibilityAddTraits(.isButton)
             }
         }
         .sensoryFeedback(.success, trigger: store.party?.locked ?? false)
@@ -183,7 +224,9 @@ struct ThreadView: View {
                 Text(message.text)
                     .font(.body)
                     .foregroundStyle(mine ? Color.white : SQColor.ink)
+                    .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
                     .padding(.horizontal, SQSpace.m)
                     .padding(.vertical, SQSpace.s)
                     .background(mine ? SQColor.mine : SQColor.theirs, in: RoundedRectangle(cornerRadius: 18, style: .continuous))

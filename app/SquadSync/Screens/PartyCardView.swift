@@ -42,37 +42,83 @@ struct PartyCardView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(party.game)
                     .font(.headline)
+                    .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("\(SpotRules.filled(party))/\(party.targetSize) · \(party.locked ? "Locked" : SpotRules.countdownText(party, now: now))")
                     .font(.subheadline.monospacedDigit())
                     .foregroundStyle(party.locked ? SQColor.online : SQColor.warning)
+                    .lineLimit(nil)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("Open the party card")
                     .font(.caption)
                     .foregroundStyle(SQColor.muted)
+                    .lineLimit(nil)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .sqCard()
         }
         .buttonStyle(.plain)
+        .lineLimit(nil)
         .accessibilityHint("Opens the party card")
         .sheet(isPresented: $open) {
-            NavigationStack {
-                ScrollView {
-                    PartyCardView(store: store, conversation: conversation, showsFullCard: true)
-                        .padding(SQSpace.l)
-                }
-                .background(SQColor.canvas)
-                .navigationTitle(party.game)
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) {
-                        Button("Close") { open = false }
-                            .accessibilityIdentifier("party-close")
+            partySheet(party)
+        }
+    }
+
+    private func partySheet(_ party: Party) -> some View {
+        NavigationStack {
+            TimelineView(.periodic(from: .now, by: 1)) { context in
+                VStack(spacing: 0) {
+                    ScrollView {
+                        sheetDetails(party, now: context.date)
+                            .padding(SQSpace.l)
+                    }
+                    if !party.locked {
+                        actionRow(party, now: context.date)
+                            .padding(SQSpace.l)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(.ultraThinMaterial)
                     }
                 }
             }
+            .background(SQColor.canvas)
+            .navigationTitle(party.game)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") { open = false }
+                        .accessibilityIdentifier("party-close")
+                }
+            }
         }
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func sheetDetails(_ party: Party, now: Date) -> some View {
+        VStack(alignment: .leading, spacing: SQSpace.m) {
+            Text("\(SpotRules.filled(party))/\(party.targetSize) · \(party.locked ? "Locked" : SpotRules.countdownText(party, now: now))")
+                .font(.subheadline.monospacedDigit())
+                .foregroundStyle(party.locked ? SQColor.online : SQColor.warning)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(availabilityLine)
+                .font(.footnote)
+                .foregroundStyle(SQColor.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            slotRow(party)
+            if store.people.contains(where: { SpotRules.isStarterExempt($0) && party.seat(for: $0.id) != nil }) {
+                Text("Starters already in a game stay in after the five minutes.")
+                    .font(.footnote)
+                    .foregroundStyle(SQColor.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Text("Spot already up. This is the card in play.")
+                .font(.footnote)
+                .foregroundStyle(SQColor.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func card(_ party: Party, now: Date) -> some View {

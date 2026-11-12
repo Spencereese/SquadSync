@@ -391,8 +391,6 @@
 				ENABLE_TESTABILITY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SquadSync/Info.plist;
-				INFOPLIST_KEY_SupabaseAnonKey = "$(SUPABASE_ANON_KEY)";
-				INFOPLIST_KEY_SupabaseURL = "$(SUPABASE_URL)";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				LD_RUNPATH_SEARCH_PATHS = ( "$(inherited)", "@executable_path/Frameworks" );
 				MARKETING_VERSION = 0.1.0;
@@ -418,8 +416,6 @@
 				ENABLE_TESTABILITY = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SquadSync/Info.plist;
-				INFOPLIST_KEY_SupabaseAnonKey = "$(SUPABASE_ANON_KEY)";
-				INFOPLIST_KEY_SupabaseURL = "$(SUPABASE_URL)";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				LD_RUNPATH_SEARCH_PATHS = ( "$(inherited)", "@executable_path/Frameworks" );
 				MARKETING_VERSION = 0.1.0;

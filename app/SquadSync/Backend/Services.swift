@@ -20,20 +20,42 @@ enum BackendFailure: Error, Equatable {
 }
 
 struct BackendConfig: Equatable {
-    var url: URL
+    var urlText: String
     var anonKey: String
 
-    var isConfigured: Bool {
+    var url: URL? {
+        let text = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !text.contains("$(") else { return nil }
+        return URL(string: text)
+    }
+
+    var missingKeys: [String] {
+        var keys: [String] = []
+        if url == nil { keys.append("SupabaseURL") }
         let key = anonKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        return !key.isEmpty && key != "paste-anon-key-here"
+        if key.isEmpty || key == "paste-anon-key-here" || key.contains("$(") {
+            keys.append("SupabaseAnonKey")
+        }
+        return keys
+    }
+
+    var isConfigured: Bool { missingKeys.isEmpty }
+
+    var configurationError: String? {
+        let keys = missingKeys
+        guard !keys.isEmpty else { return nil }
+        return "Supabase is not configured. Empty: \(keys.joined(separator: ", "))."
+    }
+
+    static func parse(_ info: [String: Any]) -> BackendConfig {
+        BackendConfig(
+            urlText: info["SupabaseURL"] as? String ?? "",
+            anonKey: info["SupabaseAnonKey"] as? String ?? ""
+        )
     }
 
     static func fromBundle(_ bundle: Bundle = .main) -> BackendConfig {
-        let rawURL = bundle.object(forInfoDictionaryKey: "SupabaseURL") as? String ?? ""
-        let key = (bundle.object(forInfoDictionaryKey: "SupabaseAnonKey") as? String ?? "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        let url = URL(string: rawURL) ?? URL(string: "https://sfckxrnoiwetmzdycqaa.supabase.co")!
-        return BackendConfig(url: url, anonKey: key)
+        parse(bundle.infoDictionary ?? [:])
     }
 }
 
@@ -90,16 +112,16 @@ struct RemoteMessage: Equatable, Identifiable, Codable {
 }
 
 protocol SessionStoring: AnyObject {
-    func load() -> AuthSession?
-    func save(_ session: AuthSession)
-    func clear()
+    func load() throws -> AuthSession?
+    func save(_ session: AuthSession) throws
+    func clear() throws
 }
 
 protocol AuthService: AnyObject {
     func sendCode(to email: String) async throws
     func verify(email: String, code: String) async throws -> AuthSession
-    func restore() -> AuthSession?
-    func signOut() async
+    func restore() throws -> AuthSession?
+    func signOut() async throws
 }
 
 protocol ProfileService: AnyObject {

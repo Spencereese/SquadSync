@@ -25,8 +25,6 @@ targets:
       INFOPLIST_FILE: SquadSync/Info.plist
       PRODUCT_NAME: SquadSync
       TARGETED_DEVICE_FAMILY: "1"
-      INFOPLIST_KEY_SupabaseURL: $(SUPABASE_URL)
-      INFOPLIST_KEY_SupabaseAnonKey: $(SUPABASE_ANON_KEY)
     scheme:
       testTargets:
         - SquadSyncTests

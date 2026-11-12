@@ -12,8 +12,8 @@ struct SupabaseHTTP {
         prefer: String? = nil,
         feature: BackendFeature
     ) async throws -> Data {
-        guard config.isConfigured else { throw BackendFailure.notConfigured }
-        var url = config.url
+        guard config.isConfigured, let base = config.url else { throw BackendFailure.notConfigured }
+        var url = base
         for part in path.split(separator: "/") where !part.isEmpty {
             url.appendPathComponent(String(part))
         }

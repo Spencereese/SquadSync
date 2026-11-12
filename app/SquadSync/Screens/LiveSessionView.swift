@@ -36,11 +36,15 @@ final class LiveSessionModel {
     }
 
     func restore() async {
-        guard let session = auth.restore() else { return }
-        phase = .ready
-        email = session.email
-        await refresh(session)
-        startPolling(session)
+        do {
+            guard let session = try auth.restore() else { return }
+            phase = .ready
+            email = session.email
+            await refresh(session)
+            startPolling(session)
+        } catch {
+            status = (error as? SessionStoreError)?.message ?? "Session restore failed. \(error)"
+        }
     }
 
     func sendCode() async {
@@ -66,7 +70,7 @@ final class LiveSessionModel {
         profile.defaultGame = defaultGame
         self.profile = profile
         await run {
-            guard let session = auth.restore() else { throw BackendFailure.notSignedIn }
+            let session = try requiredSession()
             try await SupabaseProfileService(config: config, accessToken: session.accessToken).save(profile)
             status = "Profile saved."
         }
@@ -74,7 +78,7 @@ final class LiveSessionModel {
 
     func createSquad() async {
         await run {
-            guard let session = auth.restore() else { throw BackendFailure.notSignedIn }
+            let session = try requiredSession()
             let service = SupabaseSquadService(config: config, accessToken: session.accessToken)
             squad = try await service.createSquad(ownerId: session.userId)
             status = "Squad created."
@@ -84,7 +88,14 @@ final class LiveSessionModel {
 
     func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty, let session = auth.restore(), let squad else { return }
+        guard !text.isEmpty, let squad else { return }
+        let session: AuthSession
+        do {
+            session = try requiredSession()
+        } catch {
+            status = (error as? SessionStoreError)?.message ?? "Session restore failed. \(error)"
+            return
+        }
         let id = UUID()
         let now = Date()
         log.beginSend(id: id, senderId: session.userId, body: text, now: now)
@@ -93,7 +104,14 @@ final class LiveSessionModel {
     }
 
     func retry(_ id: UUID) async {
-        guard let session = auth.restore(), let entry = log.entries.first(where: { $0.id == id }), let squad else { return }
+        guard let squad, let entry = log.entries.first(where: { $0.id == id }) else { return }
+        let session: AuthSession
+        do {
+            session = try requiredSession()
+        } catch {
+            status = (error as? SessionStoreError)?.message ?? "Session restore failed. \(error)"
+            return
+        }
         log.retry(id: id)
         let message = RemoteMessage(id: id, squadId: squad.id, senderId: entry.senderId, body: entry.body, sentAt: entry.sentAt)
         await deliver(message, session: session)
@@ -102,12 +120,21 @@ final class LiveSessionModel {
     func signOut() async {
         poll?.cancel()
         poll = nil
-        await auth.signOut()
+        do {
+            try await auth.signOut()
+            status = "Signed out."
+        } catch {
+            status = (error as? SessionStoreError)?.message ?? "Sign out failed. \(error)"
+        }
         profile = nil
         squad = nil
         log = ChatLog()
         phase = .email
-        status = "Signed out."
+    }
+
+    private func requiredSession() throws -> AuthSession {
+        guard let session = try auth.restore() else { throw BackendFailure.notSignedIn }
+        return session
     }
 
     private func deliver(_ message: RemoteMessage, session: AuthSession) async {
@@ -192,7 +219,8 @@ final class LiveSessionModel {
     private func note(_ failure: BackendFailure) {
         switch failure {
         case .notConfigured:
-            status = "Supabase is not configured. Copy Config.example.xcconfig to Config.xcconfig and paste the anon key."
+            status = config.configurationError
+                ?? "Supabase is not configured. Copy Config.example.xcconfig to Config.xcconfig and paste the anon key."
         case .notSignedIn:
             status = "Sign in again."
         case .notSetUp(let feature):

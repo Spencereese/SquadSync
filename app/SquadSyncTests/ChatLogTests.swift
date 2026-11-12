@@ -63,7 +63,7 @@ final class ChatLogTests: XCTestCase {
 }
 
 final class AuthSessionTests: XCTestCase {
-    func testRestoreReturnsTheSavedSession() {
+    func testRestoreReturnsTheSavedSession() throws {
         let store = MemorySessionStore()
         let session = AuthSession(
             accessToken: "access",
@@ -71,27 +71,86 @@ final class AuthSessionTests: XCTestCase {
             userId: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
             email: "a@b.c"
         )
-        store.save(session)
+        try store.save(session)
         let auth = MockAuthService(store: store)
-        XCTAssertEqual(auth.restore(), session)
+        XCTAssertEqual(try auth.restore(), session)
     }
 
-    func testSignOutClearsTheRestoredSession() async {
+    func testSignOutClearsTheRestoredSession() async throws {
         let store = MemorySessionStore()
-        store.save(AuthSession(
+        try store.save(AuthSession(
             accessToken: "access",
             refreshToken: "refresh",
             userId: UUID(),
             email: "a@b.c"
         ))
         let auth = MockAuthService(store: store)
-        await auth.signOut()
-        XCTAssertNil(auth.restore())
+        try await auth.signOut()
+        XCTAssertNil(try auth.restore())
     }
 
     func testLaunchBackendDefaultsToMock() {
         let options = LaunchOptions.current(["SquadSync", "-screen", "inbox"])
         XCTAssertEqual(options.backend, .mock)
         XCTAssertEqual(LaunchOptions.current(["-backend", "live"]).backend, .live)
+    }
+}
+
+final class BackendConfigTests: XCTestCase {
+    func testParseReadsBothKeys() {
+        let config = BackendConfig.parse([
+            "SupabaseURL": "https://sfckxrnoiwetmzdycqaa.supabase.co",
+            "SupabaseAnonKey": "anon-key"
+        ])
+        XCTAssertEqual(config.url?.host, "sfckxrnoiwetmzdycqaa.supabase.co")
+        XCTAssertTrue(config.isConfigured)
+        XCTAssertNil(config.configurationError)
+    }
+
+    func testEmptyDictionaryNamesBothKeys() {
+        let config = BackendConfig.parse([:])
+        XCTAssertFalse(config.isConfigured)
+        XCTAssertEqual(
+            config.configurationError,
+            "Supabase is not configured. Empty: SupabaseURL, SupabaseAnonKey."
+        )
+    }
+
+    func testPlaceholderKeyNamesOnlyTheAnonKey() {
+        let config = BackendConfig.parse([
+            "SupabaseURL": "https://sfckxrnoiwetmzdycqaa.supabase.co",
+            "SupabaseAnonKey": "paste-anon-key-here"
+        ])
+        XCTAssertEqual(
+            config.configurationError,
+            "Supabase is not configured. Empty: SupabaseAnonKey."
+        )
+    }
+}
+
+final class KeychainFallbackTests: XCTestCase {
+    func testMissingEntitlementFallsBackOnlyWhenAllowed() {
+        let status = KeychainFallbackPolicy.missingEntitlement
+        XCTAssertEqual(
+            KeychainFallbackPolicy.choose(status: status, allowsFallback: true),
+            .insecureFallback
+        )
+        XCTAssertEqual(
+            KeychainFallbackPolicy.choose(status: status, allowsFallback: false),
+            .failure(status)
+        )
+    }
+
+    func testOtherKeychainErrorsStayFailures() {
+        let status: OSStatus = -25299
+        XCTAssertEqual(
+            KeychainFallbackPolicy.choose(status: status, allowsFallback: true),
+            .failure(status)
+        )
+    }
+
+    func testSuccessAndMissingItemStayOnTheKeychain() {
+        XCTAssertEqual(KeychainFallbackPolicy.choose(status: 0, allowsFallback: false), .keychain)
+        XCTAssertEqual(KeychainFallbackPolicy.choose(status: -25300, allowsFallback: true), .keychain)
     }
 }

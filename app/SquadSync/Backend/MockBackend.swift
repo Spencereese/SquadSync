@@ -23,13 +23,13 @@ final class MockAuthService: AuthService {
             userId: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
             email: trimmed
         )
-        store.save(session)
+        try store.save(session)
         return session
     }
 
-    func restore() -> AuthSession? { store.load() }
+    func restore() throws -> AuthSession? { try store.load() }
 
-    func signOut() async { store.clear() }
+    func signOut() async throws { try store.clear() }
 }
 
 final class MockProfileService: ProfileService {

@@ -34,19 +34,19 @@ final class SupabaseAuthService: AuthService {
             userId: decoded.user.id,
             email: decoded.user.email ?? email
         )
-        store.save(session)
+        try store.save(session)
         return session
     }
 
-    func restore() -> AuthSession? { store.load() }
+    func restore() throws -> AuthSession? { try store.load() }
 
-    func signOut() async {
-        if let token = store.load()?.accessToken {
+    func signOut() async throws {
+        if let token = try store.load()?.accessToken {
             var client = http()
             client.accessToken = token
             _ = try? await client.send(path: "auth/v1/logout", method: "POST", feature: .profile)
         }
-        store.clear()
+        try store.clear()
     }
 
     private func http() -> SupabaseHTTP { SupabaseHTTP(config: config, accessToken: nil) }

@@ -23,6 +23,12 @@ migrate_working_dir/
 # is commented out by default.
 #.vscode/
 
+# Xcode user state. The project file itself stays tracked.
+xcuserdata/
+*.xcuserstate
+DerivedData/
+app/**/DerivedData/
+
 # Flutter/Dart/Pub related
 **/doc/api/
 **/ios/Flutter/.last_build_id

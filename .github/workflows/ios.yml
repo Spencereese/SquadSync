@@ -1,5 +1,5 @@
-# Backend checks and, on later slices, the native iOS build.
-# Runs on push and pull request for ios/** and ios/main only.
+# Linux checks only. Runs on push and pull request for ios/** and ios/main.
+# iOS builds, simulator runs, and screenshots stay on the Mac mini.
 # Does not deploy, and does not run on repository default main or master.
 name: ios
 

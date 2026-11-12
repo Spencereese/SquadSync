@@ -21,4 +21,8 @@ On `ios/main` and `ios/**`:
 - FCM payload tests (Deno)
 - SQL RLS tests (Postgres 16)
 
+iOS builds, simulator runs, and screenshots stay on the Mac mini. See `app/README.md`.
+
 The Flutter analyze, widget test, and APK job does not run on this line.
+
+The SwiftUI prototype lives on `ios/slice-prototype-37ef` under `app/`.

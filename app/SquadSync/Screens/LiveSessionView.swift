@@ -355,7 +355,7 @@ struct LiveSessionView: View {
                     .disabled(model.busy)
             }
             if let squad = model.squad {
-                Text(squad.name.isEmpty ? "Squad · \(squad.members.count) of 8" : "\(squad.name) · \(squad.members.count) of 8")
+                Text(SquadTitle.line(name: squad.name, memberCount: squad.members.count))
                     .font(.headline)
                 ForEach(squad.members) { member in
                     Text(member.isOwner ? "\(member.displayName) · Owner" : member.displayName)

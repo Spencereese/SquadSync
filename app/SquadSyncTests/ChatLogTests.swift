@@ -164,6 +164,12 @@ final class SquadNameTests: XCTestCase {
         }
     }
 
+    func testEmptySquadNameUsesYourSquad() {
+        XCTAssertEqual(SquadTitle.line(name: "", memberCount: 1), "Your squad · 1 of 8")
+        XCTAssertEqual(SquadTitle.line(name: "   ", memberCount: 1), "Your squad · 1 of 8")
+        XCTAssertEqual(SquadTitle.line(name: "Friday", memberCount: 3), "Friday · 3 of 8")
+    }
+
     func testReloadDecodesTheSquadName() throws {
         let json = """
         {"id":"00000000-0000-0000-0000-000000000002","owner_id":"00000000-0000-0000-0000-000000000001","name":"Friday"}

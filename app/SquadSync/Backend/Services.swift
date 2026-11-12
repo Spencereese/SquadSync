@@ -126,6 +126,14 @@ enum SignInCode {
     }
 }
 
+enum SquadTitle {
+    static func line(name: String, memberCount: Int, cap: Int = 8) -> String {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        let title = trimmed.isEmpty ? "Your squad" : trimmed
+        return "\(title) · \(memberCount) of \(cap)"
+    }
+}
+
 enum SquadName {
     static let maxLength = 40
 

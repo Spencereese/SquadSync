@@ -14,8 +14,9 @@ struct SpaceView: View {
                 members
             }
         }
-        .listRowSpacing(typeSize.isAccessibilitySize ? 4 : 8)
+        .listRowSpacing(typeSize.isAccessibilitySize ? 0 : 8)
         .contentMargins(.bottom, SQSpace.s, for: .scrollContent)
+        .modifier(AccessibilityListTop(enabled: typeSize.isAccessibilitySize))
         .navigationBarTitleDisplayMode(typeSize.isAccessibilitySize ? .inline : .large)
         .navigationDestination(for: String.self) { id in
             if let conversation = store.conversations.first(where: { $0.id == id }) {
@@ -87,12 +88,24 @@ struct SpaceView: View {
     }
 }
 
+private struct AccessibilityListTop: ViewModifier {
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.contentMargins(.top, 0, for: .scrollContent)
+        } else {
+            content
+        }
+    }
+}
+
 private struct CompactListRow: ViewModifier {
     let enabled: Bool
 
     func body(content: Content) -> some View {
         if enabled {
-            content.listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+            content.listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
         } else {
             content
         }

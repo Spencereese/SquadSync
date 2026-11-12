@@ -226,16 +226,21 @@ struct PartyCardView: View {
         ForEach(party.seats) { seat in
             if let person = store.person(seat.userId) {
                 if stacked {
-                    HStack(spacing: SQSpace.m) {
+                    HStack(alignment: .center, spacing: SQSpace.m) {
                         PresenceAvatar(person: person, size: 44)
-                        Text(person.name)
-                            .font(.body)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(seat.status == .ready ? "Ready" : "In")
-                            .font(.body)
-                            .lineLimit(1)
-                            .fixedSize(horizontal: true, vertical: true)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(person.name)
+                                .font(.body)
+                                .lineLimit(2)
+                                .minimumScaleFactor(0.8)
+                                .allowsTightening(true)
+                                .multilineTextAlignment(.leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Text(seat.status == .ready ? "Ready" : "In")
+                                .font(.body)
+                                .lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                 } else {

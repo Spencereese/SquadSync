@@ -88,7 +88,34 @@ struct SquadMemberRecord: Equatable, Identifiable {
 struct SquadRecord: Equatable, Identifiable {
     let id: UUID
     let ownerId: UUID
+    var name: String
     var members: [SquadMemberRecord]
+}
+
+enum SignInCode {
+    static func normalized(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func isValid(_ raw: String) -> Bool {
+        let code = normalized(raw)
+        return (6...10).contains(code.count) && code.allSatisfy(\.isNumber)
+    }
+}
+
+enum SquadName {
+    static let maxLength = 40
+
+    static func normalized(_ raw: String) -> String {
+        raw.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func validationError(_ raw: String) -> String? {
+        let name = normalized(raw)
+        if name.isEmpty { return "Enter a squad name." }
+        if name.count > maxLength { return "Use 40 characters or fewer." }
+        return nil
+    }
 }
 
 struct RemoteMessage: Equatable, Identifiable, Codable {
@@ -131,7 +158,7 @@ protocol ProfileService: AnyObject {
 
 protocol SquadService: AnyObject {
     func currentSquad(userId: UUID) async throws -> SquadRecord?
-    func createSquad(ownerId: UUID) async throws -> SquadRecord
+    func createSquad(ownerId: UUID, name: String) async throws -> SquadRecord
 }
 
 protocol ChatService: AnyObject {

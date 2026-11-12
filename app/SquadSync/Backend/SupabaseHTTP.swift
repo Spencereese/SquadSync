@@ -53,8 +53,10 @@ struct SupabaseHTTP {
         guard let body = try? JSONDecoder().decode(ErrorBody.self, from: data) else {
             return status == 404
         }
+        if body.code == "PGRST204" { return false }
         if body.code == "PGRST205" || body.code == "42P01" { return true }
         let text = (body.message ?? "").lowercased()
+        if text.contains("could not find the") && text.contains("column") { return false }
         return text.contains("could not find the table") || text.contains("schema cache")
     }
 

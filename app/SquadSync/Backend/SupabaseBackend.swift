@@ -158,8 +158,12 @@ final class SupabaseSquadService: SquadService {
         return try await load(squadId: squadId)
     }
 
-    func createSquad(ownerId: UUID) async throws -> SquadRecord {
-        let body = try BackendJSON.encoder.encode(NewSquad(ownerId: ownerId))
+    func createSquad(ownerId: UUID, name: String) async throws -> SquadRecord {
+        let trimmed = SquadName.normalized(name)
+        if let error = SquadName.validationError(trimmed) {
+            throw BackendFailure.rejected(error)
+        }
+        let body = try BackendJSON.encoder.encode(NewSquad(ownerId: ownerId, name: trimmed))
         let data = try await http.send(
             path: "rest/v1/sq8_squads",
             method: "POST",
@@ -169,7 +173,9 @@ final class SupabaseSquadService: SquadService {
         )
         let created = try BackendJSON.decoder.decode([SquadRow].self, from: data)
         guard let row = created.first else { throw BackendFailure.rejected("Squad was not returned.") }
-        return try await load(squadId: row.id)
+        var record = try await load(squadId: row.id)
+        record.name = trimmed
+        return record
     }
 
     private func load(squadId: UUID) async throws -> SquadRecord {
@@ -204,7 +210,7 @@ final class SupabaseSquadService: SquadService {
                 isOwner: id == squad.ownerId
             )
         }
-        return SquadRecord(id: squad.id, ownerId: squad.ownerId, members: members)
+        return SquadRecord(id: squad.id, ownerId: squad.ownerId, name: "", members: members)
     }
 
     private func profiles(for ids: [UUID]) async throws -> [UserProfile] {
@@ -243,7 +249,11 @@ final class SupabaseSquadService: SquadService {
 
     private struct NewSquad: Encodable {
         let ownerId: UUID
-        enum CodingKeys: String, CodingKey { case ownerId = "owner_id" }
+        let name: String
+        enum CodingKeys: String, CodingKey {
+            case ownerId = "owner_id"
+            case name
+        }
     }
 }
 

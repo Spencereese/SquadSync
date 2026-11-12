@@ -63,6 +63,7 @@ struct InboxView: View {
             .padding(SQSpace.l)
         }
         .contentMargins(.bottom, typeSize.isAccessibilitySize ? SQSpace.tabBarInset : SQSpace.m, for: .scrollContent)
+        .safeAreaPadding(.bottom, typeSize.isAccessibilitySize ? SQSpace.tabBarInset : 0)
         .navigationDestination(for: String.self) { id in
             thread(for: id)
         }

@@ -12,6 +12,8 @@ final class LiveSessionModel {
     var squad: SquadRecord?
     var log = ChatLog()
     var draft = ""
+    var squadName = ""
+    var squadNameError = ""
     var status = ""
     var notes: [String] = [
         "Voice, spots, presence, and push stay mock. Leave off -backend live to use that shell."
@@ -51,11 +53,17 @@ final class LiveSessionModel {
         await run {
             try await auth.sendCode(to: email)
             phase = .code
-            status = "Check \(email) for a 6-digit code."
+            status = "Check \(email). Enter the code from your email."
         }
     }
 
     func verify() async {
+        let trimmed = SignInCode.normalized(code)
+        guard SignInCode.isValid(trimmed) else {
+            status = "Enter the code from your email."
+            return
+        }
+        code = trimmed
         await run {
             let session = try await auth.verify(email: email, code: code)
             phase = .ready
@@ -77,10 +85,16 @@ final class LiveSessionModel {
     }
 
     func createSquad() async {
+        if let error = SquadName.validationError(squadName) {
+            squadNameError = error
+            return
+        }
+        squadNameError = ""
+        let name = SquadName.normalized(squadName)
         await run {
             let session = try requiredSession()
             let service = SupabaseSquadService(config: config, accessToken: session.accessToken)
-            squad = try await service.createSquad(ownerId: session.userId)
+            squad = try await service.createSquad(ownerId: session.userId, name: name)
             status = "Squad created."
             await loadChat(session)
         }
@@ -128,6 +142,8 @@ final class LiveSessionModel {
         }
         profile = nil
         squad = nil
+        squadName = ""
+        squadNameError = ""
         log = ChatLog()
         phase = .email
     }
@@ -269,9 +285,12 @@ struct LiveSessionView: View {
                 .textInputAutocapitalization(.never)
                 .keyboardType(.emailAddress)
             if model.phase == .code {
-                TextField("6-digit code", text: Binding(get: { model.code }, set: { model.code = $0 }))
+                TextField("Code", text: Binding(get: { model.code }, set: { model.code = $0 }))
                     .textFieldStyle(.roundedBorder)
                     .keyboardType(.numberPad)
+                Text("Enter the code from your email.")
+                    .font(.footnote)
+                    .foregroundStyle(SQColor.muted)
                 Button("Verify") { Task { await model.verify() } }
                     .buttonStyle(.borderedProminent)
                     .disabled(model.busy)
@@ -298,7 +317,7 @@ struct LiveSessionView: View {
                     .disabled(model.busy)
             }
             if let squad = model.squad {
-                Text("Squad · \(squad.members.count) of 8")
+                Text(squad.name.isEmpty ? "Squad · \(squad.members.count) of 8" : "\(squad.name) · \(squad.members.count) of 8")
                     .font(.headline)
                 ForEach(squad.members) { member in
                     Text(member.isOwner ? "\(member.displayName) · Owner" : member.displayName)
@@ -326,6 +345,13 @@ struct LiveSessionView: View {
                 }
             } else {
                 Text("You're not in a squad yet.")
+                TextField("Squad name", text: Binding(get: { model.squadName }, set: { model.squadName = $0 }))
+                    .textFieldStyle(.roundedBorder)
+                if !model.squadNameError.isEmpty {
+                    Text(model.squadNameError)
+                        .font(.footnote)
+                        .foregroundStyle(SQColor.danger)
+                }
                 Button("Create squad") { Task { await model.createSquad() } }
                     .buttonStyle(.borderedProminent)
                     .disabled(model.busy)

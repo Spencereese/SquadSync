@@ -128,6 +128,43 @@ final class BackendConfigTests: XCTestCase {
     }
 }
 
+final class SignInCodeTests: XCTestCase {
+    func testAcceptsSixThroughTenDigits() {
+        XCTAssertTrue(SignInCode.isValid("123456"))
+        XCTAssertTrue(SignInCode.isValid("12345678"))
+        XCTAssertTrue(SignInCode.isValid(" 1234567890 "))
+        XCTAssertFalse(SignInCode.isValid("12345"))
+        XCTAssertFalse(SignInCode.isValid("12345678901"))
+        XCTAssertFalse(SignInCode.isValid("12345a"))
+        XCTAssertFalse(SignInCode.isValid(""))
+    }
+}
+
+final class SquadNameTests: XCTestCase {
+    func testTrimsToOneThroughFortyCharacters() {
+        XCTAssertNil(SquadName.validationError(" A "))
+        XCTAssertNil(SquadName.validationError(String(repeating: "a", count: 40)))
+        XCTAssertEqual(SquadName.validationError("   "), "Enter a squad name.")
+        XCTAssertEqual(
+            SquadName.validationError(String(repeating: "a", count: 41)),
+            "Use 40 characters or fewer."
+        )
+    }
+
+    func testCreateSquadKeepsTheTrimmedName() async throws {
+        let service = MockSquadService()
+        let squad = try await service.createSquad(ownerId: UUID(), name: "  Friday  ")
+        XCTAssertEqual(squad.name, "Friday")
+        let again = MockSquadService()
+        do {
+            _ = try await again.createSquad(ownerId: UUID(), name: " ")
+            XCTFail("A blank name should be rejected.")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .rejected("Enter a squad name."))
+        }
+    }
+}
+
 final class KeychainFallbackTests: XCTestCase {
     func testMissingEntitlementFallsBackOnlyWhenAllowed() {
         let status = KeychainFallbackPolicy.missingEntitlement

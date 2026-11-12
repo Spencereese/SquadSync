@@ -14,8 +14,8 @@ final class MockAuthService: AuthService {
 
     func verify(email: String, code: String) async throws -> AuthSession {
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed == pendingEmail, code.count == 6, code.allSatisfy(\.isNumber) else {
-            throw BackendFailure.rejected("Enter the 6-digit code for that email.")
+        guard trimmed == pendingEmail, SignInCode.isValid(code) else {
+            throw BackendFailure.rejected("Enter the code from your email.")
         }
         let session = AuthSession(
             accessToken: "mock-access",
@@ -53,10 +53,15 @@ final class MockSquadService: SquadService {
 
     func currentSquad(userId: UUID) async throws -> SquadRecord? { squad }
 
-    func createSquad(ownerId: UUID) async throws -> SquadRecord {
+    func createSquad(ownerId: UUID, name: String) async throws -> SquadRecord {
+        let trimmed = SquadName.normalized(name)
+        if let error = SquadName.validationError(trimmed) {
+            throw BackendFailure.rejected(error)
+        }
         let created = SquadRecord(
             id: UUID(),
             ownerId: ownerId,
+            name: trimmed,
             members: [SquadMemberRecord(id: ownerId, displayName: "You", defaultGame: "Call of Duty", isOwner: true)]
         )
         squad = created

@@ -62,20 +62,24 @@ struct PartyCardView: View {
                 GeometryReader { geo in
                     VStack(spacing: 0) {
                         ScrollView {
-                            sheetDetails(party, now: context.date)
-                                .padding(SQSpace.l)
-                                .padding(.bottom, typeSize.isAccessibilitySize ? 64 : SQSpace.xxl)
+                            VStack(alignment: .leading, spacing: SQSpace.l) {
+                                sheetDetails(party, now: context.date)
+                                if typeSize.isAccessibilitySize, !party.locked {
+                                    actionRow(party, now: context.date)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .accessibilityIdentifier("party-actions")
+                                }
+                            }
+                            .padding(SQSpace.l)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .clipped()
-                        if !party.locked {
+                        if !typeSize.isAccessibilitySize, !party.locked {
                             actionBar(party, now: context.date)
                                 .layoutPriority(1)
                         }
                     }
                     .frame(width: geo.size.width, height: geo.size.height)
                     .background(SQColor.canvas)
-                    .clipped()
                 }
             }
             .navigationTitle(party.game)

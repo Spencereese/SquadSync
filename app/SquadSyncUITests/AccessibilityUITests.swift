@@ -69,13 +69,21 @@ final class AccessibilityUITests: XCTestCase {
         summary.tap()
 
         let last = app.descendants(matching: .any)["party-details-last"]
-        let barTop = app.descendants(matching: .any)["party-actions-background"]
+        let actions = app.descendants(matching: .any)["party-actions"]
         XCTAssertTrue(last.waitForExistence(timeout: 15), "Last party details line was not in the accessibility tree")
-        XCTAssertTrue(barTop.waitForExistence(timeout: 15), "Party action background was not in the accessibility tree")
+        XCTAssertTrue(actions.waitForExistence(timeout: 15), "Inline party actions were not in the accessibility tree")
         XCTAssertLessThanOrEqual(
             last.frame.maxY,
-            barTop.frame.minY + 1,
-            "Party details end at \(last.frame.maxY), under the action bar at \(barTop.frame.minY)"
+            actions.frame.minY + 1,
+            "Party details end at \(last.frame.maxY), under the inline actions at \(actions.frame.minY)"
         )
+
+        let scroll = app.scrollViews.firstMatch
+        var swipes = 0
+        while !actions.isHittable, swipes < 6 {
+            scroll.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(actions.isHittable, "Inline party actions were not reachable after scrolling")
     }
 }

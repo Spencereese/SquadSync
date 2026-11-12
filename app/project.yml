@@ -16,12 +16,17 @@ targets:
     platform: iOS
     sources:
       - SquadSync
+    configFiles:
+      Debug: Config.xcconfig
+      Release: Config.xcconfig
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.spencereese.squadsync
       GENERATE_INFOPLIST_FILE: YES
       INFOPLIST_FILE: SquadSync/Info.plist
       PRODUCT_NAME: SquadSync
       TARGETED_DEVICE_FAMILY: "1"
+      INFOPLIST_KEY_SupabaseURL: $(SUPABASE_URL)
+      INFOPLIST_KEY_SupabaseAnonKey: $(SUPABASE_ANON_KEY)
     scheme:
       testTargets:
         - SquadSyncTests

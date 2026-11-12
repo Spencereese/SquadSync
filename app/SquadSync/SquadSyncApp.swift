@@ -20,6 +20,7 @@ struct LaunchOptions {
     var screen: LaunchScreen = .inbox
     var scenario: LaunchScenario = .seated
     var largeText = false
+    var backend: BackendMode = .mock
 
     var path: [String] {
         switch screen {
@@ -41,6 +42,9 @@ struct LaunchOptions {
             options.scenario = scenario
         }
         options.largeText = arguments.contains("-uitest-largeText")
+        if let value = flag("-backend", in: arguments), let backend = BackendMode(rawValue: value) {
+            options.backend = backend
+        }
         return options
     }
 
@@ -65,7 +69,11 @@ struct SquadSyncApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView(store: store, launch: launch)
+            if launch.backend == .live {
+                LiveSessionView()
+            } else {
+                RootView(store: store, launch: launch)
+            }
         }
     }
 }

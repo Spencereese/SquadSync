@@ -23,6 +23,9 @@ migrate_working_dir/
 # is commented out by default.
 #.vscode/
 
+# Local Supabase URL and anon key. The example stays tracked.
+app/Config.xcconfig
+
 # Xcode user state. The project file itself stays tracked.
 xcuserdata/
 *.xcuserstate

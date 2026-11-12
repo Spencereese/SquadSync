@@ -81,3 +81,23 @@ xcrun simctl launch "$UDID" com.spencereese.squadsync -uitest-largeText -screen 
 The voice lounge is mock-only. `VoiceRoomService` is the seam for a later hosted room: join, leave, mute, participants, speaking levels, and a connection state of idle, connecting, connected, reconnecting, or failed. `InMemoryVoiceRoomService` is the fake. No voice SDK, account, or provider is included.
 
 The prototype starts in the inbox. The States menu shows loading, empty, and error. Tap a thread for bubbles, tapbacks, swipe-to-reply, the party card, voice, and handoff.
+
+## Live backend
+
+Mock data is the default. `-backend live` uses the existing Supabase project for email sign-in, your profile, your squad, and squad chat. Voice, spots, presence, and push stay mock.
+
+Before building, create the local config. The anon key is not in git.
+
+```bash
+cp app/Config.example.xcconfig app/Config.xcconfig
+```
+
+Open `app/Config.xcconfig` and replace `paste-anon-key-here` with the project anon key. The URL line is already the `sfckxrnoiwetmzdycqaa` project, written so xcconfig does not treat `//` as a comment.
+
+Then launch the simulator build with the live flag:
+
+```bash
+xcrun simctl launch "$UDID" com.spencereese.squadsync -backend live
+```
+
+Leave the flag off for the mock prototype and for the existing UI tests.

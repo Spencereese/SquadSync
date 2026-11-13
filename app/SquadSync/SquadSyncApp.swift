@@ -69,12 +69,18 @@ struct SquadSyncApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if launch.scenario == .invite {
+            if launch.scenario == .spotCall {
+                LiveSessionView(backend: .mock, scenario: .spotCall)
+                    .modifier(LargeTextLaunch(enabled: launch.largeText))
+            } else if launch.scenario == .invite {
                 LiveSessionView(backend: .mock, scenario: .invite)
+                    .modifier(LargeTextLaunch(enabled: launch.largeText))
             } else if launch.scenario == .noSquad {
                 LiveSessionView(backend: .mock)
+                    .modifier(LargeTextLaunch(enabled: launch.largeText))
             } else if launch.backend == .live {
                 LiveSessionView()
+                    .modifier(LargeTextLaunch(enabled: launch.largeText))
             } else {
                 RootView(store: store, launch: launch)
             }

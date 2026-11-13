@@ -25,6 +25,10 @@ final class LiveSessionModel {
     var selectedMessage: UUID?
     var reacting = false
     var viewerId: UUID?
+    var spot: SpotCall?
+    var spotGame = "Warzone"
+    var spotBusy = false
+    var spotNote = ""
     var status = ""
     var notes: [String] = [
         "Voice, spots, presence, and push stay mock. Leave off -backend live to use that shell."
@@ -38,6 +42,7 @@ final class LiveSessionModel {
     private let mockSquads: SquadService?
     private let mockChat: ChatService?
     private let mockInvites: InviteServing?
+    private let mockSpots: SpotServing?
     private var realtime: RealtimeClient?
     private var poll: Task<Void, Never>?
 
@@ -69,18 +74,27 @@ final class LiveSessionModel {
             self.phase = .ready
             self.email = session.email
             self.viewerId = session.userId
-            if scenario == .invite {
-                let seeded = squads.seed(ownerId: session.userId, name: "Friday")
+            if scenario == .spotCall {
+                let seeded = squads.seedSpotSquad(ownerId: session.userId)
                 self.squad = seeded
-                let message = RemoteMessage(
-                    id: ChatSeed.messageId,
-                    squadId: seeded.id,
-                    senderId: ChatSeed.otherId,
-                    body: "From Riley",
-                    sentAt: Date(timeIntervalSince1970: 1_700_000_000)
-                )
-                chat.seed(message)
-                log.ingest([message.entry()])
+                let card = SpotSeed.halfFilled(ownerId: session.userId, squadId: seeded.id, now: Date())
+                self.spot = card
+                self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: card)
+            } else {
+                self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: nil)
+                if scenario == .invite {
+                    let seeded = squads.seed(ownerId: session.userId, name: "Friday")
+                    self.squad = seeded
+                    let message = RemoteMessage(
+                        id: ChatSeed.messageId,
+                        squadId: seeded.id,
+                        senderId: ChatSeed.otherId,
+                        body: "From Riley",
+                        sentAt: Date(timeIntervalSince1970: 1_700_000_000)
+                    )
+                    chat.seed(message)
+                    log.ingest([message.entry()])
+                }
             }
         } else {
             let store = sessionStore ?? KeychainSessionStore()
@@ -90,11 +104,16 @@ final class LiveSessionModel {
             self.mockSquads = nil
             self.mockChat = nil
             self.mockInvites = nil
+            self.mockSpots = nil
         }
     }
 
     private func inviteService(_ session: AuthSession) -> InviteServing {
         mockInvites ?? SupabaseInviteService(config: config, accessToken: session.accessToken)
+    }
+
+    private func spotService(_ session: AuthSession) -> SpotServing {
+        mockSpots ?? SupabaseSpotService(config: config, accessToken: session.accessToken)
     }
 
     func restore() async {
@@ -219,6 +238,105 @@ final class LiveSessionModel {
         }
     }
 
+    func loadSpot(_ session: AuthSession) async {
+        guard let squad else { return }
+        do {
+            let loaded = try await spotService(session).current(squadId: squad.id)
+            if var loaded {
+                loaded.rsvps = loaded.rsvps.map { seat in
+                    var copy = seat
+                    if copy.name == "Player" {
+                        copy.name = squad.members.first { $0.id == seat.userId }?.displayName ?? "Player"
+                    }
+                    if let previous = spot?.seat(for: seat.userId), mockSpots != nil {
+                        copy.ready = previous.ready
+                    }
+                    return copy
+                }
+                spot = loaded
+            } else if mockSpots == nil {
+                spot = nil
+            }
+        } catch {
+            report(error)
+        }
+    }
+
+    func callSpots() async {
+        let game = spotGame.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !game.isEmpty else {
+            spotNote = SpotProblem.gameBlank.message
+            return
+        }
+        spotBusy = true
+        defer { spotBusy = false }
+        do {
+            let session = try requiredSession()
+            guard let squad else { return }
+            _ = try await spotService(session).call(squadId: squad.id, game: game, startsAt: Date())
+            await loadSpot(session)
+            spotNote = "Calling spots: \(game), 8 seats."
+        } catch {
+            spotNote = (error as? SpotProblem)?.message ?? error.localizedDescription
+        }
+    }
+
+    func joinSpot() async {
+        await changeSpot { session, call in
+            try await spotService(session).rsvp(callId: call.id, response: "in")
+            spotNote = "You're in."
+        }
+    }
+
+    func toggleReady() async {
+        guard let call = spot, let user = viewerId ?? profile?.id else { return }
+        let next = !(call.seat(for: user)?.ready ?? false)
+        spotBusy = true
+        defer { spotBusy = false }
+        do {
+            let session = try requiredSession()
+            try await spotService(session).setReady(callId: call.id, userId: user, ready: next)
+            await loadSpot(session)
+            if var call = spot, let index = call.rsvps.firstIndex(where: { $0.userId == user }) {
+                call.rsvps[index].ready = next
+                spot = call
+            }
+        } catch let problem as SpotProblem {
+            spotNote = problem.message
+        } catch {
+            report(error)
+        }
+    }
+
+    func lockSpot() async {
+        await changeSpot { session, call in
+            try await spotService(session).lock(callId: call.id)
+            spotNote = "Locked. Open in another app is only a launcher."
+        }
+    }
+
+    func cancelSpot() async {
+        await changeSpot { session, call in
+            try await spotService(session).cancel(callId: call.id)
+            spotNote = "Cancelled."
+        }
+    }
+
+    private func changeSpot(_ work: (AuthSession, SpotCall) async throws -> Void) async {
+        guard let call = spot else { return }
+        spotBusy = true
+        defer { spotBusy = false }
+        do {
+            let session = try requiredSession()
+            try await work(session, call)
+            await loadSpot(session)
+        } catch let problem as SpotProblem {
+            spotNote = problem.message
+        } catch {
+            report(error)
+        }
+    }
+
     func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let squad else { return }
@@ -318,6 +436,7 @@ final class LiveSessionModel {
             let squads = squadService(session)
             squad = try await squads.currentSquad(userId: session.userId)
             await loadChat(session)
+            await loadSpot(session)
         }
     }
 
@@ -345,6 +464,7 @@ final class LiveSessionModel {
     }
 
     var usesLiveSocket: Bool { mockChat == nil }
+    var readyIsLocalOnly: Bool { mockSpots == nil }
 
     private var usesSocket: Bool { usesLiveSocket }
 
@@ -398,6 +518,8 @@ final class LiveSessionModel {
             squad = try? await squadService(session).currentSquad(userId: session.userId)
         case .reaction(let mark, let removed):
             if removed { board.remove(mark) } else { board.add(mark) }
+        case .spots:
+            await loadSpot(session)
         case .read(let read):
             if let index = reads.firstIndex(where: { $0.userId == read.userId }) {
                 reads[index] = read
@@ -422,6 +544,7 @@ final class LiveSessionModel {
         do {
             let rows = try await chatService(session).history(squadId: squad.id)
             log.ingest(rows.map { $0.entry() })
+            await loadSpot(session)
         } catch {
             if RequestNoise.isCancellation(error) { return }
             report(error)
@@ -631,6 +754,12 @@ struct LiveSessionView: View {
             ZStack(alignment: .bottom) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
+                        if model.spot == nil {
+                            callSpotForm
+                        }
+                        if let spot = model.spot {
+                            spotCard(spot)
+                        }
                         ForEach(model.log.ordered) { entry in
                             messageRow(entry).id(entry.id)
                         }
@@ -665,6 +794,130 @@ struct LiveSessionView: View {
                 }
             }
         }
+    }
+
+    private var callSpotForm: some View {
+        VStack(alignment: .leading, spacing: SQSpace.s) {
+            TextField("Game", text: Binding(get: { model.spotGame }, set: { model.spotGame = $0 }))
+                .textFieldStyle(.roundedBorder)
+            Button("Call spots") { Task { await model.callSpots() } }
+                .disabled(model.spotBusy)
+            Text("Seats are capped at 8. This server does not store a smaller target.")
+                .font(.caption)
+                .foregroundStyle(SQColor.muted)
+        }
+        .padding(SQSpace.s)
+        .background(SQColor.card, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func spotCard(_ spot: SpotCall) -> some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let expired = SpotCallRules.showsExpired(spot, now: context.date)
+            let viewer = model.viewerId ?? model.profile?.id
+            let mine = viewer.flatMap { spot.seat(for: $0) }
+            VStack(alignment: .leading, spacing: SQSpace.s) {
+                Text("Calling spots: \(spot.game), \(spot.filled) of \(SpotCallRules.cap) seats")
+                    .font(.headline)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(statusLine(spot, expired: expired, now: context.date))
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(SQColor.warning)
+                    .accessibilityIdentifier("spot-countdown")
+                ForEach(spot.rsvps.filter(\.isIn)) { seat in
+                    Text(seatLine(seat))
+                        .font(.caption)
+                        .lineLimit(2)
+                }
+                Text("Check-in starters can join after the timer. 0013 does not know who is in a game.")
+                    .font(.caption2)
+                    .foregroundStyle(SQColor.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                if model.readyIsLocalOnly {
+                    Text("Ready is not stored. 0013 only records in or out, and lock does not wait for it.")
+                        .font(.caption2)
+                        .foregroundStyle(SQColor.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !model.spotNote.isEmpty {
+                    Text(model.spotNote)
+                        .font(.caption)
+                        .foregroundStyle(SQColor.muted)
+                }
+                if spot.status == .open && !expired {
+                    Button("Join") { Task { await model.joinSpot() } }
+                        .disabled(model.spotBusy || viewer == nil || !SpotCallRules.canJoin(spot, userId: viewer!, now: context.date))
+                        .accessibilityIdentifier("spot-join")
+                        .accessibilityLabel("Join the spot call")
+                    if mine?.isIn == true {
+                        Button(mine?.ready == true ? "Ready" : "Ready") { Task { await model.toggleReady() } }
+                            .disabled(model.spotBusy || model.readyIsLocalOnly)
+                            .accessibilityIdentifier("spot-ready")
+                            .accessibilityLabel(mine?.ready == true ? "Ready, on" : "Ready, off")
+                    }
+                }
+                if let viewer, SpotCallRules.canLock(spot, actorId: viewer, ownerId: model.squad?.ownerId ?? viewer) {
+                    Button("Lock") { Task { await model.lockSpot() } }
+                        .disabled(model.spotBusy)
+                        .accessibilityIdentifier("spot-lock")
+                        .accessibilityLabel("Lock the spot call")
+                }
+                if let viewer, SpotCallRules.canCancel(spot, actorId: viewer) {
+                    Button("Cancel") { Task { await model.cancelSpot() } }
+                        .disabled(model.spotBusy)
+                }
+                if spot.status == .locked {
+                    Text("Open in")
+                        .font(.caption.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    ForEach(PartyLauncher.destinations) { destination in
+                        Button {
+                            openLauncher(destination)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Open in \(destination.title)")
+                                    .font(.body)
+                                    .lineLimit(2)
+                                Text(destination.note)
+                                    .font(.caption2)
+                                    .foregroundStyle(SQColor.muted)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .accessibilityIdentifier("spot-open-\(destination.title.lowercased())")
+                        .accessibilityLabel("Open in \(destination.title). \(destination.note)")
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(SQSpace.m)
+            .background(SQColor.card, in: RoundedRectangle(cornerRadius: 16))
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("spot-card")
+        }
+    }
+
+    private func statusLine(_ spot: SpotCall, expired: Bool, now: Date) -> String {
+        if spot.status == .cancelled { return "Cancelled" }
+        if spot.status == .ended { return "Ended" }
+        if spot.status == .locked { return "Locked" }
+        if expired { return "Expired" }
+        if spot.filled >= SpotCallRules.cap { return "Full · \(SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now))" }
+        return "\(SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now)) left"
+    }
+
+    private func seatLine(_ seat: SpotRsvp) -> String {
+        var bits = [seat.name]
+        if seat.starter { bits.append("starter") }
+        if seat.ready { bits.append("Ready") }
+        else { bits.append("In") }
+        return bits.joined(separator: " · ")
+    }
+
+    private func openLauncher(_ destination: PartyLauncher.Destination) {
+        let application = UIApplication.shared
+        let url = application.canOpenURL(destination.scheme) ? destination.scheme : destination.web
+        application.open(url)
     }
 
     private var composer: some View {

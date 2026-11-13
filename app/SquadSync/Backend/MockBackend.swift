@@ -58,9 +58,23 @@ final class MockSquadService: SquadService {
             id: ChatSeed.squadId,
             ownerId: ownerId,
             name: name,
+            members: [SquadMemberRecord(id: ownerId, displayName: "You", defaultGame: "Call of Duty", isOwner: true)]
+        )
+        squad = created
+        return created
+    }
+
+    func seedSpotSquad(ownerId: UUID) -> SquadRecord {
+        let created = SquadRecord(
+            id: ChatSeed.squadId,
+            ownerId: ownerId,
+            name: "Friday",
             members: [
                 SquadMemberRecord(id: ownerId, displayName: "You", defaultGame: "Call of Duty", isOwner: true),
-                SquadMemberRecord(id: ChatSeed.otherId, displayName: "Riley", defaultGame: "", isOwner: false)
+                SquadMemberRecord(id: SpotSeed.alex, displayName: "Alex", defaultGame: "Warzone", isOwner: false),
+                SquadMemberRecord(id: SpotSeed.jordan, displayName: "Jordan", defaultGame: "", isOwner: false),
+                SquadMemberRecord(id: SpotSeed.sam, displayName: "Sam", defaultGame: "", isOwner: false),
+                SquadMemberRecord(id: SpotSeed.casey, displayName: "Casey", defaultGame: "", isOwner: false)
             ]
         )
         squad = created
@@ -134,6 +148,100 @@ final class MockChatService: ChatService {
 
     private var reactionMarks: [ReactionMark] = []
     private var reads: [UUID: Date] = [:]
+}
+
+final class MockSpotService: SpotServing {
+    private var call: SpotCall?
+    private let viewerId: UUID
+    private let ownerId: UUID
+
+    init(viewerId: UUID, ownerId: UUID, call: SpotCall?) {
+        self.viewerId = viewerId
+        self.ownerId = ownerId
+        self.call = call
+    }
+
+    func current(squadId: UUID) async throws -> SpotCall? {
+        guard call?.squadId == squadId else { return nil }
+        return call
+    }
+
+    func call(squadId: UUID, game: String, startsAt: Date) async throws -> UUID {
+        let label = game.trimmingCharacters(in: .whitespacesAndNewlines)
+        if label.isEmpty { throw SpotProblem.gameBlank }
+        if let existing = call, existing.closedAt == nil, existing.status == .open || existing.status == .locked {
+            throw SpotProblem.alreadyOpen
+        }
+        let created = SpotCall(
+            id: UUID(),
+            squadId: squadId,
+            callerId: viewerId,
+            game: label,
+            calledAt: Date(),
+            joinUntil: Date().addingTimeInterval(SpotCallRules.window),
+            lockedAt: nil,
+            closedAt: nil,
+            status: .open,
+            rsvps: [SpotRsvp(userId: viewerId, name: "You", response: "in", starter: false, ready: false)]
+        )
+        call = created
+        return created.id
+    }
+
+    func rsvp(callId: UUID, response: String) async throws {
+        guard var call, call.id == callId else { throw SpotProblem.missing }
+        let answer = response.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard answer == "in" || answer == "out" else { throw SpotProblem.badResponse }
+        if call.status != .open || call.closedAt != nil { throw SpotProblem.closed }
+        if call.lockedAt != nil { throw SpotProblem.locked }
+        let starter = call.seat(for: viewerId)?.starter == true
+        if answer == "in" && Date() >= call.joinUntil && !starter { throw SpotProblem.joinClosed }
+        if answer == "in" && call.seat(for: viewerId)?.isIn != true && call.filled >= SpotCallRules.cap {
+            throw SpotProblem.full
+        }
+        if let index = call.rsvps.firstIndex(where: { $0.userId == viewerId }) {
+            call.rsvps[index].response = answer
+            if answer == "out" { call.rsvps[index].ready = false }
+        } else {
+            call.rsvps.append(SpotRsvp(userId: viewerId, name: "You", response: answer, starter: false, ready: false))
+        }
+        self.call = call
+    }
+
+    func lock(callId: UUID) async throws {
+        guard var call, call.id == callId else { throw SpotProblem.missing }
+        guard SpotCallRules.canLock(call, actorId: viewerId, ownerId: ownerId) else { throw SpotProblem.notCaller }
+        call.status = .locked
+        call.lockedAt = Date()
+        self.call = call
+    }
+
+    func cancel(callId: UUID) async throws {
+        guard var call, call.id == callId else { throw SpotProblem.missing }
+        guard SpotCallRules.canCancel(call, actorId: viewerId) else { throw SpotProblem.notCaller }
+        call.status = .cancelled
+        call.closedAt = Date()
+        self.call = call
+    }
+
+    func end(callId: UUID) async throws {
+        guard var call, call.id == callId else { throw SpotProblem.missing }
+        guard call.status == .locked else { throw SpotProblem.notLocked }
+        guard viewerId == call.callerId || viewerId == ownerId else { throw SpotProblem.notCaller }
+        call.status = .ended
+        call.closedAt = Date()
+        self.call = call
+    }
+
+    func setReady(callId: UUID, userId: UUID, ready: Bool) async throws {
+        guard var call, call.id == callId else { throw SpotProblem.missing }
+        guard call.status == .open else { throw SpotProblem.locked }
+        guard let index = call.rsvps.firstIndex(where: { $0.userId == userId && $0.isIn }) else {
+            throw SpotProblem.badResponse
+        }
+        call.rsvps[index].ready = ready
+        self.call = call
+    }
 }
 
 final class MockInviteService: InviteServing {

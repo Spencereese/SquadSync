@@ -110,6 +110,50 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(count.waitForNonExistence(timeout: 5), "Reaction count stayed after it was removed")
     }
 
+    func testMockSpotCallJoinAndReady() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall"]
+        app.launch()
+
+        let join = app.buttons["spot-join"]
+        XCTAssertTrue(join.waitForExistence(timeout: 15), "Join was not on the spot card")
+        XCTAssertEqual(join.label, "Join the spot call")
+        reveal(join, in: app)
+        join.tap()
+
+        let ready = app.buttons["spot-ready"]
+        XCTAssertTrue(ready.waitForExistence(timeout: 5), "Ready was not on the spot card after joining")
+        XCTAssertEqual(ready.label, "Ready, off")
+        ready.tap()
+        XCTAssertEqual(ready.label, "Ready, on")
+        ready.tap()
+        XCTAssertEqual(ready.label, "Ready, off")
+    }
+
+    func testMockSpotCallStaysReadableAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall", "-uitest-largeText"]
+        app.launch()
+
+        let card = app.descendants(matching: .any)["spot-card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 15), "Spot card was not in the accessibility tree")
+        let join = app.buttons["spot-join"]
+        XCTAssertTrue(join.waitForExistence(timeout: 5), "Join was not in the accessibility tree")
+        reveal(join, in: app)
+        XCTAssertTrue(join.isHittable, "Join was not reachable at the largest text size")
+        XCTAssertLessThan(join.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
+        XCTAssertTrue(app.descendants(matching: .any)["spot-countdown"].exists)
+    }
+
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        let chat = app.scrollViews.element(boundBy: max(app.scrollViews.count - 1, 0))
+        var swipes = 0
+        while !element.isHittable, swipes < 6 {
+            if chat.exists { chat.swipeUp() } else { app.swipeUp() }
+            swipes += 1
+        }
+    }
+
     func testMockInviteSendShowsTheRow() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "invite"]

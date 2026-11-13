@@ -523,3 +523,152 @@ final class SupabaseInviteService: InviteServing {
         }
     }
 }
+
+final class SupabaseSpotService: SpotServing {
+    private let http: SupabaseHTTP
+
+    init(config: BackendConfig, accessToken: String) {
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken)
+    }
+
+    func current(squadId: UUID) async throws -> SpotCall? {
+        let data = try await http.send(
+            path: "rest/v1/sq8_spot_calls",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "squad_id", value: "eq.\(squadId.uuidString)"),
+                URLQueryItem(name: "closed_at", value: "is.null"),
+                URLQueryItem(name: "select", value: "id,squad_id,caller_id,game,called_at,join_until,locked_at,closed_at,status"),
+                URLQueryItem(name: "order", value: "called_at.desc"),
+                URLQueryItem(name: "limit", value: "1")
+            ],
+            feature: .squad
+        )
+        let rows = try BackendJSON.decoder.decode([CallRow].self, from: data)
+        guard let row = rows.first else { return nil }
+        let seats = try await rsvps(callId: row.id)
+        return row.call(rsvps: seats)
+    }
+
+    func call(squadId: UUID, game: String, startsAt: Date) async throws -> UUID {
+        let body = try BackendJSON.encoder.encode(CallBody(squad: squadId, game: game, startsAt: startsAt))
+        let data = try await perform(path: "rest/v1/rpc/sq8_call_spot", body: body)
+        return try JSONDecoder().decode(UUID.self, from: data)
+    }
+
+    func rsvp(callId: UUID, response: String) async throws {
+        let body = try BackendJSON.encoder.encode(RsvpBody(callId: callId, response: response))
+        _ = try await perform(path: "rest/v1/rpc/sq8_rsvp_spot", body: body)
+    }
+
+    func lock(callId: UUID) async throws {
+        _ = try await perform(path: "rest/v1/rpc/sq8_lock_spot", body: try BackendJSON.encoder.encode(CallIdBody(callId: callId)))
+    }
+
+    func cancel(callId: UUID) async throws {
+        _ = try await perform(path: "rest/v1/rpc/sq8_cancel_spot", body: try BackendJSON.encoder.encode(CallIdBody(callId: callId)))
+    }
+
+    func end(callId: UUID) async throws {
+        _ = try await perform(path: "rest/v1/rpc/sq8_end_spot", body: try BackendJSON.encoder.encode(CallIdBody(callId: callId)))
+    }
+
+    func setReady(callId: UUID, userId: UUID, ready: Bool) async throws {
+        throw SpotProblem.badResponse
+    }
+
+    private func rsvps(callId: UUID) async throws -> [SpotRsvp] {
+        let data = try await http.send(
+            path: "rest/v1/sq8_spot_rsvps",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "call_id", value: "eq.\(callId.uuidString)"),
+                URLQueryItem(name: "select", value: "user_id,response,starter")
+            ],
+            feature: .squad
+        )
+        return try BackendJSON.decoder.decode([RsvpRow].self, from: data).map {
+            SpotRsvp(userId: $0.userId, name: "Player", response: $0.response, starter: $0.starter, ready: false)
+        }
+    }
+
+    private func perform(path: String, body: Data) async throws -> Data {
+        do {
+            return try await http.send(path: path, method: "POST", body: body, feature: .squad)
+        } catch let failure as BackendFailure {
+            if case .rejected(let message) = failure { throw SpotProblem.from(serverMessage: message) }
+            throw failure
+        }
+    }
+
+    private struct CallRow: Decodable {
+        let id: UUID
+        let squadId: UUID
+        let callerId: UUID
+        let game: String
+        let calledAt: Date
+        let joinUntil: Date
+        let lockedAt: Date?
+        let closedAt: Date?
+        let status: String
+
+        enum CodingKeys: String, CodingKey {
+            case id, game, status
+            case squadId = "squad_id"
+            case callerId = "caller_id"
+            case calledAt = "called_at"
+            case joinUntil = "join_until"
+            case lockedAt = "locked_at"
+            case closedAt = "closed_at"
+        }
+
+        func call(rsvps: [SpotRsvp]) -> SpotCall {
+            SpotCall(
+                id: id,
+                squadId: squadId,
+                callerId: callerId,
+                game: game,
+                calledAt: calledAt,
+                joinUntil: joinUntil,
+                lockedAt: lockedAt,
+                closedAt: closedAt,
+                status: SpotCallStatus(rawValue: status) ?? .open,
+                rsvps: rsvps
+            )
+        }
+    }
+
+    private struct RsvpRow: Decodable {
+        let userId: UUID
+        let response: String
+        let starter: Bool
+        enum CodingKeys: String, CodingKey {
+            case response, starter
+            case userId = "user_id"
+        }
+    }
+
+    private struct CallBody: Encodable {
+        let squad: UUID
+        let game: String
+        let startsAt: Date
+        enum CodingKeys: String, CodingKey {
+            case squad, game
+            case startsAt = "starts_at"
+        }
+    }
+
+    private struct RsvpBody: Encodable {
+        let callId: UUID
+        let response: String
+        enum CodingKeys: String, CodingKey {
+            case response
+            case callId = "call_id"
+        }
+    }
+
+    private struct CallIdBody: Encodable {
+        let callId: UUID
+        enum CodingKeys: String, CodingKey { case callId = "call_id" }
+    }
+}

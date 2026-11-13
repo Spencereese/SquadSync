@@ -8,6 +8,7 @@ final class RealtimeClient {
         case roster
         case reaction(ReactionMark, removed: Bool)
         case read(MemberRead)
+        case spots
         case phase(RealtimeLink)
     }
 
@@ -92,7 +93,9 @@ final class RealtimeClient {
             change("sq8_messages", filter: "squad_id=eq.\(squad)"),
             change("sq8_squad_members", filter: "squad_id=eq.\(squad)"),
             change("sq8_message_reads", filter: "squad_id=eq.\(squad)"),
-            change("sq8_message_reactions", filter: nil)
+            change("sq8_message_reactions", filter: nil),
+            change("sq8_spot_calls", filter: "squad_id=eq.\(squad)"),
+            change("sq8_spot_rsvps", filter: nil)
         ]
         let payload: [String: Any] = [
             "access_token": accessToken,
@@ -229,6 +232,8 @@ final class RealtimeClient {
             let squad = uuid(record["squad_id"])
             if !removed, let squad, squad != squadId { return }
             onEvent(.reaction(ReactionMark(messageId: message, userId: user, emoji: emoji), removed: removed))
+        case "sq8_spot_calls", "sq8_spot_rsvps":
+            onEvent(.spots)
         default:
             break
         }

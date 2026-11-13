@@ -202,6 +202,16 @@ struct InviteTicket: Equatable {
     var squadId: UUID
 }
 
+protocol SpotServing: AnyObject {
+    func current(squadId: UUID) async throws -> SpotCall?
+    func call(squadId: UUID, game: String, startsAt: Date) async throws -> UUID
+    func rsvp(callId: UUID, response: String) async throws
+    func lock(callId: UUID) async throws
+    func cancel(callId: UUID) async throws
+    func end(callId: UUID) async throws
+    func setReady(callId: UUID, userId: UUID, ready: Bool) async throws
+}
+
 protocol InviteServing: AnyObject {
     func createInvite() async throws -> InviteTicket
     func join(code: String) async throws -> UUID

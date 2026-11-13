@@ -373,8 +373,13 @@ final class SupabaseSquadService: SquadService {
 final class SupabaseChatService: ChatService {
     private let http: SupabaseHTTP
 
-    init(config: BackendConfig, accessToken: String, refresher: TokenRefreshing? = nil) {
-        self.http = SupabaseHTTP(config: config, accessToken: accessToken, refresher: refresher)
+    init(
+        config: BackendConfig,
+        accessToken: String,
+        refresher: TokenRefreshing? = nil,
+        transport: HTTPTransport = URLSessionTransport.shared
+    ) {
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken, refresher: refresher, transport: transport)
     }
 
     func history(squadId: UUID) async throws -> [RemoteMessage] {
@@ -398,10 +403,12 @@ final class SupabaseChatService: ChatService {
 
     func markRead(squadId: UUID, userId: UUID, at: Date, messageId: UUID?) async throws {
         let body = try BackendJSON.encoder.encode(ReadWrite(userId: userId, squadId: squadId, lastReadAt: at, lastReadId: messageId))
+        let conflict = [URLQueryItem(name: "on_conflict", value: "user_id,squad_id")]
         do {
             _ = try await http.send(
                 path: "rest/v1/sq8_chat_read_state",
                 method: "POST",
+                query: conflict,
                 body: body,
                 prefer: "resolution=merge-duplicates,return=minimal",
                 feature: .readState
@@ -412,6 +419,7 @@ final class SupabaseChatService: ChatService {
             _ = try await http.send(
                 path: "rest/v1/sq8_message_reads",
                 method: "POST",
+                query: conflict,
                 body: body,
                 prefer: "resolution=merge-duplicates,return=minimal",
                 feature: .readState

@@ -622,6 +622,29 @@ final class SessionRefreshTests: XCTestCase {
         XCTAssertEqual(try store.load()?.refreshToken, "winner")
     }
 
+    func testMarkReadUpsertNamesThePrimaryKey() async throws {
+        let transport = ScriptedTransport(responses: [(201, Data()), (201, Data())])
+        let chat = SupabaseChatService(
+            config: config,
+            accessToken: "access",
+            transport: transport
+        )
+        try await chat.markRead(
+            squadId: UUID(uuidString: "00000000-0000-0000-0000-00000000C001")!,
+            userId: user,
+            at: now,
+            messageId: nil
+        )
+        XCTAssertEqual(transport.requests.count, 2)
+        for request in transport.requests {
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertTrue(request.url?.query?.contains("on_conflict=user_id") == true)
+            XCTAssertTrue(request.url?.path.hasSuffix("sq8_chat_read_state") == true
+                || request.url?.path.hasSuffix("sq8_message_reads") == true)
+            XCTAssertFalse(request.url?.path.contains("auth/v1/token") == true)
+        }
+    }
+
     func testAuthFailureDoesNotMeanTheSquadIsMissing() {
         XCTAssertEqual(SessionFailurePolicy.surface(.sessionEnded), .signIn(SessionFailurePolicy.ended))
         XCTAssertEqual(SessionFailurePolicy.surface(.reconnecting), .reconnecting)

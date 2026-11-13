@@ -90,7 +90,15 @@ enum RealtimeLink: Equatable {
     case reconnecting
     case down
 
-    var polls: Bool { self != .connected }
+    /// Poll only after the socket has failed or dropped. Connecting still has the launch fetch.
+    var polls: Bool {
+        switch self {
+        case .down, .reconnecting:
+            true
+        case .connecting, .connected:
+            false
+        }
+    }
 
     var notice: String? {
         switch self {

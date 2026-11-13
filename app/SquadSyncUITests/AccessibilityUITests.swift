@@ -115,6 +115,11 @@ final class AccessibilityUITests: XCTestCase {
         app.launchArguments = ["-backend", "mock", "-scenario", "spotCall"]
         app.launch()
 
+        let title = app.descendants(matching: .any)["squad-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "Squad title was not on the chat screen")
+        XCTAssertEqual(title.label, "Friday · 5 of 8")
+        XCTAssertGreaterThan(title.frame.height, 1, "Squad title was squeezed out, frame \(title.frame)")
+        XCTAssertTrue(app.windows.firstMatch.frame.intersects(title.frame), "Squad title is off screen, frame \(title.frame)")
         let join = app.buttons["spot-join"]
         XCTAssertTrue(join.waitForExistence(timeout: 15), "Join was not on the spot card")
         XCTAssertEqual(join.label, "Join the spot call")
@@ -175,8 +180,13 @@ final class AccessibilityUITests: XCTestCase {
         app.launchArguments = ["-backend", "mock", "-scenario", "spotCall", "-uitest-largeText"]
         app.launch()
 
+        let title = app.descendants(matching: .any)["squad-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "Squad title was not on the chat screen at large text")
+        XCTAssertEqual(title.label, "Friday · 5 of 8")
+        XCTAssertGreaterThan(title.frame.height, 1, "Squad title was squeezed out at large text, frame \(title.frame)")
         let join = app.buttons["active-call-join"]
         XCTAssertTrue(join.waitForExistence(timeout: 15), "Pinned Join was not under the title")
+        XCTAssertLessThanOrEqual(title.frame.maxY, join.frame.minY + 1, "Pinned Join covers the squad title")
         XCTAssertEqual(join.label, "Join the spot call")
         let field = app.textFields["Message"]
         XCTAssertTrue(field.waitForExistence(timeout: 5), "Message field was not on screen")

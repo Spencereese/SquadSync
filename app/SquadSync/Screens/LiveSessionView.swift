@@ -46,6 +46,7 @@ final class LiveSessionModel {
     private let mockSpots: SpotServing?
     private var realtime: RealtimeClient?
     private var poll: Task<Void, Never>?
+    private var historyGeneration = 0
 
     enum Phase {
         case email
@@ -455,6 +456,8 @@ final class LiveSessionModel {
 
     func becameActive() async {
         guard usesLiveSocket else { return }
+        poll?.cancel()
+        poll = nil
         expireStoredTokenIfRequested()
         do {
             guard let session = try await auth.prepareSession(now: Date()) else { return }
@@ -495,13 +498,17 @@ final class LiveSessionModel {
 
     private func loadChat(_ session: AuthSession) async {
         guard let squad else { return }
+        historyGeneration += 1
+        let generation = historyGeneration
         do {
             let chat = chatService(session)
             let rows = try await chat.history(squadId: squad.id)
+            guard generation == historyGeneration else { return }
             log.ingest(rows.map { $0.entry() })
             if let cursor = try? await chat.ownReadAt(squadId: squad.id, userId: session.userId) {
                 log.markRead(at: cursor)
             }
+            guard generation == historyGeneration else { return }
             let caughtUp = Date()
             log.markRead(at: caughtUp)
             try? await chat.markRead(squadId: squad.id, userId: session.userId, at: caughtUp, messageId: log.ordered.last?.id)
@@ -537,7 +544,6 @@ final class LiveSessionModel {
         }
         realtime = client
         client.start(config: config, accessToken: session.accessToken, squadId: squad.id)
-        beginPoll(session)
     }
 
     private func handle(_ event: RealtimeClient.Event, session: AuthSession) async {
@@ -594,8 +600,11 @@ final class LiveSessionModel {
 
     private func pollOnce(_ session: AuthSession) async {
         guard let squad else { return }
+        historyGeneration += 1
+        let generation = historyGeneration
         do {
             let rows = try await chatService(session).history(squadId: squad.id)
+            guard generation == historyGeneration else { return }
             log.ingest(rows.map { $0.entry() })
             await loadSpot(session)
         } catch {
@@ -727,10 +736,19 @@ struct LiveSessionView: View {
                 }
             }
             .padding(SQSpace.l)
-            .navigationTitle("SquadSync")
+            .navigationTitle(squadTitle ?? "SquadSync")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
+                if let squadTitle {
+                    ToolbarItem(placement: .principal) {
+                        Text(squadTitle)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.65)
+                            .accessibilityIdentifier("squad-title")
+                            .accessibilityAddTraits(.isHeader)
+                    }
+                }
                 if model.phase == .ready {
                     ToolbarItem(placement: .topBarTrailing) {
                         Button {
@@ -805,6 +823,11 @@ struct LiveSessionView: View {
         }
     }
 
+    private var squadTitle: String? {
+        guard model.phase == .ready, let squad = model.squad else { return nil }
+        return SquadTitle.line(name: squad.name, memberCount: squad.members.count)
+    }
+
     private var ready: some View {
         VStack(alignment: .leading, spacing: SQSpace.m) {
             if let spot = model.spot {
@@ -825,8 +848,6 @@ struct LiveSessionView: View {
                             .disabled(model.busy)
                     }
                     if let squad = model.squad {
-                        Text(SquadTitle.line(name: squad.name, memberCount: squad.members.count))
-                            .font(.headline)
                         ForEach(squad.members) { member in
                             Text(member.isOwner ? "\(member.displayName) · Owner" : member.displayName)
                         }

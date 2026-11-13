@@ -173,6 +173,7 @@ final class SquadNameTests: XCTestCase {
         log.ingest([row])
         ChatBackfill.apply(&log, history: [row, row])
         XCTAssertEqual(log.entries.count, 1)
+        XCTAssertEqual(RealtimeLink.connecting.polls, false)
         XCTAssertEqual(RealtimeLink.connected.polls, false)
         XCTAssertEqual(RealtimeLink.reconnecting.polls, true)
         XCTAssertEqual(RealtimeLink.down.polls, true)

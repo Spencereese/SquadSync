@@ -682,6 +682,7 @@ struct LiveSessionView: View {
     @State private var pinnedToBottom = true
     @State private var showNewMessages = false
     @State private var wentToBackground = false
+    @State private var composerInset: CGFloat = 0
     @ScaledMetric(relativeTo: .body) private var composerLine: CGFloat = 22
     @Environment(\.scenePhase) private var scenePhase
 
@@ -704,7 +705,14 @@ struct LiveSessionView: View {
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 if model.phase == .ready {
-                    Button("Sign out") { Task { await model.signOut() } }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Menu {
+                            Button("Sign out", role: .destructive) { Task { await model.signOut() } }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                        .accessibilityLabel("Account")
+                    }
                 }
             }
         }
@@ -805,20 +813,6 @@ struct LiveSessionView: View {
             }
             if model.squad != nil {
                 chatList
-                    .safeAreaInset(edge: .bottom, spacing: SQSpace.s) {
-                        VStack(alignment: .leading, spacing: SQSpace.xs) {
-                            let unread = model.log.unreadCount(viewerId: model.profile?.id ?? model.viewerId ?? UUID())
-                            if unread > 0 {
-                                Text("Unread \(unread)")
-                                    .font(.caption)
-                                    .accessibilityIdentifier("unread-count")
-                            }
-                            composer
-                        }
-                        .padding(.top, SQSpace.s)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(SQColor.canvas)
-                    }
                     .frame(minHeight: 180, maxHeight: .infinity, alignment: .top)
                     .layoutPriority(1)
             }
@@ -842,37 +836,65 @@ struct LiveSessionView: View {
 
     private var chatList: some View {
         ScrollViewReader { proxy in
-            ZStack(alignment: .bottom) {
-                ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        if model.spot == nil {
-                            callSpotForm
-                        }
-                        if let spot = model.spot {
-                            spotCard(spot)
-                        }
-                        ForEach(model.log.ordered) { entry in
-                            messageRow(entry).id(entry.id)
-                        }
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 2) {
+                    if model.spot == nil {
+                        callSpotForm
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(ChatContentFrame())
-                }
-                .accessibilityIdentifier("message-list")
-                .coordinateSpace(name: "chat")
-                .scrollDismissesKeyboard(.interactively)
-                .modifier(ChatPinModifier(pinned: $pinnedToBottom))
-                if showNewMessages {
-                    Button("New messages") {
-                        showNewMessages = false
-                        pinnedToBottom = true
-                        if let id = model.log.ordered.last?.id {
-                            proxy.scrollTo(id, anchor: .bottom)
-                        }
+                    if let spot = model.spot {
+                        spotCard(spot)
                     }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("new-messages")
+                    ForEach(model.log.ordered) { entry in
+                        messageRow(entry).id(entry.id)
+                    }
+                    Text("End of messages")
+                        .font(.system(size: 1))
+                        .foregroundStyle(.clear)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 1)
+                        .accessibilityIdentifier(ChatAnchor.end)
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(ChatContentFrame())
+            }
+            .coordinateSpace(name: "chat")
+            .scrollDismissesKeyboard(.interactively)
+            .modifier(ChatPinModifier(pinned: $pinnedToBottom))
+            .accessibilityIdentifier("message-list")
+            .safeAreaInset(edge: .bottom, spacing: SQSpace.s) {
+                VStack(alignment: .leading, spacing: SQSpace.xs) {
+                    if showNewMessages {
+                        Button("New messages") {
+                            showNewMessages = false
+                            pinnedToBottom = true
+                            scrollChatToBottom(proxy)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .accessibilityIdentifier("new-messages")
+                    }
+                    let unread = model.log.unreadCount(viewerId: model.profile?.id ?? model.viewerId ?? UUID())
+                    if unread > 0 {
+                        Text("Unread \(unread)")
+                            .font(.caption)
+                            .accessibilityIdentifier("unread-count")
+                    }
+                    composer
+                }
+                .padding(.top, SQSpace.s)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(SQColor.canvas)
+                .accessibilityIdentifier("composer")
+                .background {
+                    GeometryReader { geo in
+                        Color.clear.preference(key: ComposerHeightKey.self, value: geo.size.height)
+                    }
+                }
+            }
+            .onPreferenceChange(ComposerHeightKey.self) { height in
+                guard height > 0, abs(height - composerInset) > 0.5 else { return }
+                composerInset = height
+                guard pinnedToBottom, model.log.ordered.last != nil else { return }
+                scrollChatToBottom(proxy)
             }
             .onChange(of: model.log.ordered.last?.id) { _, id in
                 guard let id else { return }
@@ -885,6 +907,14 @@ struct LiveSessionView: View {
                     showNewMessages = true
                 }
             }
+        }
+    }
+
+    private func scrollChatToBottom(_ proxy: ScrollViewProxy) {
+        if let id = model.log.ordered.last?.id {
+            proxy.scrollTo(id, anchor: .bottom)
+        } else {
+            proxy.scrollTo(ChatAnchor.end, anchor: .bottom)
         }
     }
 
@@ -1296,6 +1326,17 @@ private struct WideRowButtonStyle: ButtonStyle {
         configuration.label
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
+    }
+}
+
+private enum ChatAnchor {
+    static let end = "message-list-end"
+}
+
+private struct ComposerHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = max(value, nextValue())
     }
 }
 

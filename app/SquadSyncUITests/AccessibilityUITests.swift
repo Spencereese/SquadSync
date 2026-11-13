@@ -128,6 +128,7 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertEqual(ready.label, "Ready, on")
         ready.tap()
         XCTAssertEqual(ready.label, "Ready, off")
+        assertListClearsComposer(app)
     }
 
     func testMockSpotCallCallerCanCancel() {
@@ -161,8 +162,12 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(join.waitForExistence(timeout: 5), "Join was not in the accessibility tree")
         reveal(join, in: app)
         XCTAssertTrue(join.isHittable, "Join was not reachable at the largest text size")
+        let composer = app.descendants(matching: .any)["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5), "Composer was not on screen")
+        XCTAssertLessThanOrEqual(join.frame.maxY, composer.frame.minY + 1, "Card Join is still under the composer")
         XCTAssertLessThan(join.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
         XCTAssertTrue(app.descendants(matching: .any)["spot-countdown"].exists)
+        assertListClearsComposer(app)
     }
 
     func testPinnedJoinStaysHittableAtLargeTextWithKeyboard() {
@@ -184,9 +189,46 @@ final class AccessibilityUITests: XCTestCase {
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
         let list = app.scrollViews["message-list"]
         var swipes = 0
-        while !element.isHittable, swipes < 6 {
+        while !element.isHittable, swipes < 12 {
             if list.exists { list.swipeUp() } else { app.swipeUp() }
             swipes += 1
+        }
+    }
+
+    private func assertListClearsComposer(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let list = app.scrollViews["message-list"]
+        let end = app.descendants(matching: .any)["message-list-end"]
+        let composer = app.descendants(matching: .any)["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5), "Composer was not on screen", file: file, line: line)
+        XCTAssertTrue(end.waitForExistence(timeout: 5), "List end was not in the accessibility tree", file: file, line: line)
+        var swipes = 0
+        while end.frame.maxY > composer.frame.minY + 1, swipes < 12 {
+            if list.exists { list.swipeUp() } else { app.swipeUp() }
+            swipes += 1
+        }
+        XCTAssertLessThanOrEqual(
+            end.frame.maxY,
+            composer.frame.minY + 1,
+            "List content ends under the composer. end \(end.frame) composer \(composer.frame)",
+            file: file,
+            line: line
+        )
+        let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'message-row-'"))
+        if rows.count > 0 {
+            var lowest = rows.element(boundBy: 0)
+            if rows.count > 1 {
+                for index in 1..<rows.count {
+                    let row = rows.element(boundBy: index)
+                    if row.frame.maxY > lowest.frame.maxY { lowest = row }
+                }
+            }
+            XCTAssertLessThanOrEqual(
+                lowest.frame.maxY,
+                composer.frame.minY + 1,
+                "Last row is under the composer. row \(lowest.frame) composer \(composer.frame)",
+                file: file,
+                line: line
+            )
         }
     }
 
@@ -197,6 +239,7 @@ final class AccessibilityUITests: XCTestCase {
 
         let field = app.textFields["Message"]
         XCTAssertTrue(field.waitForExistence(timeout: 15), "Message field was not on the invite screen")
+        assertListClearsComposer(app)
         let send = app.buttons["send-message"]
         XCTAssertTrue(send.waitForExistence(timeout: 5), "Send was not on screen")
         XCTAssertTrue(send.isHittable, "Send is covered, frame \(send.frame)")

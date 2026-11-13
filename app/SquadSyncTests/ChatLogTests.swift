@@ -309,14 +309,60 @@ final class SquadNameTests: XCTestCase {
         XCTAssertEqual(SquadTitle.line(name: "Friday", memberCount: 3), "Friday · 3 of 8")
     }
 
-    func testReloadDecodesTheSquadName() throws {
+    func testReloadDecodesASquadRowWithoutAName() throws {
         let json = """
-        {"id":"00000000-0000-0000-0000-000000000002","owner_id":"00000000-0000-0000-0000-000000000001","name":"Friday"}
+        {"id":"00000000-0000-0000-0000-000000000002","owner_id":"00000000-0000-0000-0000-000000000001"}
         """.data(using: .utf8)!
         let reloaded = try JSONDecoder().decode(SquadDetails.self, from: json)
-        XCTAssertEqual(reloaded.name, "Friday")
+        XCTAssertEqual(reloaded.name, "")
         XCTAssertEqual(reloaded.ownerId.uuidString, "00000000-0000-0000-0000-000000000001")
-        XCTAssertEqual(SquadSelect.columns, "id,owner_id,name")
+        XCTAssertEqual(SquadSelect.columns, "id,owner_id")
+        XCTAssertFalse(SquadSelect.columns.split(separator: ",").contains("name"))
+    }
+
+    func testLiveSquadSelectOmitsTheMissingNameColumn() async throws {
+        let owner = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let squad = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let transport = ScriptedTransport(responses: [
+            (200, Data("[{\"squad_id\":\"\(squad.uuidString)\"}]".utf8)),
+            (200, Data("[{\"id\":\"\(squad.uuidString)\",\"owner_id\":\"\(owner.uuidString)\"}]".utf8)),
+            (200, Data("[{\"user_id\":\"\(owner.uuidString)\"}]".utf8)),
+            (200, Data("[{\"id\":\"\(owner.uuidString)\",\"display_name\":\"A\",\"default_game\":\"Call of Duty\"}]".utf8))
+        ])
+        let config = BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: transport)
+        let loaded = try await service.currentSquad(userId: owner)
+        XCTAssertEqual(loaded?.name, "")
+        XCTAssertEqual(SquadTitle.line(name: loaded?.name ?? "", memberCount: loaded?.members.count ?? 0), "Your squad · 1 of 8")
+        let squadGet = try XCTUnwrap(transport.requests.first { $0.url?.path.hasSuffix("sq8_squads") == true })
+        let select = URLComponents(url: squadGet.url!, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first { $0.name == "select" }?
+            .value
+        XCTAssertEqual(select, "id,owner_id")
+        XCTAssertEqual(squadGet.httpMethod, "GET")
+    }
+
+    func testCreateSquadPostsOnlyTheLiveColumns() async throws {
+        let owner = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let squad = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let row = Data("[{\"id\":\"\(squad.uuidString)\",\"owner_id\":\"\(owner.uuidString)\"}]".utf8)
+        let transport = ScriptedTransport(responses: [
+            (201, row),
+            (200, row),
+            (200, Data("[{\"user_id\":\"\(owner.uuidString)\"}]".utf8)),
+            (200, Data("[{\"id\":\"\(owner.uuidString)\",\"display_name\":\"A\",\"default_game\":\"Call of Duty\"}]".utf8))
+        ])
+        let config = BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: transport)
+        let created = try await service.createSquad(ownerId: owner, name: "  Friday  ")
+        XCTAssertEqual(created.name, "Friday")
+        let post = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(post.httpMethod, "POST")
+        XCTAssertTrue(post.url?.path.hasSuffix("sq8_squads") == true)
+        let body = try JSONSerialization.jsonObject(with: post.httpBody ?? Data()) as? [String: String]
+        XCTAssertEqual(body?["owner_id"], owner.uuidString)
+        XCTAssertNil(body?["name"])
     }
 }
 

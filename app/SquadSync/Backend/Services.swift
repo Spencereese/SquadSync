@@ -124,7 +124,8 @@ struct SquadRecord: Equatable, Identifiable {
 }
 
 enum SquadSelect {
-    static let columns = "id,owner_id,name"
+    /// Live `sq8_squads` is `id`, `owner_id`, `created_at`. `name` is only in the unapplied 0018 file.
+    static let columns = "id,owner_id"
 }
 
 struct SquadDetails: Decodable, Equatable {

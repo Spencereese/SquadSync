@@ -258,8 +258,13 @@ final class SupabaseProfileService: ProfileService {
 final class SupabaseSquadService: SquadService {
     private let http: SupabaseHTTP
 
-    init(config: BackendConfig, accessToken: String, refresher: TokenRefreshing? = nil) {
-        self.http = SupabaseHTTP(config: config, accessToken: accessToken, refresher: refresher)
+    init(
+        config: BackendConfig,
+        accessToken: String,
+        refresher: TokenRefreshing? = nil,
+        transport: HTTPTransport = URLSessionTransport.shared
+    ) {
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken, transport: transport, refresher: refresher)
     }
 
     func currentSquad(userId: UUID) async throws -> SquadRecord? {
@@ -282,7 +287,7 @@ final class SupabaseSquadService: SquadService {
         if let error = SquadName.validationError(trimmed) {
             throw BackendFailure.rejected(error)
         }
-        let body = try BackendJSON.encoder.encode(NewSquad(ownerId: ownerId, name: trimmed))
+        let body = try BackendJSON.encoder.encode(NewSquad(ownerId: ownerId))
         let data = try await http.send(
             path: "rest/v1/sq8_squads",
             method: "POST",
@@ -298,7 +303,7 @@ final class SupabaseSquadService: SquadService {
     }
 
     private func load(squadId: UUID) async throws -> SquadRecord {
-        let squad = try await squadDetails(squadId: squadId)
+        let squad = try await fetchSquad(squadId: squadId)
         let memberData = try await http.send(
             path: "rest/v1/sq8_squad_members",
             method: "GET",
@@ -322,34 +327,19 @@ final class SupabaseSquadService: SquadService {
         return SquadRecord(id: squad.id, ownerId: squad.ownerId, name: squad.name, members: members)
     }
 
-    private func squadDetails(squadId: UUID) async throws -> SquadDetails {
-        do {
-            return try await fetchSquad(squadId: squadId, select: SquadSelect.columns)
-        } catch let failure as BackendFailure {
-            guard Self.missingNameColumn(failure) else { throw failure }
-            return try await fetchSquad(squadId: squadId, select: "id,owner_id")
-        }
-    }
-
-    private func fetchSquad(squadId: UUID, select: String) async throws -> SquadDetails {
+    private func fetchSquad(squadId: UUID) async throws -> SquadDetails {
         let squadData = try await http.send(
             path: "rest/v1/sq8_squads",
             method: "GET",
             query: [
                 URLQueryItem(name: "id", value: "eq.\(squadId.uuidString)"),
-                URLQueryItem(name: "select", value: select)
+                URLQueryItem(name: "select", value: SquadSelect.columns)
             ],
             feature: .squad
         )
         let squads = try BackendJSON.decoder.decode([SquadDetails].self, from: squadData)
         guard let squad = squads.first else { throw BackendFailure.rejected("Squad was not found.") }
         return squad
-    }
-
-    private static func missingNameColumn(_ failure: BackendFailure) -> Bool {
-        guard case .rejected(let message) = failure else { return false }
-        let text = message.lowercased()
-        return text.contains("name") && text.contains("column")
     }
 
     private func profiles(for ids: [UUID]) async throws -> [UserProfile] {
@@ -379,10 +369,8 @@ final class SupabaseSquadService: SquadService {
 
     private struct NewSquad: Encodable {
         let ownerId: UUID
-        let name: String
         enum CodingKeys: String, CodingKey {
             case ownerId = "owner_id"
-            case name
         }
     }
 }

@@ -164,7 +164,7 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(join.isHittable, "Join was not reachable at the largest text size")
         let composer = app.descendants(matching: .any)["composer"]
         XCTAssertTrue(composer.waitForExistence(timeout: 5), "Composer was not on screen")
-        XCTAssertLessThanOrEqual(join.frame.maxY, composer.frame.minY + 1, "Card Join is still under the composer")
+        XCTAssertLessThanOrEqual(join.frame.maxY + 8, composer.frame.minY, "Card Join is still under the composer")
         XCTAssertLessThan(join.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
         XCTAssertTrue(app.descendants(matching: .any)["spot-countdown"].exists)
         assertListClearsComposer(app)
@@ -188,10 +188,16 @@ final class AccessibilityUITests: XCTestCase {
 
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
         let list = app.scrollViews["message-list"]
-        var swipes = 0
-        while !element.isHittable, swipes < 12 {
-            if list.exists { list.swipeUp() } else { app.swipeUp() }
-            swipes += 1
+        var moves = 0
+        while !element.isHittable, moves < 24 {
+            if list.exists {
+                let start = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
+                let end = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.58))
+                start.press(forDuration: 0.01, thenDragTo: end)
+            } else {
+                app.swipeUp()
+            }
+            moves += 1
         }
     }
 
@@ -223,9 +229,9 @@ final class AccessibilityUITests: XCTestCase {
                 }
             }
             XCTAssertLessThanOrEqual(
-                lowest.frame.maxY,
-                composer.frame.minY + 1,
-                "Last row is under the composer. row \(lowest.frame) composer \(composer.frame)",
+                lowest.frame.maxY + 8,
+                composer.frame.minY,
+                "Last row footer is under the composer. row \(lowest.frame) composer \(composer.frame)",
                 file: file,
                 line: line
             )

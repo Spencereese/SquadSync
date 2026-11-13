@@ -1,15 +1,67 @@
 import Foundation
 
+struct URLSessionTransport: HTTPTransport {
+    /// Kept off `URLSession.shared` so a websocket cancel cannot abort an insert.
+    static let shared: URLSessionTransport = {
+        let configuration = URLSessionConfiguration.default
+        configuration.waitsForConnectivity = false
+        return URLSessionTransport(session: URLSession(configuration: configuration))
+    }()
+
+    private let session: URLSession
+
+    init(session: URLSession) {
+        self.session = session
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        try await session.data(for: request)
+    }
+}
+
+enum AccessTokenClock {
+    /// Refresh while the access token still has a minute left, and after it has expired.
+    static let leadTime: TimeInterval = 60
+
+    static func needsRefresh(_ token: String, now: Date) -> Bool {
+        guard let exp = expiry(of: token) else { return true }
+        return exp.timeIntervalSince(now) <= leadTime
+    }
+
+    static func expiry(of token: String) -> Date? {
+        let parts = token.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+        var payload = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = payload.count % 4
+        if remainder != 0 { payload += String(repeating: "=", count: 4 - remainder) }
+        guard let data = Data(base64Encoded: payload),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let exp = json["exp"] as? NSNumber else { return nil }
+        return Date(timeIntervalSince1970: exp.doubleValue)
+    }
+}
+
+enum AuthFailure {
+    static func matches(status: Int, body: Data) -> Bool {
+        guard status >= 400 else { return false }
+        if status == 401 { return true }
+        let raw = String(data: body, encoding: .utf8)?.lowercased() ?? ""
+        return mentionsJWT(raw)
+    }
+
+    static func mentionsJWT(_ message: String) -> Bool {
+        let text = message.lowercased()
+        return text.contains("jwt expired") || text.contains("invalid jwt")
+    }
+}
+
 struct SupabaseHTTP {
     let config: BackendConfig
     var accessToken: String?
-
-    /// Kept off `URLSession.shared` so a websocket cancel cannot abort an insert.
-    private static let session: URLSession = {
-        let configuration = URLSessionConfiguration.default
-        configuration.waitsForConnectivity = false
-        return URLSession(configuration: configuration)
-    }()
+    var transport: HTTPTransport = URLSessionTransport.shared
+    var refresher: TokenRefreshing?
 
     func send(
         path: String,
@@ -17,7 +69,8 @@ struct SupabaseHTTP {
         query: [URLQueryItem] = [],
         body: Data? = nil,
         prefer: String? = nil,
-        feature: BackendFeature
+        feature: BackendFeature,
+        allowRefresh: Bool = true
     ) async throws -> Data {
         guard config.isConfigured, let base = config.url else { throw BackendFailure.notConfigured }
         var url = base
@@ -41,16 +94,39 @@ struct SupabaseHTTP {
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await Self.session.data(for: request)
+            (data, response) = try await transport.data(for: request)
         } catch {
             if RequestNoise.isCancellation(error) { throw error }
-            throw BackendFailure.rejected(error.localizedDescription)
+            throw BackendFailure.reconnecting
         }
         guard let http = response as? HTTPURLResponse else {
             throw BackendFailure.rejected("No HTTP response.")
         }
         if http.statusCode == 409 { return data }
         if http.statusCode >= 200 && http.statusCode < 300 { return data }
+        if allowRefresh, accessToken != nil, AuthFailure.matches(status: http.statusCode, body: data) {
+            guard let refresher else {
+                throw BackendFailure.rejected(message(from: data) ?? "JWT expired")
+            }
+            switch await refresher.refreshAfterRejection() {
+            case .refreshed(let token):
+                var retry = self
+                retry.accessToken = token
+                return try await retry.send(
+                    path: path,
+                    method: method,
+                    query: query,
+                    body: body,
+                    prefer: prefer,
+                    feature: feature,
+                    allowRefresh: false
+                )
+            case .rejected:
+                throw BackendFailure.sessionEnded
+            case .unreachable:
+                throw BackendFailure.reconnecting
+            }
+        }
         if isMissing(data, status: http.statusCode) {
             throw BackendFailure.notSetUp(feature)
         }

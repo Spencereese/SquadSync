@@ -152,10 +152,10 @@ final class SpotCallRulesTests: XCTestCase {
 
     func testLockIsCallerOrOwnerAndDoesNotRequireReady() {
         let open = call()
-        XCTAssertTrue(SpotCallRules.canLock(open, actorId: caller, ownerId: owner))
-        XCTAssertTrue(SpotCallRules.canLock(open, actorId: owner, ownerId: owner))
-        XCTAssertFalse(SpotCallRules.canLock(open, actorId: member, ownerId: owner))
-        XCTAssertFalse(SpotCallRules.canLock(call(status: .cancelled), actorId: caller, ownerId: owner))
+        XCTAssertTrue(SpotCallRules.canLock(open, actorId: caller, ownerId: owner, now: start))
+        XCTAssertTrue(SpotCallRules.canLock(open, actorId: owner, ownerId: owner, now: start))
+        XCTAssertFalse(SpotCallRules.canLock(open, actorId: member, ownerId: owner, now: start))
+        XCTAssertFalse(SpotCallRules.canLock(call(status: .cancelled), actorId: caller, ownerId: owner, now: start))
         XCTAssertFalse(SpotCallRules.everyoneReady(open))
         var full = open
         full.rsvps = (0..<8).map { index in
@@ -170,5 +170,18 @@ final class SpotCallRulesTests: XCTestCase {
         XCTAssertTrue(SpotCallRules.everyoneReady(full))
         XCTAssertEqual(SpotProblem.from(serverMessage: "spot_full").message, "That spot call is full (8).")
         XCTAssertEqual(SpotProblem.from(serverMessage: "spot_join_closed"), .joinClosed)
+    }
+
+    func testExpiredOpenCallHidesJoinAndLock() {
+        var card = call()
+        card.joinUntil = start
+        let now = start.addingTimeInterval(1)
+        XCTAssertEqual(card.status, .open)
+        XCTAssertNil(card.closedAt)
+        XCTAssertTrue(SpotCallRules.showsExpired(card, now: now))
+        XCTAssertEqual(SpotCallRules.countdown(joinUntil: card.joinUntil, now: now), "0:00")
+        XCTAssertFalse(SpotCallRules.canJoin(card, userId: member, now: now))
+        XCTAssertFalse(SpotCallRules.canLock(card, actorId: caller, ownerId: owner, now: now))
+        XCTAssertFalse(SpotCallRules.canLock(card, actorId: owner, ownerId: owner, now: now))
     }
 }

@@ -151,9 +151,11 @@ enum SpotCallRules {
         return now < call.joinUntil
     }
 
-    /// 0013 lets the caller or the owner lock an open call. It does not look at Ready or at how many seats are filled.
-    static func canLock(_ call: SpotCall, actorId: UUID, ownerId: UUID) -> Bool {
-        guard call.status == .open, call.closedAt == nil else { return false }
+    /// 0013 lets the caller or the owner lock an open call. It does not look at Ready.
+    /// Once `join_until` has passed the row stays `open`, but the client does not offer Lock.
+    static func canLock(_ call: SpotCall, actorId: UUID, ownerId: UUID, now: Date) -> Bool {
+        guard call.status == .open, call.closedAt == nil, call.lockedAt == nil else { return false }
+        if now >= call.joinUntil { return false }
         return actorId == call.callerId || actorId == ownerId
     }
 
@@ -244,6 +246,24 @@ enum SpotSeed {
                 SpotRsvp(userId: casey, name: "Casey", response: "in", starter: false, ready: false)
             ]
         )
+    }
+
+    /// The signed-in person called it, so Cancel and Lock are theirs.
+    static func calledByViewer(ownerId: UUID, squadId: UUID, now: Date) -> SpotCall {
+        var card = halfFilled(ownerId: ownerId, squadId: squadId, now: now)
+        card = SpotCall(
+            id: card.id,
+            squadId: card.squadId,
+            callerId: ownerId,
+            game: card.game,
+            calledAt: card.calledAt,
+            joinUntil: card.joinUntil,
+            lockedAt: nil,
+            closedAt: nil,
+            status: .open,
+            rsvps: [SpotRsvp(userId: ownerId, name: "You", response: "in", starter: false, ready: false)] + card.rsvps
+        )
+        return card
     }
 }
 

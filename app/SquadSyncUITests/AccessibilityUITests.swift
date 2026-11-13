@@ -130,6 +130,26 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertEqual(ready.label, "Ready, off")
     }
 
+    func testMockSpotCallCallerCanCancel() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine"]
+        app.launch()
+
+        let cancel = app.buttons["spot-cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15), "Cancel was not on the caller's card")
+        XCTAssertEqual(cancel.label, "Cancel the spot call")
+        XCTAssertTrue(app.buttons["spot-lock"].waitForExistence(timeout: 5), "Lock was not on the caller's card")
+        reveal(cancel, in: app)
+        cancel.tap()
+
+        let status = app.descendants(matching: .any)["spot-countdown"]
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "Cancelled")
+        XCTAssertFalse(app.buttons["spot-join"].exists)
+        XCTAssertFalse(app.buttons["spot-lock"].exists)
+        XCTAssertFalse(app.buttons["spot-cancel"].exists)
+    }
+
     func testMockSpotCallStaysReadableAtLargeText() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "spotCall", "-uitest-largeText"]

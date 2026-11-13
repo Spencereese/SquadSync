@@ -1,12 +1,16 @@
 import Foundation
 
-final class SupabaseAuthService: AuthService {
+final class SupabaseAuthService: AuthService, TokenRefreshing {
     private let config: BackendConfig
     private let store: SessionStoring
+    private let transport: HTTPTransport
+    private var refreshTask: Task<AuthSession, Error>?
+    private let refreshLock = NSLock()
 
-    init(config: BackendConfig, store: SessionStoring) {
+    init(config: BackendConfig, store: SessionStoring, transport: HTTPTransport = URLSessionTransport.shared) {
         self.config = config
         self.store = store
+        self.transport = transport
     }
 
     func sendCode(to email: String) async throws {
@@ -40,6 +44,25 @@ final class SupabaseAuthService: AuthService {
 
     func restore() throws -> AuthSession? { try store.load() }
 
+    func prepareSession(now: Date) async throws -> AuthSession? {
+        guard let session = try store.load() else { return nil }
+        if !AccessTokenClock.needsRefresh(session.accessToken, now: now) { return session }
+        return try await refreshSharingWork()
+    }
+
+    func refreshAfterRejection() async -> TokenRefreshResult {
+        do {
+            let session = try await refreshSharingWork()
+            return .refreshed(session.accessToken)
+        } catch let failure as BackendFailure {
+            if case .sessionEnded = failure { return .rejected }
+            if case .notSignedIn = failure { return .rejected }
+            return .unreachable
+        } catch {
+            return .unreachable
+        }
+    }
+
     func signOut() async throws {
         if let token = try store.load()?.accessToken {
             var client = http()
@@ -49,7 +72,78 @@ final class SupabaseAuthService: AuthService {
         try store.clear()
     }
 
-    private func http() -> SupabaseHTTP { SupabaseHTTP(config: config, accessToken: nil) }
+    private func http() -> SupabaseHTTP { SupabaseHTTP(config: config, accessToken: nil, transport: transport) }
+
+    private func refreshSharingWork() async throws -> AuthSession {
+        let task: Task<AuthSession, Error> = refreshLock.withLock {
+            if let refreshTask { return refreshTask }
+            let created = Task { try await self.performRefresh() }
+            refreshTask = created
+            return created
+        }
+        do {
+            let session = try await task.value
+            refreshLock.withLock { refreshTask = nil }
+            return session
+        } catch {
+            refreshLock.withLock { refreshTask = nil }
+            throw error
+        }
+    }
+
+    private func performRefresh() async throws -> AuthSession {
+        guard let session = try store.load() else { throw BackendFailure.sessionEnded }
+        guard config.isConfigured, let base = config.url else { throw BackendFailure.notConfigured }
+        var url = base
+        url.appendPathComponent("auth")
+        url.appendPathComponent("v1")
+        url.appendPathComponent("token")
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw BackendFailure.rejected("Bad request URL.")
+        }
+        components.queryItems = [URLQueryItem(name: "grant_type", value: "refresh_token")]
+        guard let endpoint = components.url else { throw BackendFailure.rejected("Bad request URL.") }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue(config.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(RefreshBody(refreshToken: session.refreshToken))
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await transport.data(for: request)
+        } catch {
+            if RequestNoise.isCancellation(error) { throw error }
+            throw BackendFailure.reconnecting
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw BackendFailure.reconnecting
+        }
+        if http.statusCode == 401 || http.statusCode == 400 || http.statusCode == 403 {
+            try store.clear()
+            throw BackendFailure.sessionEnded
+        }
+        guard http.statusCode >= 200 && http.statusCode < 300 else {
+            throw BackendFailure.reconnecting
+        }
+        let decoded = try BackendJSON.decoder.decode(VerifyResponse.self, from: data)
+        let updated = AuthSession(
+            accessToken: decoded.accessToken,
+            refreshToken: decoded.refreshToken,
+            userId: decoded.user.id,
+            email: decoded.user.email ?? session.email
+        )
+        try store.save(updated)
+        return updated
+    }
+
+    private struct RefreshBody: Encodable {
+        let refreshToken: String
+        enum CodingKeys: String, CodingKey {
+            case refreshToken = "refresh_token"
+        }
+    }
 
     private struct EmailBody: Encodable {
         let email: String
@@ -85,8 +179,8 @@ final class SupabaseAuthService: AuthService {
 final class SupabaseProfileService: ProfileService {
     private let http: SupabaseHTTP
 
-    init(config: BackendConfig, accessToken: String) {
-        self.http = SupabaseHTTP(config: config, accessToken: accessToken)
+    init(config: BackendConfig, accessToken: String, refresher: TokenRefreshing? = nil) {
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken, refresher: refresher)
     }
 
     func loadOrCreate(userId: UUID, email: String) async throws -> UserProfile {
@@ -139,8 +233,8 @@ final class SupabaseProfileService: ProfileService {
 final class SupabaseSquadService: SquadService {
     private let http: SupabaseHTTP
 
-    init(config: BackendConfig, accessToken: String) {
-        self.http = SupabaseHTTP(config: config, accessToken: accessToken)
+    init(config: BackendConfig, accessToken: String, refresher: TokenRefreshing? = nil) {
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken, refresher: refresher)
     }
 
     func currentSquad(userId: UUID) async throws -> SquadRecord? {
@@ -271,8 +365,8 @@ final class SupabaseSquadService: SquadService {
 final class SupabaseChatService: ChatService {
     private let http: SupabaseHTTP
 
-    init(config: BackendConfig, accessToken: String) {
-        self.http = SupabaseHTTP(config: config, accessToken: accessToken)
+    init(config: BackendConfig, accessToken: String, refresher: TokenRefreshing? = nil) {
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken, refresher: refresher)
     }
 
     func history(squadId: UUID) async throws -> [RemoteMessage] {
@@ -475,8 +569,8 @@ final class SupabaseChatService: ChatService {
 final class SupabaseInviteService: InviteServing {
     private let http: SupabaseHTTP
 
-    init(config: BackendConfig, accessToken: String) {
-        self.http = SupabaseHTTP(config: config, accessToken: accessToken)
+    init(config: BackendConfig, accessToken: String, refresher: TokenRefreshing? = nil) {
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken, refresher: refresher)
     }
 
     func createInvite() async throws -> InviteTicket {
@@ -527,8 +621,8 @@ final class SupabaseInviteService: InviteServing {
 final class SupabaseSpotService: SpotServing {
     private let http: SupabaseHTTP
 
-    init(config: BackendConfig, accessToken: String) {
-        self.http = SupabaseHTTP(config: config, accessToken: accessToken)
+    init(config: BackendConfig, accessToken: String, refresher: TokenRefreshing? = nil) {
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken, refresher: refresher)
     }
 
     func current(squadId: UUID) async throws -> SpotCall? {

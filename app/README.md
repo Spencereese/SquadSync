@@ -87,6 +87,8 @@ xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario sp
 
 `-backend mock -scenario spotCall` opens the same screen with a half-filled Warzone spot card (4 of 8 in). You are not in it yet, so Join and then Ready are on the card. Ready stays on this phone. Nothing is written to Supabase.
 
+`-backend mock -scenario spotCallMine` opens that card with you as the caller, so Cancel and Lock are on it.
+
 The voice lounge is mock-only. `VoiceRoomService` is the seam for a later hosted room: join, leave, mute, participants, speaking levels, and a connection state of idle, connecting, connected, reconnecting, or failed. `InMemoryVoiceRoomService` is the fake. No voice SDK, account, or provider is included.
 
 The prototype starts in the inbox. The States menu shows loading, empty, and error. Tap a thread for bubbles, tapbacks, swipe-to-reply, the party card, voice, and handoff.

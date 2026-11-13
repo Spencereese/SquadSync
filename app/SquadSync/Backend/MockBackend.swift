@@ -29,6 +29,8 @@ final class MockAuthService: AuthService {
 
     func restore() throws -> AuthSession? { try store.load() }
 
+    func prepareSession(now: Date) async throws -> AuthSession? { try store.load() }
+
     func signOut() async throws { try store.clear() }
 }
 
@@ -210,7 +212,9 @@ final class MockSpotService: SpotServing {
 
     func lock(callId: UUID) async throws {
         guard var call, call.id == callId else { throw SpotProblem.missing }
-        guard SpotCallRules.canLock(call, actorId: viewerId, ownerId: ownerId) else { throw SpotProblem.notCaller }
+        guard SpotCallRules.canLock(call, actorId: viewerId, ownerId: ownerId, now: Date()) else {
+            throw SpotProblem.notCaller
+        }
         call.status = .locked
         call.lockedAt = Date()
         self.call = call

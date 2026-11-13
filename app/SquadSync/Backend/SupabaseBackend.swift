@@ -51,6 +51,15 @@ final class SupabaseAuthService: AuthService, TokenRefreshing {
 
     func prepareSession(now: Date) async throws -> AuthSession? {
         guard let session = try store.load() else { return nil }
+        #if DEBUG
+        if let exp = AccessTokenClock.expiry(of: session.accessToken) {
+            let seconds = Int(exp.timeIntervalSince(now))
+            let refresh = AccessTokenClock.needsRefresh(session.accessToken, now: now)
+            print("SquadSync auth: access token expires in \(seconds)s, refresh=\(refresh)")
+        } else {
+            print("SquadSync auth: access token has no readable exp, refresh=true")
+        }
+        #endif
         if !AccessTokenClock.needsRefresh(session.accessToken, now: now) { return session }
         return try await refreshSharingWork()
     }
@@ -379,7 +388,7 @@ final class SupabaseChatService: ChatService {
         refresher: TokenRefreshing? = nil,
         transport: HTTPTransport = URLSessionTransport.shared
     ) {
-        self.http = SupabaseHTTP(config: config, accessToken: accessToken, refresher: refresher, transport: transport)
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken, transport: transport, refresher: refresher)
     }
 
     func history(squadId: UUID) async throws -> [RemoteMessage] {
@@ -483,9 +492,9 @@ final class SupabaseChatService: ChatService {
     }
 
     func ownReadAt(squadId: UUID, userId: UUID) async throws -> Date? {
-        let shared = try await readStamp(path: "rest/v1/sq8_message_reads", squadId: squadId, userId: userId)
-        let own = try await readStamp(path: "rest/v1/sq8_chat_read_state", squadId: squadId, userId: userId)
-        return [shared, own].compactMap { $0 }.max()
+        // sq8_message_reads is the live cursor. sq8_chat_read_state is the older
+        // table and its GET is not part of this read.
+        try await readStamp(path: "rest/v1/sq8_message_reads", squadId: squadId, userId: userId)
     }
 
     private func readStamp(path: String, squadId: UUID, userId: UUID) async throws -> Date? {

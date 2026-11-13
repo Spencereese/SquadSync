@@ -131,6 +131,7 @@ final class LiveSessionModel {
     }
 
     func restore() async {
+        expireStoredTokenIfRequested()
         do {
             guard let session = try await auth.prepareSession(now: Date()) else { return }
             phase = .ready
@@ -410,6 +411,20 @@ final class LiveSessionModel {
         phase = .email
     }
 
+    /// `-debug-expire-token` rewrites the stored access token's `exp` into the past so a launch exercises refresh.
+    private func expireStoredTokenIfRequested() {
+        #if DEBUG
+        guard ProcessInfo.processInfo.arguments.contains("-debug-expire-token") else { return }
+        guard var session = try? sessionStore.load() else { return }
+        session.accessToken = AccessTokenClock.replacingExpiry(
+            session.accessToken,
+            exp: Date().addingTimeInterval(-120)
+        )
+        try? sessionStore.save(session)
+        print("SquadSync auth: -debug-expire-token marked the stored access token expired")
+        #endif
+    }
+
     private func requiredSession() throws -> AuthSession {
         guard let session = try auth.restore() else { throw BackendFailure.notSignedIn }
         return session
@@ -440,6 +455,7 @@ final class LiveSessionModel {
 
     func becameActive() async {
         guard usesLiveSocket else { return }
+        expireStoredTokenIfRequested()
         do {
             guard let session = try await auth.prepareSession(now: Date()) else { return }
             phase = .ready

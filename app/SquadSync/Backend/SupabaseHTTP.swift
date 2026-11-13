@@ -28,6 +28,53 @@ enum AccessTokenClock {
         return exp.timeIntervalSince(now) <= leadTime
     }
 
+    /// Rewrites the `exp` claim to the past. The signature is left as-is; refresh uses the refresh token, not this access token.
+    static func replacingExpiry(_ token: String, exp: Date) -> String {
+        let parts = token.split(separator: ".", omittingEmptySubsequences: false)
+        guard parts.count >= 2,
+              var payload = jsonObject(from: String(parts[1])) else {
+            return unsignedToken(exp: exp)
+        }
+        payload["exp"] = Int(exp.timeIntervalSince1970)
+        let encoded = base64URL(json(payload))
+        let signature = parts.count >= 3 ? String(parts[2]) : "sig"
+        return "\(parts[0]).\(encoded).\(signature)"
+    }
+
+    private static func unsignedToken(exp: Date) -> String {
+        let header = base64URL("{\"alg\":\"none\"}")
+        let payload = base64URL("{\"exp\":\(Int(exp.timeIntervalSince1970))}")
+        return "\(header).\(payload).sig"
+    }
+
+    private static func jsonObject(from encoded: String) -> [String: Any]? {
+        guard let data = base64Data(from: encoded),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return json
+    }
+
+    private static func json(_ object: [String: Any]) -> String {
+        guard let data = try? JSONSerialization.data(withJSONObject: object),
+              let text = String(data: data, encoding: .utf8) else { return "{}" }
+        return text
+    }
+
+    private static func base64Data(from encoded: String) -> Data? {
+        var payload = encoded
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+        let remainder = payload.count % 4
+        if remainder != 0 { payload += String(repeating: "=", count: 4 - remainder) }
+        return Data(base64Encoded: payload)
+    }
+
+    private static func base64URL(_ text: String) -> String {
+        Data(text.utf8).base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+    }
+
     static func expiry(of token: String) -> Date? {
         let parts = token.split(separator: ".")
         guard parts.count >= 2 else { return nil }
@@ -38,8 +85,23 @@ enum AccessTokenClock {
         if remainder != 0 { payload += String(repeating: "=", count: 4 - remainder) }
         guard let data = Data(base64Encoded: payload),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let exp = json["exp"] as? NSNumber else { return nil }
-        return Date(timeIntervalSince1970: exp.doubleValue)
+              let exp = Self.unixSeconds(json["exp"]) else { return nil }
+        return Date(timeIntervalSince1970: exp)
+    }
+
+    /// JWT `exp` is unix seconds. A value that only makes sense as milliseconds is scaled down.
+    private static func unixSeconds(_ value: Any?) -> TimeInterval? {
+        let raw: TimeInterval?
+        if let number = value as? NSNumber {
+            raw = number.doubleValue
+        } else if let text = value as? String, let number = TimeInterval(text) {
+            raw = number
+        } else {
+            raw = nil
+        }
+        guard let raw else { return nil }
+        if raw > 10_000_000_000 { return raw / 1000 }
+        return raw
     }
 }
 
@@ -121,6 +183,12 @@ struct SupabaseHTTP {
         }
         if http.statusCode == 409 { return data }
         if http.statusCode >= 200 && http.statusCode < 300 { return data }
+        #if DEBUG
+        let code = (try? JSONDecoder().decode(ErrorBody.self, from: data))?.code ?? "-"
+        let methodName = request.httpMethod ?? method
+        let pathOnly = request.url?.path ?? path
+        print("SquadSync HTTP \(methodName) \(pathOnly) \(http.statusCode) \(code)")
+        #endif
         if allowRefresh, accessToken != nil, AuthFailure.matches(status: http.statusCode, body: data) {
             guard let refresher else {
                 throw BackendFailure.rejected(message(from: data) ?? "JWT expired")

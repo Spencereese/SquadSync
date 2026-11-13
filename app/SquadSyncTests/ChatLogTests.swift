@@ -454,6 +454,12 @@ final class SessionRefreshTests: XCTestCase {
         XCTAssertTrue(AccessTokenClock.needsRefresh(jwt(exp: now.addingTimeInterval(-5)), now: now))
         XCTAssertFalse(AccessTokenClock.needsRefresh(jwt(exp: now.addingTimeInterval(61)), now: now))
         XCTAssertTrue(AccessTokenClock.needsRefresh("not-a-jwt", now: now))
+        let hourToken = jwt(exp: now.addingTimeInterval(3600))
+        XCTAssertTrue(AccessTokenClock.needsRefresh(hourToken, now: now.addingTimeInterval(80 * 60)))
+        let dayToken = jwt(exp: now.addingTimeInterval(24 * 3600))
+        XCTAssertFalse(AccessTokenClock.needsRefresh(dayToken, now: now.addingTimeInterval(80 * 60)))
+        let forced = AccessTokenClock.replacingExpiry(dayToken, exp: now.addingTimeInterval(-120))
+        XCTAssertTrue(AccessTokenClock.needsRefresh(forced, now: now))
     }
 
     func testPrepareSessionRefreshesWithTheStoredRefreshToken() async throws {

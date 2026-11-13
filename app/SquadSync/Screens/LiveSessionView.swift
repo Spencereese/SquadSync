@@ -1070,14 +1070,14 @@ struct LiveSessionView: View {
 
     private func barLabel(_ action: SpotBarAction) -> String {
         switch action {
-        case .join: "Join the spot call"
-        case .leave: "Leave the spot call"
+        case .join: return "Join the spot call"
+        case .leave: return "Leave the spot call"
         case .ready:
             let viewer = model.viewerId ?? model.profile?.id
             let on = viewer.flatMap { model.spot?.seat(for: $0)?.ready } == true
             return on ? "Ready, on" : "Ready, off"
-        case .lock: "Lock the spot call"
-        case .cancel: "Cancel the spot call"
+        case .lock: return "Lock the spot call"
+        case .cancel: return "Cancel the spot call"
         }
     }
 

@@ -203,12 +203,18 @@ final class AccessibilityUITests: XCTestCase {
 
     private func assertListClearsComposer(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         let list = app.scrollViews["message-list"]
-        let end = app.descendants(matching: .any)["message-list-end"]
         let composer = app.descendants(matching: .any)["composer"]
         XCTAssertTrue(composer.waitForExistence(timeout: 5), "Composer was not on screen", file: file, line: line)
-        XCTAssertTrue(end.waitForExistence(timeout: 5), "List end was not in the accessibility tree", file: file, line: line)
+        var end = app.descendants(matching: .any)["message-list-end"]
         var swipes = 0
-        while end.frame.maxY > composer.frame.minY + 1, swipes < 12 {
+        while !end.exists, swipes < 30 {
+            if list.exists { list.swipeUp() } else { app.swipeUp() }
+            swipes += 1
+            end = app.descendants(matching: .any)["message-list-end"]
+        }
+        XCTAssertTrue(end.waitForExistence(timeout: 2), "List end was not in the accessibility tree after scrolling", file: file, line: line)
+        swipes = 0
+        while end.frame.maxY > composer.frame.minY + 1, swipes < 8 {
             if list.exists { list.swipeUp() } else { app.swipeUp() }
             swipes += 1
         }

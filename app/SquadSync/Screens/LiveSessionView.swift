@@ -726,10 +726,9 @@ struct LiveSessionView: View {
                     }
                 }
             }
-            .confirmationDialog("Account", isPresented: $confirmSignOut, titleVisibility: .visible) {
-                Button("Sign out", role: .destructive) { Task { await model.signOut() } }
-                Button("Cancel", role: .cancel) {}
-            }
+        }
+        .sheet(isPresented: $confirmSignOut) {
+            signOutSheet
         }
         .task { await model.restore() }
         .onChange(of: scenePhase) { _, phase in
@@ -738,6 +737,25 @@ struct LiveSessionView: View {
             wentToBackground = false
             Task { await model.becameActive() }
         }
+    }
+
+    private var signOutSheet: some View {
+        VStack(alignment: .leading, spacing: SQSpace.l) {
+            Text("Sign out?")
+                .font(.title2.weight(.semibold))
+            Text("You can sign in again with the same email.")
+                .foregroundStyle(SQColor.muted)
+            Button("Sign out", role: .destructive) {
+                confirmSignOut = false
+                Task { await model.signOut() }
+            }
+            .buttonStyle(.borderedProminent)
+            Button("Cancel", role: .cancel) { confirmSignOut = false }
+        }
+        .padding(SQSpace.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
 
     private var signIn: some View {
@@ -863,15 +881,15 @@ struct LiveSessionView: View {
                         ForEach(model.log.ordered) { entry in
                             messageRow(entry).id(entry.id)
                         }
-                        Text("End of messages")
-                            .font(.system(size: 1))
-                            .foregroundStyle(.clear)
-                            .frame(maxWidth: .infinity, minHeight: SQSpace.l)
-                            .id(ChatAnchor.end)
-                            .accessibilityIdentifier(ChatAnchor.end)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(ChatContentFrame())
+                    Text("End of messages")
+                        .font(.caption)
+                        .foregroundStyle(.clear)
+                        .frame(maxWidth: .infinity, minHeight: SQSpace.l)
+                        .id(ChatAnchor.end)
+                        .accessibilityIdentifier(ChatAnchor.end)
                 }
                 .contentMargins(.bottom, SQSpace.l, for: .scrollContent)
                 .coordinateSpace(name: "chat")

@@ -739,6 +739,7 @@ struct LiveSessionView: View {
         }
     }
 
+    /// Swiping the sheet away only clears `confirmSignOut`. It does not sign out.
     private var signOutSheet: some View {
         VStack(alignment: .leading, spacing: SQSpace.l) {
             Text("Sign out?")

@@ -43,6 +43,23 @@ enum AccessTokenClock {
     }
 }
 
+enum RefreshRejection {
+    /// A refresh failure clears the saved session only when the token endpoint
+    /// itself refused that refresh token. A rotated token already in the store
+    /// means another call won; that session stays.
+    static func clearsSession(status: Int, body: Data) -> Bool {
+        let text = String(data: body, encoding: .utf8)?.lowercased() ?? ""
+        let refused = text.contains("invalid_grant")
+            || text.contains("invalid refresh token")
+            || text.contains("already used")
+            || text.contains("refresh_token_not_found")
+            || text.contains("session_not_found")
+        if status == 401 { return true }
+        if status == 400 && refused { return true }
+        return false
+    }
+}
+
 enum AuthFailure {
     static func matches(status: Int, body: Data) -> Bool {
         guard status >= 400 else { return false }

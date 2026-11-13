@@ -1,10 +1,15 @@
 import Foundation
 
+private final class RefreshFlight: @unchecked Sendable {
+    let task: Task<AuthSession, Error>
+    init(_ task: Task<AuthSession, Error>) { self.task = task }
+}
+
 final class SupabaseAuthService: AuthService, TokenRefreshing {
     private let config: BackendConfig
     private let store: SessionStoring
     private let transport: HTTPTransport
-    private var refreshTask: Task<AuthSession, Error>?
+    private var refreshTask: RefreshFlight?
     private let refreshLock = NSLock()
 
     init(config: BackendConfig, store: SessionStoring, transport: HTTPTransport = URLSessionTransport.shared) {
@@ -74,25 +79,25 @@ final class SupabaseAuthService: AuthService, TokenRefreshing {
 
     private func http() -> SupabaseHTTP { SupabaseHTTP(config: config, accessToken: nil, transport: transport) }
 
+    /// One refresh at a time. A cancelled waiter does not drop the in-flight task,
+    /// or the next caller would send the same refresh token again.
     private func refreshSharingWork() async throws -> AuthSession {
-        let task: Task<AuthSession, Error> = refreshLock.withLock {
+        let flight: RefreshFlight = refreshLock.withLock {
             if let refreshTask { return refreshTask }
-            let created = Task { try await self.performRefresh() }
+            let created = RefreshFlight(Task { try await self.performRefresh() })
             refreshTask = created
             return created
         }
-        do {
-            let session = try await task.value
-            refreshLock.withLock { refreshTask = nil }
-            return session
-        } catch {
-            refreshLock.withLock { refreshTask = nil }
-            throw error
+        let result = await flight.task.result
+        refreshLock.withLock {
+            if refreshTask === flight { refreshTask = nil }
         }
+        return try result.get()
     }
 
     private func performRefresh() async throws -> AuthSession {
         guard let session = try store.load() else { throw BackendFailure.sessionEnded }
+        let sentRefreshToken = session.refreshToken
         guard config.isConfigured, let base = config.url else { throw BackendFailure.notConfigured }
         var url = base
         url.appendPathComponent("auth")
@@ -108,7 +113,7 @@ final class SupabaseAuthService: AuthService, TokenRefreshing {
         request.setValue(config.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(RefreshBody(refreshToken: session.refreshToken))
+        request.httpBody = try JSONEncoder().encode(RefreshBody(refreshToken: sentRefreshToken))
         let data: Data
         let response: URLResponse
         do {
@@ -120,7 +125,10 @@ final class SupabaseAuthService: AuthService, TokenRefreshing {
         guard let http = response as? HTTPURLResponse else {
             throw BackendFailure.reconnecting
         }
-        if http.statusCode == 401 || http.statusCode == 400 || http.statusCode == 403 {
+        if RefreshRejection.clearsSession(status: http.statusCode, body: data) {
+            if let kept = try? store.load(), kept.refreshToken != sentRefreshToken {
+                return kept
+            }
             try store.clear()
             throw BackendFailure.sessionEnded
         }

@@ -222,7 +222,7 @@ final class MockSpotService: SpotServing {
 
     func cancel(callId: UUID) async throws {
         guard var call, call.id == callId else { throw SpotProblem.missing }
-        guard SpotCallRules.canCancel(call, actorId: viewerId) else { throw SpotProblem.notCaller }
+        guard SpotCallRules.canCancel(call, actorId: viewerId, now: Date()) else { throw SpotProblem.notCaller }
         call.status = .cancelled
         call.closedAt = Date()
         self.call = call

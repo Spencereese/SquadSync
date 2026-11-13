@@ -183,5 +183,12 @@ final class SpotCallRulesTests: XCTestCase {
         XCTAssertFalse(SpotCallRules.canJoin(card, userId: member, now: now))
         XCTAssertFalse(SpotCallRules.canLock(card, actorId: caller, ownerId: owner, now: now))
         XCTAssertFalse(SpotCallRules.canLock(card, actorId: owner, ownerId: owner, now: now))
+        XCTAssertFalse(SpotCallRules.canCancel(card, actorId: caller, now: now))
+        XCTAssertFalse(SpotCallRules.showsPinnedBar(card, now: now))
+        XCTAssertNil(SpotCallRules.barAction(card, viewerId: caller, ownerId: owner, now: now))
+        XCTAssertNil(SpotCallRules.barAction(card, viewerId: member, ownerId: owner, now: now))
+        let open = call()
+        XCTAssertTrue(SpotCallRules.canCancel(open, actorId: caller, now: start))
+        XCTAssertEqual(SpotCallRules.barAction(open, viewerId: member, ownerId: owner, now: start), .join)
     }
 }

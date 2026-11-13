@@ -292,6 +292,13 @@ final class LiveSessionModel {
         }
     }
 
+    func leaveSpot() async {
+        await changeSpot { session, call in
+            try await spotService(session).rsvp(callId: call.id, response: "out")
+            spotNote = "You left."
+        }
+    }
+
     func toggleReady() async {
         guard let call = spot, let user = viewerId ?? profile?.id else { return }
         let next = !(call.seat(for: user)?.ready ?? false)
@@ -675,6 +682,7 @@ struct LiveSessionView: View {
     @State private var pinnedToBottom = true
     @State private var showNewMessages = false
     @State private var wentToBackground = false
+    @ScaledMetric(relativeTo: .body) private var composerLine: CGFloat = 22
     @Environment(\.scenePhase) private var scenePhase
 
     init(config: BackendConfig = .fromBundle(), backend: BackendMode = .live, scenario: LaunchScenario = .seated) {
@@ -692,6 +700,8 @@ struct LiveSessionView: View {
             }
             .padding(SQSpace.l)
             .navigationTitle("SquadSync")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
                 if model.phase == .ready {
                     Button("Sign out") { Task { await model.signOut() } }
@@ -739,6 +749,13 @@ struct LiveSessionView: View {
 
     private var ready: some View {
         VStack(alignment: .leading, spacing: SQSpace.m) {
+            if let spot = model.spot {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    if SpotCallRules.showsPinnedBar(spot, now: context.date) {
+                        activeCallBar(spot, now: context.date)
+                    }
+                }
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: SQSpace.m) {
                     if model.profile != nil {
@@ -787,19 +804,23 @@ struct LiveSessionView: View {
                 }
             }
             if model.squad != nil {
-                VStack(alignment: .leading, spacing: SQSpace.s) {
-                    chatList
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                    let unread = model.log.unreadCount(viewerId: model.profile?.id ?? model.viewerId ?? UUID())
-                    if unread > 0 {
-                        Text("Unread \(unread)")
-                            .font(.caption)
-                            .accessibilityIdentifier("unread-count")
+                chatList
+                    .safeAreaInset(edge: .bottom, spacing: SQSpace.s) {
+                        VStack(alignment: .leading, spacing: SQSpace.xs) {
+                            let unread = model.log.unreadCount(viewerId: model.profile?.id ?? model.viewerId ?? UUID())
+                            if unread > 0 {
+                                Text("Unread \(unread)")
+                                    .font(.caption)
+                                    .accessibilityIdentifier("unread-count")
+                            }
+                            composer
+                        }
+                        .padding(.top, SQSpace.s)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(SQColor.canvas)
                     }
-                    composer
-                }
-                .frame(minHeight: 180, maxHeight: .infinity, alignment: .top)
-                .layoutPriority(1)
+                    .frame(minHeight: 180, maxHeight: .infinity, alignment: .top)
+                    .layoutPriority(1)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -837,6 +858,7 @@ struct LiveSessionView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(ChatContentFrame())
                 }
+                .accessibilityIdentifier("message-list")
                 .coordinateSpace(name: "chat")
                 .scrollDismissesKeyboard(.interactively)
                 .modifier(ChatPinModifier(pinned: $pinnedToBottom))
@@ -930,7 +952,7 @@ struct LiveSessionView: View {
                             .accessibilityLabel("Lock the spot call")
                     }
                 }
-                if let viewer, SpotCallRules.canCancel(spot, actorId: viewer) {
+                if let viewer, SpotCallRules.canCancel(spot, actorId: viewer, now: context.date) {
                     Button("Cancel") { Task { await model.cancelSpot() } }
                         .disabled(model.spotBusy)
                         .accessibilityIdentifier("spot-cancel")
@@ -1009,17 +1031,74 @@ struct LiveSessionView: View {
         application.open(url)
     }
 
-    private var composer: some View {
-        ScrollView {
-            HStack(alignment: .center) {
-                TextField("Message", text: Binding(get: { model.draft }, set: { model.draft = $0 }))
-                    .textFieldStyle(.roundedBorder)
-                Button("Send") { Task { await model.send() } }
-                    .accessibilityIdentifier("send-message")
-            }
+    private func activeCallBar(_ spot: SpotCall, now: Date) -> some View {
+        let viewer = model.viewerId ?? model.profile?.id
+        let action = viewer.flatMap {
+            SpotCallRules.barAction(spot, viewerId: $0, ownerId: model.squad?.ownerId ?? $0, now: now)
         }
-        .scrollBounceBehavior(.basedOnSize)
-        .frame(maxHeight: ComposerLimit.maxHeight)
+        return VStack(alignment: .leading, spacing: SQSpace.xs) {
+            Text(spot.game)
+                .font(.headline)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("\(spot.filled) of \(SpotCallRules.cap)")
+                .font(.subheadline)
+                .lineLimit(1)
+            Text(SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now))
+                .font(.subheadline.monospacedDigit())
+                .lineLimit(1)
+                .accessibilityIdentifier("active-call-countdown")
+            if let action { barButton(action) }
+        }
+        .padding(SQSpace.s)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SQColor.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(SQColor.line, lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("active-call-bar")
+    }
+
+    private func barButton(_ action: SpotBarAction) -> some View {
+        Button(action.title) { Task { await runBar(action) } }
+            .disabled(model.spotBusy || (action == .ready && model.readyIsLocalOnly))
+            .accessibilityIdentifier(action.identifier)
+            .accessibilityLabel(barLabel(action))
+    }
+
+    private func barLabel(_ action: SpotBarAction) -> String {
+        switch action {
+        case .join: "Join the spot call"
+        case .leave: "Leave the spot call"
+        case .ready:
+            let viewer = model.viewerId ?? model.profile?.id
+            let on = viewer.flatMap { model.spot?.seat(for: $0)?.ready } == true
+            return on ? "Ready, on" : "Ready, off"
+        case .lock: "Lock the spot call"
+        case .cancel: "Cancel the spot call"
+        }
+    }
+
+    private func runBar(_ action: SpotBarAction) async {
+        switch action {
+        case .join: await model.joinSpot()
+        case .leave: await model.leaveSpot()
+        case .ready: await model.toggleReady()
+        case .lock: await model.lockSpot()
+        case .cancel: await model.cancelSpot()
+        }
+    }
+
+    private var composer: some View {
+        HStack(alignment: .center) {
+            TextField("Message", text: Binding(get: { model.draft }, set: { model.draft = $0 }))
+                .textFieldStyle(.roundedBorder)
+            Button("Send") { Task { await model.send() } }
+                .accessibilityIdentifier("send-message")
+        }
+        .frame(maxHeight: composerLine * 3)
     }
 
     private var inviteControls: some View {
@@ -1156,11 +1235,6 @@ struct LiveSessionView: View {
         case .failed: "Failed"
         }
     }
-}
-
-private enum ComposerLimit {
-    /// One control row. Taller Dynamic Type scrolls inside this instead of covering the list.
-    static let maxHeight: CGFloat = 96
 }
 
 private struct ChipFlow: Layout {

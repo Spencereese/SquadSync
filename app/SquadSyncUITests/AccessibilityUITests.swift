@@ -165,11 +165,27 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(app.descendants(matching: .any)["spot-countdown"].exists)
     }
 
+    func testPinnedJoinStaysHittableAtLargeTextWithKeyboard() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall", "-uitest-largeText"]
+        app.launch()
+
+        let join = app.buttons["active-call-join"]
+        XCTAssertTrue(join.waitForExistence(timeout: 15), "Pinned Join was not under the title")
+        XCTAssertEqual(join.label, "Join the spot call")
+        let field = app.textFields["Message"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "Message field was not on screen")
+        field.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3), "Keyboard did not come up")
+        XCTAssertTrue(join.isHittable, "Pinned Join was covered with the keyboard up, frame \(join.frame)")
+        XCTAssertLessThan(join.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
+    }
+
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
-        let chat = app.scrollViews.element(boundBy: max(app.scrollViews.count - 1, 0))
+        let list = app.scrollViews["message-list"]
         var swipes = 0
         while !element.isHittable, swipes < 6 {
-            if chat.exists { chat.swipeUp() } else { app.swipeUp() }
+            if list.exists { list.swipeUp() } else { app.swipeUp() }
             swipes += 1
         }
     }

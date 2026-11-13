@@ -159,14 +159,64 @@ enum SpotCallRules {
         return actorId == call.callerId || actorId == ownerId
     }
 
-    static func canCancel(_ call: SpotCall, actorId: UUID) -> Bool {
-        call.status == .open && call.lockedAt == nil && call.closedAt == nil && actorId == call.callerId
+    static func canCancel(_ call: SpotCall, actorId: UUID, now: Date) -> Bool {
+        guard call.status == .open, call.lockedAt == nil, call.closedAt == nil else { return false }
+        if now >= call.joinUntil { return false }
+        return actorId == call.callerId
+    }
+
+    /// The pinned bar is only for a call people can still act on.
+    static func showsPinnedBar(_ call: SpotCall, now: Date) -> Bool {
+        call.status == .open && call.closedAt == nil && !showsExpired(call, now: now)
+    }
+
+    /// One action for the pinned bar. Expired calls have none, including Cancel.
+    static func barAction(_ call: SpotCall, viewerId: UUID, ownerId: UUID, now: Date) -> SpotBarAction? {
+        guard showsPinnedBar(call, now: now) else { return nil }
+        if viewerId == call.callerId {
+            if canLock(call, actorId: viewerId, ownerId: ownerId, now: now) { return .lock }
+            if canCancel(call, actorId: viewerId, now: now) { return .cancel }
+            return nil
+        }
+        if let seat = call.seat(for: viewerId), seat.isIn {
+            return seat.ready ? .leave : .ready
+        }
+        if canJoin(call, userId: viewerId, now: now) { return .join }
+        return nil
     }
 
     /// What a full Ready lock would require. The server does not enforce this.
     static func everyoneReady(_ call: SpotCall) -> Bool {
         let seated = call.rsvps.filter(\.isIn)
         return seated.count >= cap && seated.allSatisfy(\.ready)
+    }
+}
+
+enum SpotBarAction: Equatable {
+    case join
+    case leave
+    case ready
+    case lock
+    case cancel
+
+    var identifier: String {
+        switch self {
+        case .join: "active-call-join"
+        case .leave: "active-call-leave"
+        case .ready: "active-call-ready"
+        case .lock: "active-call-lock"
+        case .cancel: "active-call-cancel"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .join: "Join"
+        case .leave: "Leave"
+        case .ready: "Ready"
+        case .lock: "Lock"
+        case .cancel: "Cancel"
+        }
     }
 }
 

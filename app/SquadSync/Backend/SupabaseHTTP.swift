@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 struct URLSessionTransport: HTTPTransport {
     /// Kept off `URLSession.shared` so a websocket cancel cannot abort an insert.
@@ -105,20 +106,40 @@ enum AccessTokenClock {
     }
 }
 
+enum SquadLog {
+    static let http = Logger(subsystem: "com.spencereese.squadsync", category: "http")
+}
+
 enum RefreshRejection {
-    /// A refresh failure clears the saved session only when the token endpoint
-    /// itself refused that refresh token. A rotated token already in the store
-    /// means another call won; that session stays.
+    /// Clear only when the token endpoint names this refresh token as refused.
+    /// Other 400s, 5xx, and network errors keep the saved session.
     static func clearsSession(status: Int, body: Data) -> Bool {
+        guard status == 400 || status == 401 else { return false }
         let text = String(data: body, encoding: .utf8)?.lowercased() ?? ""
-        let refused = text.contains("invalid_grant")
-            || text.contains("invalid refresh token")
-            || text.contains("already used")
-            || text.contains("refresh_token_not_found")
-            || text.contains("session_not_found")
-        if status == 401 { return true }
-        if status == 400 && refused { return true }
-        return false
+        let codes = [
+            "invalid_grant",
+            "refresh_token_not_found",
+            "refresh_token_already_used",
+            "session_not_found"
+        ]
+        return codes.contains { text.contains($0) }
+    }
+}
+
+enum HTTPFailureLog {
+    static func record(method: String, path: String, status: Int, body: Data) {
+        #if DEBUG
+        let fields = (try? JSONSerialization.jsonObject(with: body) as? [String: Any]) ?? [:]
+        let code = (fields["error_code"] as? String)
+            ?? (fields["error"] as? String)
+            ?? (fields["code"] as? String)
+            ?? "-"
+        let message = (fields["msg"] as? String)
+            ?? (fields["error_description"] as? String)
+            ?? (fields["message"] as? String)
+            ?? "-"
+        SquadLog.http.error("HTTP \(method, privacy: .public) \(path, privacy: .public) \(status, privacy: .public) \(code, privacy: .public) \(message, privacy: .public)")
+        #endif
     }
 }
 
@@ -183,12 +204,12 @@ struct SupabaseHTTP {
         }
         if http.statusCode == 409 { return data }
         if http.statusCode >= 200 && http.statusCode < 300 { return data }
-        #if DEBUG
-        let code = (try? JSONDecoder().decode(ErrorBody.self, from: data))?.code ?? "-"
-        let methodName = request.httpMethod ?? method
-        let pathOnly = request.url?.path ?? path
-        print("SquadSync HTTP \(methodName) \(pathOnly) \(http.statusCode) \(code)")
-        #endif
+        HTTPFailureLog.record(
+            method: request.httpMethod ?? method,
+            path: request.url?.path ?? path,
+            status: http.statusCode,
+            body: data
+        )
         if allowRefresh, accessToken != nil, AuthFailure.matches(status: http.statusCode, body: data) {
             guard let refresher else {
                 throw BackendFailure.rejected(message(from: data) ?? "JWT expired")

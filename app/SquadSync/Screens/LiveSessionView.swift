@@ -421,7 +421,7 @@ final class LiveSessionModel {
             exp: Date().addingTimeInterval(-120)
         )
         try? sessionStore.save(session)
-        print("SquadSync auth: -debug-expire-token marked the stored access token expired")
+        SquadLog.http.notice("auth -debug-expire-token marked the stored access token expired")
         #endif
     }
 

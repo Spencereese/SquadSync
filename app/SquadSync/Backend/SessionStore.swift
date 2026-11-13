@@ -56,36 +56,79 @@ final class MemorySessionStore: SessionStoring {
     func clear() throws { session = nil }
 }
 
+struct SessionEnvelope: Codable, Equatable {
+    var session: AuthSession
+    var savedAt: Date
+
+    static func newer(_ first: SessionEnvelope?, _ second: SessionEnvelope?) -> SessionEnvelope? {
+        switch (first, second) {
+        case (nil, nil):
+            return nil
+        case (let only?, nil), (nil, let only?):
+            return only
+        case (let primary?, let backup?):
+            return primary.savedAt >= backup.savedAt ? primary : backup
+        }
+    }
+
+    static func decode(_ data: Data) -> SessionEnvelope? {
+        if let envelope = try? JSONDecoder().decode(SessionEnvelope.self, from: data) {
+            return envelope
+        }
+        if let session = try? JSONDecoder().decode(AuthSession.self, from: data) {
+            return SessionEnvelope(session: session, savedAt: .distantPast)
+        }
+        return nil
+    }
+}
+
 final class KeychainSessionStore: SessionStoring {
-    private let service = "com.spencereese.squadsync.session"
-    private let account = "sq8"
+    private let service: String
+    private let account: String
     private let defaults: UserDefaults
-    private let defaultsKey = "sq8.session.fallback"
+    private let defaultsKey: String
+    private let clearedAtKey: String
     private var usingFallback = false
     private static var didLogFallback = false
 
-    init(defaults: UserDefaults = .standard) {
+    init(
+        defaults: UserDefaults = .standard,
+        service: String = "com.spencereese.squadsync.session",
+        account: String = "sq8"
+    ) {
         self.defaults = defaults
+        self.service = service
+        self.account = account
+        if service == "com.spencereese.squadsync.session" && account == "sq8" {
+            self.defaultsKey = "sq8.session.fallback"
+            self.clearedAtKey = "sq8.session.cleared-at"
+        } else {
+            self.defaultsKey = "sq8.session.fallback.\(service).\(account)"
+            self.clearedAtKey = "sq8.session.cleared-at.\(service).\(account)"
+        }
     }
 
     func load() throws -> AuthSession? {
-        if usingFallback { return try readFallback() }
+        let backup = visible(try readFallback())
+        if usingFallback { return backup?.session }
         let found = copyMatching()
         switch KeychainFallbackPolicy.choose(status: found.status) {
         case .keychain:
-            guard found.status == errSecSuccess, let data = found.data else { return nil }
-            return try decode(data)
+            guard found.status == errSecSuccess, let data = found.data, let primary = visible(SessionEnvelope.decode(data)) else {
+                return backup?.session
+            }
+            return SessionEnvelope.newer(primary, backup)?.session
         case .insecureFallback:
             noteFallback()
             usingFallback = true
-            return try readFallback()
+            return backup?.session
         case .failure(let status):
             throw SessionStoreError.keychain(status)
         }
     }
 
     func save(_ session: AuthSession) throws {
-        let data = try JSONEncoder().encode(session)
+        let data = try JSONEncoder().encode(SessionEnvelope(session: session, savedAt: Date()))
         if usingFallback {
             defaults.set(data, forKey: defaultsKey)
             return
@@ -94,6 +137,7 @@ final class KeychainSessionStore: SessionStoring {
         switch KeychainFallbackPolicy.choose(status: status) {
         case .keychain:
             guard status == errSecSuccess else { throw SessionStoreError.keychain(status) }
+            defaults.set(data, forKey: defaultsKey)
         case .insecureFallback:
             noteFallback()
             usingFallback = true
@@ -104,29 +148,36 @@ final class KeychainSessionStore: SessionStoring {
     }
 
     func clear() throws {
-        if usingFallback {
-            defaults.removeObject(forKey: defaultsKey)
-            return
-        }
+        defaults.removeObject(forKey: defaultsKey)
+        defaults.set(Date(), forKey: clearedAtKey)
+        if usingFallback { return }
         let status = delete()
         switch KeychainFallbackPolicy.choose(status: status) {
         case .keychain:
             if status != errSecSuccess && status != errSecItemNotFound {
                 throw SessionStoreError.keychain(status)
             }
+            defaults.removeObject(forKey: clearedAtKey)
         case .insecureFallback:
             noteFallback()
             usingFallback = true
-            defaults.removeObject(forKey: defaultsKey)
         case .failure(let code):
             throw SessionStoreError.keychain(code)
         }
     }
 
+    private func visible(_ envelope: SessionEnvelope?) -> SessionEnvelope? {
+        guard let envelope else { return nil }
+        if let clearedAt = defaults.object(forKey: clearedAtKey) as? Date, envelope.savedAt <= clearedAt {
+            return nil
+        }
+        return envelope
+    }
+
     private func noteFallback() {
         guard !Self.didLogFallback else { return }
         Self.didLogFallback = true
-        print("SquadSync: Keychain status -34018 (missing entitlement). This DEBUG or simulator build is storing the session in UserDefaults.")
+        SquadLog.http.notice("auth keychain status -34018, session store is UserDefaults")
     }
 
     private func copyMatching() -> (data: Data?, status: OSStatus) {
@@ -163,15 +214,11 @@ final class KeychainSessionStore: SessionStoring {
         return SecItemDelete(query as CFDictionary)
     }
 
-    private func readFallback() throws -> AuthSession? {
+    private func readFallback() throws -> SessionEnvelope? {
         guard let data = defaults.data(forKey: defaultsKey) else { return nil }
-        return try decode(data)
-    }
-
-    private func decode(_ data: Data) throws -> AuthSession {
-        guard let session = try? JSONDecoder().decode(AuthSession.self, from: data) else {
+        guard let envelope = SessionEnvelope.decode(data) else {
             throw SessionStoreError.unreadable
         }
-        return session
+        return envelope
     }
 }

@@ -628,6 +628,80 @@ final class SessionRefreshTests: XCTestCase {
         XCTAssertEqual(try store.load()?.refreshToken, "winner")
     }
 
+    func testRefreshBodyIsTheStoredToken() async throws {
+        let store = MemorySessionStore()
+        let refresh = "abcdefghijkl"
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(-5)),
+            refreshToken: refresh,
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let transport = ScriptedTransport(responses: [(200, tokenJSON(access: jwt(exp: now.addingTimeInterval(3600))))])
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        _ = try await auth.prepareSession(now: now)
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertTrue(request.url?.query?.contains("grant_type=refresh_token") == true)
+        XCTAssertTrue(request.url?.path.hasSuffix("/auth/v1/token") == true)
+        let body = try XCTUnwrap(request.httpBody)
+        XCTAssertEqual(body.count, 32)
+        XCTAssertEqual(String(data: body, encoding: .utf8), "{\"refresh_token\":\"\(refresh)\"}")
+    }
+
+    func testOtherRefreshFailureKeepsTheSession() async throws {
+        let store = MemorySessionStore()
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(-5)),
+            refreshToken: "stored-refresh",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let body = Data("{\"error\":\"invalid_request\",\"error_description\":\"bad json\"}".utf8)
+        let transport = ScriptedTransport(responses: [(400, body)])
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        do {
+            _ = try await auth.prepareSession(now: now)
+            XCTFail("Expected the refresh to fail closed")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .reconnecting)
+        }
+        XCTAssertEqual(try store.load()?.refreshToken, "stored-refresh")
+        XCTAssertFalse(RefreshRejection.clearsSession(status: 400, body: body))
+        let definitive = Data("{\"error\":\"invalid_grant\",\"error_code\":\"refresh_token_already_used\"}".utf8)
+        XCTAssertTrue(RefreshRejection.clearsSession(status: 400, body: definitive))
+    }
+
+    func testRotatedTokenIsWhatTheNextLaunchReads() throws {
+        let suite = "squadsync.session.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let service = "test.session.\(UUID().uuidString)"
+        let stale = AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(3600)),
+            refreshToken: "stale-fallback",
+            userId: user,
+            email: "a@squad.test"
+        )
+        defaults.set(try JSONEncoder().encode(stale), forKey: "sq8.session.fallback.\(service).test")
+        let first = KeychainSessionStore(defaults: defaults, service: service, account: "test")
+        let saved = AuthSession(
+            accessToken: stale.accessToken,
+            refreshToken: "rotated-token",
+            userId: user,
+            email: stale.email
+        )
+        try first.save(saved)
+        let second = KeychainSessionStore(defaults: defaults, service: service, account: "test")
+        XCTAssertEqual(try second.load()?.refreshToken, "rotated-token")
+        let older = SessionEnvelope(session: saved, savedAt: now.addingTimeInterval(-100))
+        var rotated = saved
+        rotated.refreshToken = "newer-token"
+        let newer = SessionEnvelope(session: rotated, savedAt: now)
+        XCTAssertEqual(SessionEnvelope.newer(older, newer)?.session.refreshToken, "newer-token")
+    }
+
     func testMarkReadUpsertNamesThePrimaryKey() async throws {
         let transport = ScriptedTransport(responses: [(201, Data()), (201, Data())])
         let chat = SupabaseChatService(

@@ -55,9 +55,9 @@ final class SupabaseAuthService: AuthService, TokenRefreshing {
         if let exp = AccessTokenClock.expiry(of: session.accessToken) {
             let seconds = Int(exp.timeIntervalSince(now))
             let refresh = AccessTokenClock.needsRefresh(session.accessToken, now: now)
-            print("SquadSync auth: access token expires in \(seconds)s, refresh=\(refresh)")
+            SquadLog.http.notice("auth access token expires in \(seconds, privacy: .public)s refresh=\(refresh, privacy: .public)")
         } else {
-            print("SquadSync auth: access token has no readable exp, refresh=true")
+            SquadLog.http.notice("auth access token has no readable exp, refresh=true")
         }
         #endif
         if !AccessTokenClock.needsRefresh(session.accessToken, now: now) { return session }
@@ -133,6 +133,14 @@ final class SupabaseAuthService: AuthService, TokenRefreshing {
         }
         guard let http = response as? HTTPURLResponse else {
             throw BackendFailure.reconnecting
+        }
+        if http.statusCode >= 400 {
+            HTTPFailureLog.record(
+                method: "POST",
+                path: "/auth/v1/token",
+                status: http.statusCode,
+                body: data
+            )
         }
         if RefreshRejection.clearsSession(status: http.statusCode, body: data) {
             if let kept = try? store.load(), kept.refreshToken != sentRefreshToken {

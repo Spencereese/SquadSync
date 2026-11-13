@@ -25,7 +25,12 @@ final class LiveSessionModel {
     var selectedMessage: UUID?
     var reacting = false
     var viewerId: UUID?
+    var spot: SpotCall?
+    var spotGame = "Warzone"
+    var spotBusy = false
+    var spotNote = ""
     var status = ""
+    var reconnecting = false
     var notes: [String] = [
         "Voice, spots, presence, and push stay mock. Leave off -backend live to use that shell."
     ]
@@ -38,8 +43,10 @@ final class LiveSessionModel {
     private let mockSquads: SquadService?
     private let mockChat: ChatService?
     private let mockInvites: InviteServing?
+    private let mockSpots: SpotServing?
     private var realtime: RealtimeClient?
     private var poll: Task<Void, Never>?
+    private var historyGeneration = 0
 
     enum Phase {
         case email
@@ -69,18 +76,40 @@ final class LiveSessionModel {
             self.phase = .ready
             self.email = session.email
             self.viewerId = session.userId
-            if scenario == .invite {
-                let seeded = squads.seed(ownerId: session.userId, name: "Friday")
+            if scenario == .spotCall || scenario == .spotCallMine {
+                let seeded = squads.seedSpotSquad(ownerId: session.userId)
                 self.squad = seeded
-                let message = RemoteMessage(
-                    id: ChatSeed.messageId,
-                    squadId: seeded.id,
-                    senderId: ChatSeed.otherId,
-                    body: "From Riley",
-                    sentAt: Date(timeIntervalSince1970: 1_700_000_000)
-                )
-                chat.seed(message)
-                log.ingest([message.entry()])
+                let card = scenario == .spotCallMine
+                    ? SpotSeed.calledByViewer(ownerId: session.userId, squadId: seeded.id, now: Date())
+                    : SpotSeed.halfFilled(ownerId: session.userId, squadId: seeded.id, now: Date())
+                self.spot = card
+                self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: card)
+            } else {
+                self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: nil)
+                if scenario == .invite {
+                    let seeded = squads.seed(ownerId: session.userId, name: "Friday")
+                    self.squad = seeded
+                    let message = RemoteMessage(
+                        id: ChatSeed.messageId,
+                        squadId: seeded.id,
+                        senderId: ChatSeed.otherId,
+                        body: "From Riley",
+                        sentAt: Date(timeIntervalSince1970: 1_700_000_000)
+                    )
+                    chat.seed(message)
+                    log.ingest([message.entry()])
+                    for index in 1...8 {
+                        let extra = RemoteMessage(
+                            id: UUID(uuidString: "00000000-0000-0000-0000-00000000010\(index)")!,
+                            squadId: seeded.id,
+                            senderId: session.userId,
+                            body: "Line \(index)",
+                            sentAt: Date(timeIntervalSince1970: 1_700_000_000 + Double(index))
+                        )
+                        chat.seed(extra)
+                        log.ingest([extra.entry()])
+                    }
+                }
             }
         } else {
             let store = sessionStore ?? KeychainSessionStore()
@@ -90,23 +119,30 @@ final class LiveSessionModel {
             self.mockSquads = nil
             self.mockChat = nil
             self.mockInvites = nil
+            self.mockSpots = nil
         }
     }
 
     private func inviteService(_ session: AuthSession) -> InviteServing {
-        mockInvites ?? SupabaseInviteService(config: config, accessToken: session.accessToken)
+        mockInvites ?? SupabaseInviteService(config: config, accessToken: session.accessToken, refresher: tokenRefresher)
+    }
+
+    private func spotService(_ session: AuthSession) -> SpotServing {
+        mockSpots ?? SupabaseSpotService(config: config, accessToken: session.accessToken, refresher: tokenRefresher)
     }
 
     func restore() async {
+        expireStoredTokenIfRequested()
         do {
-            guard let session = try auth.restore() else { return }
+            guard let session = try await auth.prepareSession(now: Date()) else { return }
             phase = .ready
             email = session.email
             viewerId = session.userId
+            reconnecting = false
             await refresh(session)
-            startLive(session)
+            if squad != nil { startLive(session) }
         } catch {
-            status = (error as? SessionStoreError)?.message ?? "Session restore failed. \(error)"
+            handleSessionError(error)
         }
     }
 
@@ -219,6 +255,112 @@ final class LiveSessionModel {
         }
     }
 
+    func loadSpot(_ session: AuthSession) async {
+        guard let squad else { return }
+        do {
+            let loaded = try await spotService(session).current(squadId: squad.id)
+            if var loaded {
+                loaded.rsvps = loaded.rsvps.map { seat in
+                    var copy = seat
+                    if copy.name == "Player" {
+                        copy.name = squad.members.first { $0.id == seat.userId }?.displayName ?? "Player"
+                    }
+                    if let previous = spot?.seat(for: seat.userId), mockSpots != nil {
+                        copy.ready = previous.ready
+                    }
+                    return copy
+                }
+                spot = loaded
+            } else if mockSpots == nil {
+                spot = nil
+            }
+        } catch {
+            report(error)
+        }
+    }
+
+    func callSpots() async {
+        let game = spotGame.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !game.isEmpty else {
+            spotNote = SpotProblem.gameBlank.message
+            return
+        }
+        spotBusy = true
+        defer { spotBusy = false }
+        do {
+            let session = try requiredSession()
+            guard let squad else { return }
+            _ = try await spotService(session).call(squadId: squad.id, game: game, startsAt: Date())
+            await loadSpot(session)
+            spotNote = "Calling spots: \(game), 8 seats."
+        } catch {
+            spotNote = (error as? SpotProblem)?.message ?? error.localizedDescription
+        }
+    }
+
+    func joinSpot() async {
+        await changeSpot { session, call in
+            try await spotService(session).rsvp(callId: call.id, response: "in")
+            spotNote = "You're in."
+        }
+    }
+
+    func leaveSpot() async {
+        await changeSpot { session, call in
+            try await spotService(session).rsvp(callId: call.id, response: "out")
+            spotNote = "You left."
+        }
+    }
+
+    func toggleReady() async {
+        guard let call = spot, let user = viewerId ?? profile?.id else { return }
+        let next = !(call.seat(for: user)?.ready ?? false)
+        spotBusy = true
+        defer { spotBusy = false }
+        do {
+            let session = try requiredSession()
+            try await spotService(session).setReady(callId: call.id, userId: user, ready: next)
+            await loadSpot(session)
+            if var call = spot, let index = call.rsvps.firstIndex(where: { $0.userId == user }) {
+                call.rsvps[index].ready = next
+                spot = call
+            }
+        } catch let problem as SpotProblem {
+            spotNote = problem.message
+        } catch {
+            report(error)
+        }
+    }
+
+    func lockSpot() async {
+        await changeSpot { session, call in
+            try await spotService(session).lock(callId: call.id)
+            spotNote = "Locked. Open in another app is only a launcher."
+        }
+    }
+
+    func cancelSpot() async {
+        await changeSpot { session, call in
+            try await spotService(session).cancel(callId: call.id)
+            spotNote = "Cancelled."
+        }
+    }
+
+    private func changeSpot(_ work: (AuthSession, SpotCall) async throws -> Void) async {
+        guard let call = spot else { return }
+        spotBusy = true
+        defer { spotBusy = false }
+        do {
+            let session = try requiredSession()
+            try await work(session, call)
+            await loadSpot(session)
+        } catch let problem as SpotProblem {
+            spotNote = problem.message
+        } catch {
+            report(error)
+        }
+    }
+
     func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let squad else { return }
@@ -270,6 +412,20 @@ final class LiveSessionModel {
         phase = .email
     }
 
+    /// `-debug-expire-token` rewrites the stored access token's `exp` into the past so a launch exercises refresh.
+    private func expireStoredTokenIfRequested() {
+        #if DEBUG
+        guard ProcessInfo.processInfo.arguments.contains("-debug-expire-token") else { return }
+        guard var session = try? sessionStore.load() else { return }
+        session.accessToken = AccessTokenClock.replacingExpiry(
+            session.accessToken,
+            exp: Date().addingTimeInterval(-120)
+        )
+        try? sessionStore.save(session)
+        SquadLog.http.notice("auth -debug-expire-token marked the stored access token expired")
+        #endif
+    }
+
     private func requiredSession() throws -> AuthSession {
         guard let session = try auth.restore() else { throw BackendFailure.notSignedIn }
         return session
@@ -299,17 +455,32 @@ final class LiveSessionModel {
     }
 
     func becameActive() async {
-        guard usesLiveSocket, phase == .ready, let session = try? requiredSession(), let squad else { return }
-        presenceNote = "Reconnecting…"
-        realtime?.start(config: config, accessToken: session.accessToken, squadId: squad.id)
-        await loadChat(session)
-        presenceNote = "Back online"
-        try? await Task.sleep(nanoseconds: 1_600_000_000)
-        if presenceNote == "Back online" { presenceNote = "" }
+        guard usesLiveSocket else { return }
+        poll?.cancel()
+        poll = nil
+        expireStoredTokenIfRequested()
+        do {
+            guard let session = try await auth.prepareSession(now: Date()) else { return }
+            phase = .ready
+            email = session.email
+            viewerId = session.userId
+            presenceNote = "Reconnecting…"
+            await refresh(session)
+            if squad != nil { startLive(session) }
+            if !reconnecting {
+                presenceNote = "Back online"
+                try? await Task.sleep(nanoseconds: 1_600_000_000)
+                if presenceNote == "Back online" { presenceNote = "" }
+            }
+        } catch {
+            handleSessionError(error)
+        }
     }
 
     private func refresh(_ session: AuthSession) async {
-        await run {
+        busy = true
+        defer { busy = false }
+        do {
             let profiles = profileService(session)
             let loaded = try await profiles.loadOrCreate(userId: session.userId, email: session.email)
             profile = loaded
@@ -317,19 +488,27 @@ final class LiveSessionModel {
             defaultGame = loaded.defaultGame
             let squads = squadService(session)
             squad = try await squads.currentSquad(userId: session.userId)
+            reconnecting = false
             await loadChat(session)
+            await loadSpot(session)
+        } catch {
+            handleSessionError(error)
         }
     }
 
     private func loadChat(_ session: AuthSession) async {
         guard let squad else { return }
+        historyGeneration += 1
+        let generation = historyGeneration
         do {
             let chat = chatService(session)
             let rows = try await chat.history(squadId: squad.id)
+            guard generation == historyGeneration else { return }
             log.ingest(rows.map { $0.entry() })
             if let cursor = try? await chat.ownReadAt(squadId: squad.id, userId: session.userId) {
                 log.markRead(at: cursor)
             }
+            guard generation == historyGeneration else { return }
             let caughtUp = Date()
             log.markRead(at: caughtUp)
             try? await chat.markRead(squadId: squad.id, userId: session.userId, at: caughtUp, messageId: log.ordered.last?.id)
@@ -340,11 +519,12 @@ final class LiveSessionModel {
                 reads = remoteReads
             }
         } catch {
-            report(error)
+            handleSessionError(error)
         }
     }
 
     var usesLiveSocket: Bool { mockChat == nil }
+    var readyIsLocalOnly: Bool { mockSpots == nil }
 
     private var usesSocket: Bool { usesLiveSocket }
 
@@ -364,7 +544,6 @@ final class LiveSessionModel {
         }
         realtime = client
         client.start(config: config, accessToken: session.accessToken, squadId: squad.id)
-        beginPoll(session)
     }
 
     private func handle(_ event: RealtimeClient.Event, session: AuthSession) async {
@@ -398,6 +577,8 @@ final class LiveSessionModel {
             squad = try? await squadService(session).currentSquad(userId: session.userId)
         case .reaction(let mark, let removed):
             if removed { board.remove(mark) } else { board.add(mark) }
+        case .spots:
+            await loadSpot(session)
         case .read(let read):
             if let index = reads.firstIndex(where: { $0.userId == read.userId }) {
                 reads[index] = read
@@ -419,9 +600,13 @@ final class LiveSessionModel {
 
     private func pollOnce(_ session: AuthSession) async {
         guard let squad else { return }
+        historyGeneration += 1
+        let generation = historyGeneration
         do {
             let rows = try await chatService(session).history(squadId: squad.id)
+            guard generation == historyGeneration else { return }
             log.ingest(rows.map { $0.entry() })
+            await loadSpot(session)
         } catch {
             if RequestNoise.isCancellation(error) { return }
             report(error)
@@ -440,21 +625,67 @@ final class LiveSessionModel {
     }
 
     private func profileService(_ session: AuthSession) -> ProfileService {
-        mockProfiles ?? SupabaseProfileService(config: config, accessToken: session.accessToken)
+        mockProfiles ?? SupabaseProfileService(config: config, accessToken: session.accessToken, refresher: tokenRefresher)
     }
 
     private func squadService(_ session: AuthSession) -> SquadService {
-        mockSquads ?? SupabaseSquadService(config: config, accessToken: session.accessToken)
+        mockSquads ?? SupabaseSquadService(config: config, accessToken: session.accessToken, refresher: tokenRefresher)
     }
 
     private func chatService(_ session: AuthSession) -> ChatService {
-        mockChat ?? SupabaseChatService(config: config, accessToken: session.accessToken)
+        mockChat ?? SupabaseChatService(config: config, accessToken: session.accessToken, refresher: tokenRefresher)
+    }
+
+    private var tokenRefresher: TokenRefreshing? { auth as? TokenRefreshing }
+
+    private func handleSessionError(_ error: Error) {
+        if RequestNoise.isCancellation(error) { return }
+        guard let failure = error as? BackendFailure else {
+            if let storeError = error as? SessionStoreError {
+                status = storeError.message
+            } else {
+                status = error.localizedDescription
+            }
+            return
+        }
+        switch SessionFailurePolicy.surface(failure) {
+        case .signIn(let message):
+            realtime?.stop()
+            realtime = nil
+            poll?.cancel()
+            poll = nil
+            squad = nil
+            spot = nil
+            profile = nil
+            phase = .email
+            reconnecting = false
+            status = message
+        case .reconnecting:
+            reconnecting = true
+            status = SessionFailurePolicy.reconnecting
+            if phase != .ready, let session = try? auth.restore() {
+                phase = .ready
+                email = session.email
+                viewerId = session.userId
+            }
+        case .message:
+            if let failure = error as? BackendFailure {
+                note(failure)
+            } else {
+                status = error.localizedDescription
+            }
+        }
     }
 
     private func report(_ error: Error) {
         if RequestNoise.isCancellation(error) { return }
         if let failure = error as? BackendFailure {
-            note(failure)
+            switch SessionFailurePolicy.surface(failure) {
+            case .signIn, .reconnecting:
+                handleSessionError(error)
+            case .message:
+                note(failure)
+            }
         } else if let problem = error as? InviteProblem {
             status = problem.message
         } else {
@@ -468,8 +699,10 @@ final class LiveSessionModel {
         case .notConfigured:
             status = config.configurationError
                 ?? "Supabase is not configured. Copy Config.example.xcconfig to Config.xcconfig and paste the anon key."
-        case .notSignedIn:
-            status = "Sign in again."
+        case .notSignedIn, .sessionEnded:
+            status = SessionFailurePolicy.ended
+        case .reconnecting:
+            status = SessionFailurePolicy.reconnecting
         case .notSetUp(let feature):
             let line = "\(feature.rawValue) are not set up yet."
             status = line
@@ -485,6 +718,8 @@ struct LiveSessionView: View {
     @State private var pinnedToBottom = true
     @State private var showNewMessages = false
     @State private var wentToBackground = false
+    @State private var confirmSignOut = false
+    @ScaledMetric(relativeTo: .body) private var composerLine: CGFloat = 22
     @Environment(\.scenePhase) private var scenePhase
 
     init(config: BackendConfig = .fromBundle(), backend: BackendMode = .live, scenario: LaunchScenario = .seated) {
@@ -501,12 +736,33 @@ struct LiveSessionView: View {
                 }
             }
             .padding(SQSpace.l)
-            .navigationTitle("SquadSync")
+            .navigationTitle(squadTitle ?? "SquadSync")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
+                if let squadTitle {
+                    ToolbarItem(placement: .principal) {
+                        Text(squadTitle)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.65)
+                            .accessibilityIdentifier("squad-title")
+                            .accessibilityAddTraits(.isHeader)
+                    }
+                }
                 if model.phase == .ready {
-                    Button("Sign out") { Task { await model.signOut() } }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            confirmSignOut = true
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                        }
+                        .accessibilityLabel("Account")
+                    }
                 }
             }
+        }
+        .sheet(isPresented: $confirmSignOut) {
+            signOutSheet
         }
         .task { await model.restore() }
         .onChange(of: scenePhase) { _, phase in
@@ -515,6 +771,26 @@ struct LiveSessionView: View {
             wentToBackground = false
             Task { await model.becameActive() }
         }
+    }
+
+    /// Swiping the sheet away only clears `confirmSignOut`. It does not sign out.
+    private var signOutSheet: some View {
+        VStack(alignment: .leading, spacing: SQSpace.l) {
+            Text("Sign out?")
+                .font(.title2.weight(.semibold))
+            Text("You can sign in again with the same email.")
+                .foregroundStyle(SQColor.muted)
+            Button("Sign out", role: .destructive) {
+                confirmSignOut = false
+                Task { await model.signOut() }
+            }
+            .buttonStyle(.borderedProminent)
+            Button("Cancel", role: .cancel) { confirmSignOut = false }
+        }
+        .padding(SQSpace.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
     }
 
     private var signIn: some View {
@@ -547,8 +823,20 @@ struct LiveSessionView: View {
         }
     }
 
+    private var squadTitle: String? {
+        guard model.phase == .ready, let squad = model.squad else { return nil }
+        return SquadTitle.line(name: squad.name, memberCount: squad.members.count)
+    }
+
     private var ready: some View {
         VStack(alignment: .leading, spacing: SQSpace.m) {
+            if let spot = model.spot {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    if SpotCallRules.showsPinnedBar(spot, now: context.date) {
+                        activeCallBar(spot, now: context.date)
+                    }
+                }
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: SQSpace.m) {
                     if model.profile != nil {
@@ -560,8 +848,6 @@ struct LiveSessionView: View {
                             .disabled(model.busy)
                     }
                     if let squad = model.squad {
-                        Text(SquadTitle.line(name: squad.name, memberCount: squad.members.count))
-                            .font(.headline)
                         ForEach(squad.members) { member in
                             Text(member.isOwner ? "\(member.displayName) · Owner" : member.displayName)
                         }
@@ -572,6 +858,9 @@ struct LiveSessionView: View {
                         if let notice = liveNotice {
                             Text(notice).font(.caption).foregroundStyle(SQColor.muted)
                         }
+                    } else if model.reconnecting {
+                        Text("Reconnecting…")
+                            .accessibilityIdentifier("reconnecting")
                     } else {
                         joinControls
                         Text("You're not in a squad yet.")
@@ -595,16 +884,6 @@ struct LiveSessionView: View {
             }
             if model.squad != nil {
                 chatList
-                    .safeAreaInset(edge: .bottom, spacing: SQSpace.s) {
-                        VStack(alignment: .leading, spacing: SQSpace.xs) {
-                            Text("Unread \(model.log.unreadCount(viewerId: model.profile?.id ?? UUID()))")
-                                .font(.caption)
-                            composer
-                        }
-                        .padding(.top, SQSpace.s)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(SQColor.canvas)
-                    }
                     .frame(minHeight: 180, maxHeight: .infinity, alignment: .top)
                     .layoutPriority(1)
             }
@@ -628,36 +907,46 @@ struct LiveSessionView: View {
 
     private var chatList: some View {
         ScrollViewReader { proxy in
-            ZStack(alignment: .bottom) {
+            VStack(spacing: 0) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
+                        if model.spot == nil {
+                            callSpotForm
+                        }
+                        if let spot = model.spot {
+                            spotCard(spot)
+                        }
                         ForEach(model.log.ordered) { entry in
                             messageRow(entry).id(entry.id)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(ChatContentFrame())
+                    Text("End of messages")
+                        .font(.caption)
+                        .foregroundStyle(.clear)
+                        .frame(maxWidth: .infinity, minHeight: SQSpace.l)
+                        .id(ChatAnchor.end)
+                        .accessibilityIdentifier(ChatAnchor.end)
                 }
+                .contentMargins(.bottom, SQSpace.l, for: .scrollContent)
                 .coordinateSpace(name: "chat")
                 .scrollDismissesKeyboard(.interactively)
                 .modifier(ChatPinModifier(pinned: $pinnedToBottom))
-                if showNewMessages {
-                    Button("New messages") {
-                        showNewMessages = false
-                        pinnedToBottom = true
-                        if let id = model.log.ordered.last?.id {
-                            proxy.scrollTo(id, anchor: .bottom)
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("new-messages")
+                .accessibilityIdentifier("message-list")
+                composerBar(proxy)
+            }
+            .onAppear {
+                guard model.log.ordered.last != nil else { return }
+                Task { @MainActor in
+                    scrollChatToBottom(proxy)
                 }
             }
             .onChange(of: model.log.ordered.last?.id) { _, id in
                 guard let id else { return }
                 let own = model.followSend == id
                 if ChatFollow.scrolls(pinned: pinnedToBottom, ownSend: own) {
-                    withAnimation { proxy.scrollTo(id, anchor: .bottom) }
+                    scrollChatToBottom(proxy)
                     showNewMessages = false
                     if own { model.followSend = nil }
                 } else {
@@ -667,13 +956,256 @@ struct LiveSessionView: View {
         }
     }
 
+    /// The composer is a sibling under the list, so the scroll view's frame ends above it.
+    /// Its identifier is its own element and is not an ancestor of Message or Send.
+    private func composerBar(_ proxy: ScrollViewProxy) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Composer")
+                .font(.system(size: 1))
+                .foregroundStyle(.clear)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 1)
+                .accessibilityIdentifier("composer")
+            VStack(alignment: .leading, spacing: SQSpace.xs) {
+                if showNewMessages {
+                    Button("New messages") {
+                        showNewMessages = false
+                        pinnedToBottom = true
+                        scrollChatToBottom(proxy)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("new-messages")
+                }
+                let unread = model.log.unreadCount(viewerId: model.profile?.id ?? model.viewerId ?? UUID())
+                if unread > 0 {
+                    Text("Unread \(unread)")
+                        .font(.caption)
+                        .accessibilityIdentifier("unread-count")
+                }
+                composer
+            }
+            .padding(.top, SQSpace.m)
+            .padding(.bottom, SQSpace.s)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SQColor.canvas)
+    }
+
+    private func scrollChatToBottom(_ proxy: ScrollViewProxy) {
+        proxy.scrollTo(ChatAnchor.end, anchor: .bottom)
+    }
+
+    private var callSpotForm: some View {
+        VStack(alignment: .leading, spacing: SQSpace.s) {
+            TextField("Game", text: Binding(get: { model.spotGame }, set: { model.spotGame = $0 }))
+                .textFieldStyle(.roundedBorder)
+            Button("Call spots") { Task { await model.callSpots() } }
+                .disabled(model.spotBusy)
+            Text("Seats are capped at 8. This server does not store a smaller target.")
+                .font(.caption)
+                .foregroundStyle(SQColor.muted)
+        }
+        .padding(SQSpace.s)
+        .background(SQColor.card, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func spotCard(_ spot: SpotCall) -> some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let expired = SpotCallRules.showsExpired(spot, now: context.date)
+            let viewer = model.viewerId ?? model.profile?.id
+            let mine = viewer.flatMap { spot.seat(for: $0) }
+            VStack(alignment: .leading, spacing: SQSpace.s) {
+                Text("Calling spots: \(spot.game), \(spot.filled) of \(SpotCallRules.cap) seats")
+                    .font(.headline)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(statusLine(spot, expired: expired, now: context.date))
+                    .font(.subheadline.monospacedDigit())
+                    .foregroundStyle(SQColor.warning)
+                    .accessibilityIdentifier("spot-countdown")
+                ForEach(spot.rsvps.filter(\.isIn)) { seat in
+                    seatChips(seat)
+                }
+                Text("Check-in starters can join after the timer. 0013 does not know who is in a game.")
+                    .font(.caption2)
+                    .foregroundStyle(SQColor.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                if model.readyIsLocalOnly {
+                    Text("Ready is not stored. 0013 only records in or out, and lock does not wait for it.")
+                        .font(.caption2)
+                        .foregroundStyle(SQColor.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !model.spotNote.isEmpty {
+                    Text(model.spotNote)
+                        .font(.caption)
+                        .foregroundStyle(SQColor.muted)
+                }
+                if spot.status == .open && !expired {
+                    Button("Join") { Task { await model.joinSpot() } }
+                        .disabled(model.spotBusy || viewer == nil || !SpotCallRules.canJoin(spot, userId: viewer!, now: context.date))
+                        .accessibilityIdentifier("spot-join")
+                        .accessibilityLabel("Join the spot call")
+                    if mine?.isIn == true {
+                        Button(mine?.ready == true ? "Ready" : "Ready") { Task { await model.toggleReady() } }
+                            .disabled(model.spotBusy || model.readyIsLocalOnly)
+                            .accessibilityIdentifier("spot-ready")
+                            .accessibilityLabel(mine?.ready == true ? "Ready, on" : "Ready, off")
+                    }
+                    if let viewer, SpotCallRules.canLock(spot, actorId: viewer, ownerId: model.squad?.ownerId ?? viewer, now: context.date) {
+                        Button("Lock") { Task { await model.lockSpot() } }
+                            .disabled(model.spotBusy)
+                            .accessibilityIdentifier("spot-lock")
+                            .accessibilityLabel("Lock the spot call")
+                    }
+                }
+                if let viewer, SpotCallRules.canCancel(spot, actorId: viewer, now: context.date) {
+                    Button("Cancel") { Task { await model.cancelSpot() } }
+                        .disabled(model.spotBusy)
+                        .accessibilityIdentifier("spot-cancel")
+                        .accessibilityLabel("Cancel the spot call")
+                }
+                if spot.status == .locked {
+                    Text("Open in")
+                        .font(.caption.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                    ForEach(PartyLauncher.destinations) { destination in
+                        Button {
+                            openLauncher(destination)
+                        } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Open in \(destination.title)")
+                                    .font(.body)
+                                    .lineLimit(2)
+                                Text(destination.note)
+                                    .font(.caption2)
+                                    .foregroundStyle(SQColor.muted)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .accessibilityIdentifier("spot-open-\(destination.title.lowercased())")
+                        .accessibilityLabel("Open in \(destination.title). \(destination.note)")
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(SQSpace.m)
+            .background(SQColor.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(SQColor.line, lineWidth: 1)
+            )
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("spot-card")
+        }
+    }
+
+    private func statusLine(_ spot: SpotCall, expired: Bool, now: Date) -> String {
+        if spot.status == .cancelled { return "Cancelled" }
+        if spot.status == .ended { return "Ended" }
+        if spot.status == .locked { return "Locked" }
+        if expired { return "Expired" }
+        if spot.filled >= SpotCallRules.cap { return "Full · \(SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now))" }
+        return "\(SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now)) left"
+    }
+
+    private func seatChips(_ seat: SpotRsvp) -> some View {
+        let parts = seatParts(seat)
+        return ChipFlow(spacing: SQSpace.xs) {
+            ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
+                Text(part)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .padding(.horizontal, SQSpace.s)
+                    .padding(.vertical, SQSpace.xs)
+                    .background(SQColor.theirs, in: Capsule())
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(parts.joined(separator: ", "))
+    }
+
+    private func seatParts(_ seat: SpotRsvp) -> [String] {
+        var parts = [seat.name]
+        if seat.starter { parts.append("starter") }
+        parts.append(seat.ready ? "Ready" : "In")
+        return parts
+    }
+
+    private func openLauncher(_ destination: PartyLauncher.Destination) {
+        let application = UIApplication.shared
+        let url = application.canOpenURL(destination.scheme) ? destination.scheme : destination.web
+        application.open(url)
+    }
+
+    private func activeCallBar(_ spot: SpotCall, now: Date) -> some View {
+        let viewer = model.viewerId ?? model.profile?.id
+        let action = viewer.flatMap {
+            SpotCallRules.barAction(spot, viewerId: $0, ownerId: model.squad?.ownerId ?? $0, now: now)
+        }
+        return VStack(alignment: .leading, spacing: SQSpace.xs) {
+            Text(spot.game)
+                .font(.headline)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("\(spot.filled) of \(SpotCallRules.cap)")
+                .font(.subheadline)
+                .lineLimit(1)
+            Text(SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now))
+                .font(.subheadline.monospacedDigit())
+                .lineLimit(1)
+                .accessibilityIdentifier("active-call-countdown")
+            if let action { barButton(action) }
+        }
+        .padding(SQSpace.s)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SQColor.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(SQColor.line, lineWidth: 1)
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("active-call-bar")
+    }
+
+    private func barButton(_ action: SpotBarAction) -> some View {
+        Button(action.title) { Task { await runBar(action) } }
+            .disabled(model.spotBusy || (action == .ready && model.readyIsLocalOnly))
+            .accessibilityIdentifier(action.identifier)
+            .accessibilityLabel(barLabel(action))
+    }
+
+    private func barLabel(_ action: SpotBarAction) -> String {
+        switch action {
+        case .join: return "Join the spot call"
+        case .leave: return "Leave the spot call"
+        case .ready:
+            let viewer = model.viewerId ?? model.profile?.id
+            let on = viewer.flatMap { model.spot?.seat(for: $0)?.ready } == true
+            return on ? "Ready, on" : "Ready, off"
+        case .lock: return "Lock the spot call"
+        case .cancel: return "Cancel the spot call"
+        }
+    }
+
+    private func runBar(_ action: SpotBarAction) async {
+        switch action {
+        case .join: await model.joinSpot()
+        case .leave: await model.leaveSpot()
+        case .ready: await model.toggleReady()
+        case .lock: await model.lockSpot()
+        case .cancel: await model.cancelSpot()
+        }
+    }
+
     private var composer: some View {
-        HStack {
+        HStack(alignment: .center) {
             TextField("Message", text: Binding(get: { model.draft }, set: { model.draft = $0 }))
                 .textFieldStyle(.roundedBorder)
             Button("Send") { Task { await model.send() } }
                 .accessibilityIdentifier("send-message")
         }
+        .frame(maxHeight: composerLine * 3)
     }
 
     private var inviteControls: some View {
@@ -812,12 +1344,70 @@ struct LiveSessionView: View {
     }
 }
 
+private struct ChipFlow: Layout {
+    var spacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 0
+        guard width > 0 else {
+            let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+            let height = sizes.map(\.height).max() ?? 0
+            let total = sizes.map(\.width).reduce(0, +) + spacing * CGFloat(max(sizes.count - 1, 0))
+            return CGSize(width: total, height: height)
+        }
+        let rows = rows(width: width, subviews: subviews)
+        let height = rows.map { $0.map(\.height).max() ?? 0 }.reduce(0, +)
+            + spacing * CGFloat(max(rows.count - 1, 0))
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let rows = rows(width: bounds.width, subviews: subviews)
+        var y = bounds.minY
+        var index = 0
+        for row in rows {
+            let rowHeight = row.map(\.height).max() ?? 0
+            var x = bounds.minX
+            for size in row {
+                subviews[index].place(
+                    at: CGPoint(x: x, y: y),
+                    proposal: ProposedViewSize(width: size.width, height: size.height)
+                )
+                x += size.width + spacing
+                index += 1
+            }
+            y += rowHeight + spacing
+        }
+    }
+
+    private func rows(width: CGFloat, subviews: Subviews) -> [[CGSize]] {
+        var rows: [[CGSize]] = [[]]
+        var used: CGFloat = 0
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            let next = used == 0 ? size.width : used + spacing + size.width
+            if used > 0, next > width {
+                rows.append([size])
+                used = size.width
+            } else {
+                rows[rows.count - 1].append(size)
+                used = next
+            }
+        }
+        return rows
+    }
+}
+
 private struct WideRowButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
     }
+}
+
+private enum ChatAnchor {
+    static let end = "message-list-end"
 }
 
 private struct ChatFrameKey: PreferenceKey {

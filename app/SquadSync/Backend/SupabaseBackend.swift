@@ -1,12 +1,21 @@
 import Foundation
 
-final class SupabaseAuthService: AuthService {
+private final class RefreshFlight: @unchecked Sendable {
+    let task: Task<AuthSession, Error>
+    init(_ task: Task<AuthSession, Error>) { self.task = task }
+}
+
+final class SupabaseAuthService: AuthService, TokenRefreshing {
     private let config: BackendConfig
     private let store: SessionStoring
+    private let transport: HTTPTransport
+    private var refreshTask: RefreshFlight?
+    private let refreshLock = NSLock()
 
-    init(config: BackendConfig, store: SessionStoring) {
+    init(config: BackendConfig, store: SessionStoring, transport: HTTPTransport = URLSessionTransport.shared) {
         self.config = config
         self.store = store
+        self.transport = transport
     }
 
     func sendCode(to email: String) async throws {
@@ -40,6 +49,34 @@ final class SupabaseAuthService: AuthService {
 
     func restore() throws -> AuthSession? { try store.load() }
 
+    func prepareSession(now: Date) async throws -> AuthSession? {
+        guard let session = try store.load() else { return nil }
+        #if DEBUG
+        if let exp = AccessTokenClock.expiry(of: session.accessToken) {
+            let seconds = Int(exp.timeIntervalSince(now))
+            let refresh = AccessTokenClock.needsRefresh(session.accessToken, now: now)
+            SquadLog.http.notice("auth access token expires in \(seconds, privacy: .public)s refresh=\(refresh, privacy: .public)")
+        } else {
+            SquadLog.http.notice("auth access token has no readable exp, refresh=true")
+        }
+        #endif
+        if !AccessTokenClock.needsRefresh(session.accessToken, now: now) { return session }
+        return try await refreshSharingWork()
+    }
+
+    func refreshAfterRejection() async -> TokenRefreshResult {
+        do {
+            let session = try await refreshSharingWork()
+            return .refreshed(session.accessToken)
+        } catch let failure as BackendFailure {
+            if case .sessionEnded = failure { return .rejected }
+            if case .notSignedIn = failure { return .rejected }
+            return .unreachable
+        } catch {
+            return .unreachable
+        }
+    }
+
     func signOut() async throws {
         if let token = try store.load()?.accessToken {
             var client = http()
@@ -49,7 +86,89 @@ final class SupabaseAuthService: AuthService {
         try store.clear()
     }
 
-    private func http() -> SupabaseHTTP { SupabaseHTTP(config: config, accessToken: nil) }
+    private func http() -> SupabaseHTTP { SupabaseHTTP(config: config, accessToken: nil, transport: transport) }
+
+    /// One refresh at a time. A cancelled waiter does not drop the in-flight task,
+    /// or the next caller would send the same refresh token again.
+    private func refreshSharingWork() async throws -> AuthSession {
+        let flight: RefreshFlight = refreshLock.withLock {
+            if let refreshTask { return refreshTask }
+            let created = RefreshFlight(Task { try await self.performRefresh() })
+            refreshTask = created
+            return created
+        }
+        let result = await flight.task.result
+        refreshLock.withLock {
+            if refreshTask === flight { refreshTask = nil }
+        }
+        return try result.get()
+    }
+
+    private func performRefresh() async throws -> AuthSession {
+        guard let session = try store.load() else { throw BackendFailure.sessionEnded }
+        let sentRefreshToken = session.refreshToken
+        guard config.isConfigured, let base = config.url else { throw BackendFailure.notConfigured }
+        var url = base
+        url.appendPathComponent("auth")
+        url.appendPathComponent("v1")
+        url.appendPathComponent("token")
+        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
+            throw BackendFailure.rejected("Bad request URL.")
+        }
+        components.queryItems = [URLQueryItem(name: "grant_type", value: "refresh_token")]
+        guard let endpoint = components.url else { throw BackendFailure.rejected("Bad request URL.") }
+        var request = URLRequest(url: endpoint)
+        request.httpMethod = "POST"
+        request.setValue(config.anonKey, forHTTPHeaderField: "apikey")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(RefreshBody(refreshToken: sentRefreshToken))
+        let data: Data
+        let response: URLResponse
+        do {
+            (data, response) = try await transport.data(for: request)
+        } catch {
+            if RequestNoise.isCancellation(error) { throw error }
+            throw BackendFailure.reconnecting
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw BackendFailure.reconnecting
+        }
+        if http.statusCode >= 400 {
+            HTTPFailureLog.record(
+                method: "POST",
+                path: "/auth/v1/token",
+                status: http.statusCode,
+                body: data
+            )
+        }
+        if RefreshRejection.clearsSession(status: http.statusCode, body: data) {
+            if let kept = try? store.load(), kept.refreshToken != sentRefreshToken {
+                return kept
+            }
+            try store.clear()
+            throw BackendFailure.sessionEnded
+        }
+        guard http.statusCode >= 200 && http.statusCode < 300 else {
+            throw BackendFailure.reconnecting
+        }
+        let decoded = try BackendJSON.decoder.decode(VerifyResponse.self, from: data)
+        let updated = AuthSession(
+            accessToken: decoded.accessToken,
+            refreshToken: decoded.refreshToken,
+            userId: decoded.user.id,
+            email: decoded.user.email ?? session.email
+        )
+        try store.save(updated)
+        return updated
+    }
+
+    private struct RefreshBody: Encodable {
+        let refreshToken: String
+        enum CodingKeys: String, CodingKey {
+            case refreshToken = "refresh_token"
+        }
+    }
 
     private struct EmailBody: Encodable {
         let email: String
@@ -85,8 +204,8 @@ final class SupabaseAuthService: AuthService {
 final class SupabaseProfileService: ProfileService {
     private let http: SupabaseHTTP
 
-    init(config: BackendConfig, accessToken: String) {
-        self.http = SupabaseHTTP(config: config, accessToken: accessToken)
+    init(config: BackendConfig, accessToken: String, refresher: TokenRefreshing? = nil) {
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken, refresher: refresher)
     }
 
     func loadOrCreate(userId: UUID, email: String) async throws -> UserProfile {
@@ -139,8 +258,13 @@ final class SupabaseProfileService: ProfileService {
 final class SupabaseSquadService: SquadService {
     private let http: SupabaseHTTP
 
-    init(config: BackendConfig, accessToken: String) {
-        self.http = SupabaseHTTP(config: config, accessToken: accessToken)
+    init(
+        config: BackendConfig,
+        accessToken: String,
+        refresher: TokenRefreshing? = nil,
+        transport: HTTPTransport = URLSessionTransport.shared
+    ) {
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken, transport: transport, refresher: refresher)
     }
 
     func currentSquad(userId: UUID) async throws -> SquadRecord? {
@@ -163,7 +287,7 @@ final class SupabaseSquadService: SquadService {
         if let error = SquadName.validationError(trimmed) {
             throw BackendFailure.rejected(error)
         }
-        let body = try BackendJSON.encoder.encode(NewSquad(ownerId: ownerId, name: trimmed))
+        let body = try BackendJSON.encoder.encode(NewSquad(ownerId: ownerId))
         let data = try await http.send(
             path: "rest/v1/sq8_squads",
             method: "POST",
@@ -179,7 +303,7 @@ final class SupabaseSquadService: SquadService {
     }
 
     private func load(squadId: UUID) async throws -> SquadRecord {
-        let squad = try await squadDetails(squadId: squadId)
+        let squad = try await fetchSquad(squadId: squadId)
         let memberData = try await http.send(
             path: "rest/v1/sq8_squad_members",
             method: "GET",
@@ -203,34 +327,19 @@ final class SupabaseSquadService: SquadService {
         return SquadRecord(id: squad.id, ownerId: squad.ownerId, name: squad.name, members: members)
     }
 
-    private func squadDetails(squadId: UUID) async throws -> SquadDetails {
-        do {
-            return try await fetchSquad(squadId: squadId, select: SquadSelect.columns)
-        } catch let failure as BackendFailure {
-            guard Self.missingNameColumn(failure) else { throw failure }
-            return try await fetchSquad(squadId: squadId, select: "id,owner_id")
-        }
-    }
-
-    private func fetchSquad(squadId: UUID, select: String) async throws -> SquadDetails {
+    private func fetchSquad(squadId: UUID) async throws -> SquadDetails {
         let squadData = try await http.send(
             path: "rest/v1/sq8_squads",
             method: "GET",
             query: [
                 URLQueryItem(name: "id", value: "eq.\(squadId.uuidString)"),
-                URLQueryItem(name: "select", value: select)
+                URLQueryItem(name: "select", value: SquadSelect.columns)
             ],
             feature: .squad
         )
         let squads = try BackendJSON.decoder.decode([SquadDetails].self, from: squadData)
         guard let squad = squads.first else { throw BackendFailure.rejected("Squad was not found.") }
         return squad
-    }
-
-    private static func missingNameColumn(_ failure: BackendFailure) -> Bool {
-        guard case .rejected(let message) = failure else { return false }
-        let text = message.lowercased()
-        return text.contains("name") && text.contains("column")
     }
 
     private func profiles(for ids: [UUID]) async throws -> [UserProfile] {
@@ -260,10 +369,8 @@ final class SupabaseSquadService: SquadService {
 
     private struct NewSquad: Encodable {
         let ownerId: UUID
-        let name: String
         enum CodingKeys: String, CodingKey {
             case ownerId = "owner_id"
-            case name
         }
     }
 }
@@ -271,8 +378,13 @@ final class SupabaseSquadService: SquadService {
 final class SupabaseChatService: ChatService {
     private let http: SupabaseHTTP
 
-    init(config: BackendConfig, accessToken: String) {
-        self.http = SupabaseHTTP(config: config, accessToken: accessToken)
+    init(
+        config: BackendConfig,
+        accessToken: String,
+        refresher: TokenRefreshing? = nil,
+        transport: HTTPTransport = URLSessionTransport.shared
+    ) {
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken, transport: transport, refresher: refresher)
     }
 
     func history(squadId: UUID) async throws -> [RemoteMessage] {
@@ -296,10 +408,12 @@ final class SupabaseChatService: ChatService {
 
     func markRead(squadId: UUID, userId: UUID, at: Date, messageId: UUID?) async throws {
         let body = try BackendJSON.encoder.encode(ReadWrite(userId: userId, squadId: squadId, lastReadAt: at, lastReadId: messageId))
+        let conflict = [URLQueryItem(name: "on_conflict", value: "user_id,squad_id")]
         do {
             _ = try await http.send(
                 path: "rest/v1/sq8_chat_read_state",
                 method: "POST",
+                query: conflict,
                 body: body,
                 prefer: "resolution=merge-duplicates,return=minimal",
                 feature: .readState
@@ -310,6 +424,7 @@ final class SupabaseChatService: ChatService {
             _ = try await http.send(
                 path: "rest/v1/sq8_message_reads",
                 method: "POST",
+                query: conflict,
                 body: body,
                 prefer: "resolution=merge-duplicates,return=minimal",
                 feature: .readState
@@ -373,9 +488,9 @@ final class SupabaseChatService: ChatService {
     }
 
     func ownReadAt(squadId: UUID, userId: UUID) async throws -> Date? {
-        let shared = try await readStamp(path: "rest/v1/sq8_message_reads", squadId: squadId, userId: userId)
-        let own = try await readStamp(path: "rest/v1/sq8_chat_read_state", squadId: squadId, userId: userId)
-        return [shared, own].compactMap { $0 }.max()
+        // sq8_message_reads is the live cursor. sq8_chat_read_state is the older
+        // table and its GET is not part of this read.
+        try await readStamp(path: "rest/v1/sq8_message_reads", squadId: squadId, userId: userId)
     }
 
     private func readStamp(path: String, squadId: UUID, userId: UUID) async throws -> Date? {
@@ -475,8 +590,8 @@ final class SupabaseChatService: ChatService {
 final class SupabaseInviteService: InviteServing {
     private let http: SupabaseHTTP
 
-    init(config: BackendConfig, accessToken: String) {
-        self.http = SupabaseHTTP(config: config, accessToken: accessToken)
+    init(config: BackendConfig, accessToken: String, refresher: TokenRefreshing? = nil) {
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken, refresher: refresher)
     }
 
     func createInvite() async throws -> InviteTicket {
@@ -521,5 +636,154 @@ final class SupabaseInviteService: InviteServing {
             case ok, error, code
             case squadId = "squad_id"
         }
+    }
+}
+
+final class SupabaseSpotService: SpotServing {
+    private let http: SupabaseHTTP
+
+    init(config: BackendConfig, accessToken: String, refresher: TokenRefreshing? = nil) {
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken, refresher: refresher)
+    }
+
+    func current(squadId: UUID) async throws -> SpotCall? {
+        let data = try await http.send(
+            path: "rest/v1/sq8_spot_calls",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "squad_id", value: "eq.\(squadId.uuidString)"),
+                URLQueryItem(name: "closed_at", value: "is.null"),
+                URLQueryItem(name: "select", value: "id,squad_id,caller_id,game,called_at,join_until,locked_at,closed_at,status"),
+                URLQueryItem(name: "order", value: "called_at.desc"),
+                URLQueryItem(name: "limit", value: "1")
+            ],
+            feature: .squad
+        )
+        let rows = try BackendJSON.decoder.decode([CallRow].self, from: data)
+        guard let row = rows.first else { return nil }
+        let seats = try await rsvps(callId: row.id)
+        return row.call(rsvps: seats)
+    }
+
+    func call(squadId: UUID, game: String, startsAt: Date) async throws -> UUID {
+        let body = try BackendJSON.encoder.encode(CallBody(squad: squadId, game: game, startsAt: startsAt))
+        let data = try await perform(path: "rest/v1/rpc/sq8_call_spot", body: body)
+        return try JSONDecoder().decode(UUID.self, from: data)
+    }
+
+    func rsvp(callId: UUID, response: String) async throws {
+        let body = try BackendJSON.encoder.encode(RsvpBody(callId: callId, response: response))
+        _ = try await perform(path: "rest/v1/rpc/sq8_rsvp_spot", body: body)
+    }
+
+    func lock(callId: UUID) async throws {
+        _ = try await perform(path: "rest/v1/rpc/sq8_lock_spot", body: try BackendJSON.encoder.encode(CallIdBody(callId: callId)))
+    }
+
+    func cancel(callId: UUID) async throws {
+        _ = try await perform(path: "rest/v1/rpc/sq8_cancel_spot", body: try BackendJSON.encoder.encode(CallIdBody(callId: callId)))
+    }
+
+    func end(callId: UUID) async throws {
+        _ = try await perform(path: "rest/v1/rpc/sq8_end_spot", body: try BackendJSON.encoder.encode(CallIdBody(callId: callId)))
+    }
+
+    func setReady(callId: UUID, userId: UUID, ready: Bool) async throws {
+        throw SpotProblem.badResponse
+    }
+
+    private func rsvps(callId: UUID) async throws -> [SpotRsvp] {
+        let data = try await http.send(
+            path: "rest/v1/sq8_spot_rsvps",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "call_id", value: "eq.\(callId.uuidString)"),
+                URLQueryItem(name: "select", value: "user_id,response,starter")
+            ],
+            feature: .squad
+        )
+        return try BackendJSON.decoder.decode([RsvpRow].self, from: data).map {
+            SpotRsvp(userId: $0.userId, name: "Player", response: $0.response, starter: $0.starter, ready: false)
+        }
+    }
+
+    private func perform(path: String, body: Data) async throws -> Data {
+        do {
+            return try await http.send(path: path, method: "POST", body: body, feature: .squad)
+        } catch let failure as BackendFailure {
+            if case .rejected(let message) = failure { throw SpotProblem.from(serverMessage: message) }
+            throw failure
+        }
+    }
+
+    private struct CallRow: Decodable {
+        let id: UUID
+        let squadId: UUID
+        let callerId: UUID
+        let game: String
+        let calledAt: Date
+        let joinUntil: Date
+        let lockedAt: Date?
+        let closedAt: Date?
+        let status: String
+
+        enum CodingKeys: String, CodingKey {
+            case id, game, status
+            case squadId = "squad_id"
+            case callerId = "caller_id"
+            case calledAt = "called_at"
+            case joinUntil = "join_until"
+            case lockedAt = "locked_at"
+            case closedAt = "closed_at"
+        }
+
+        func call(rsvps: [SpotRsvp]) -> SpotCall {
+            SpotCall(
+                id: id,
+                squadId: squadId,
+                callerId: callerId,
+                game: game,
+                calledAt: calledAt,
+                joinUntil: joinUntil,
+                lockedAt: lockedAt,
+                closedAt: closedAt,
+                status: SpotCallStatus(rawValue: status) ?? .open,
+                rsvps: rsvps
+            )
+        }
+    }
+
+    private struct RsvpRow: Decodable {
+        let userId: UUID
+        let response: String
+        let starter: Bool
+        enum CodingKeys: String, CodingKey {
+            case response, starter
+            case userId = "user_id"
+        }
+    }
+
+    private struct CallBody: Encodable {
+        let squad: UUID
+        let game: String
+        let startsAt: Date
+        enum CodingKeys: String, CodingKey {
+            case squad, game
+            case startsAt = "starts_at"
+        }
+    }
+
+    private struct RsvpBody: Encodable {
+        let callId: UUID
+        let response: String
+        enum CodingKeys: String, CodingKey {
+            case response
+            case callId = "call_id"
+        }
+    }
+
+    private struct CallIdBody: Encodable {
+        let callId: UUID
+        enum CodingKeys: String, CodingKey { case callId = "call_id" }
     }
 }

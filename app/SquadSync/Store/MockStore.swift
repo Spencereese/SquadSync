@@ -293,6 +293,10 @@ enum LaunchScenario: String {
     case noSquad
     /// Signed-in owner with a mock squad, so invite and join are on screen.
     case invite
+    /// Half-filled spot call in the mock squad chat.
+    case spotCall
+    /// The viewer called the spot card, so Cancel and Lock are available.
+    case spotCallMine
 }
 
 enum Seed {
@@ -336,7 +340,7 @@ enum Seed {
                 Seat(userId: "jordan", status: .ready),
                 Seat(userId: "quinn", status: .ready)
             ]
-        case .noSquad, .invite:
+        case .noSquad, .invite, .spotCall, .spotCallMine:
             seats = []
         }
         return Party(

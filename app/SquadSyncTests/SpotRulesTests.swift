@@ -102,3 +102,93 @@ final class SpotRulesTests: XCTestCase {
         XCTAssertEqual(SpotRules.visibleConversations(viewer: member, conversations: threads).count, 4)
     }
 }
+
+final class SpotCallRulesTests: XCTestCase {
+    private let owner = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    private let caller = UUID(uuidString: "00000000-0000-0000-0000-00000000B011")!
+    private let starter = UUID(uuidString: "00000000-0000-0000-0000-00000000B012")!
+    private let member = UUID(uuidString: "00000000-0000-0000-0000-00000000B013")!
+    private let start = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func call(status: SpotCallStatus = .open, joinUntil: Date? = nil, rsvps: [SpotRsvp]? = nil) -> SpotCall {
+        SpotCall(
+            id: SpotSeed.callId,
+            squadId: ChatSeed.squadId,
+            callerId: caller,
+            game: "Warzone",
+            calledAt: start,
+            joinUntil: joinUntil ?? start.addingTimeInterval(SpotCallRules.window),
+            lockedAt: status == .locked ? start : nil,
+            closedAt: status == .ended || status == .cancelled ? start : nil,
+            status: status,
+            rsvps: rsvps ?? [
+                SpotRsvp(userId: caller, name: "Alex", response: "in", starter: false, ready: false)
+            ]
+        )
+    }
+
+    func testCountdownUsesTheServerDeadlineAndClampsAtFiveMinutes() {
+        let fresh = start.addingTimeInterval(SpotCallRules.window)
+        XCTAssertEqual(SpotCallRules.countdown(joinUntil: fresh, now: start), "5:00")
+        XCTAssertEqual(SpotCallRules.countdown(joinUntil: fresh, now: start.addingTimeInterval(90)), "3:30")
+        XCTAssertEqual(SpotCallRules.countdown(joinUntil: fresh, now: start.addingTimeInterval(301)), "0:00")
+        let skewed = start.addingTimeInterval(8 * 60)
+        XCTAssertEqual(SpotCallRules.remaining(joinUntil: skewed, now: start), SpotCallRules.window)
+    }
+
+    func testStartersCanJoinAfterTheWindowAndOthersCannot() {
+        let open = call()
+        let later = start.addingTimeInterval(SpotCallRules.window + 1)
+        var expired = open
+        expired.joinUntil = start
+        XCTAssertTrue(SpotCallRules.canJoin(open, userId: member, now: start.addingTimeInterval(10)))
+        XCTAssertFalse(SpotCallRules.canJoin(expired, userId: member, now: later))
+        var seated = expired
+        seated.rsvps.append(SpotRsvp(userId: member, name: "Sam", response: "out", starter: true, ready: false))
+        XCTAssertTrue(SpotCallRules.canJoin(seated, userId: member, now: later))
+        XCTAssertTrue(SpotCallRules.showsExpired(expired, now: later))
+        XCTAssertEqual(expired.status, .open)
+    }
+
+    func testLockIsCallerOrOwnerAndDoesNotRequireReady() {
+        let open = call()
+        XCTAssertTrue(SpotCallRules.canLock(open, actorId: caller, ownerId: owner, now: start))
+        XCTAssertTrue(SpotCallRules.canLock(open, actorId: owner, ownerId: owner, now: start))
+        XCTAssertFalse(SpotCallRules.canLock(open, actorId: member, ownerId: owner, now: start))
+        XCTAssertFalse(SpotCallRules.canLock(call(status: .cancelled), actorId: caller, ownerId: owner, now: start))
+        XCTAssertFalse(SpotCallRules.everyoneReady(open))
+        var full = open
+        full.rsvps = (0..<8).map { index in
+            SpotRsvp(
+                userId: UUID(uuidString: "00000000-0000-0000-0000-00000000000\(index)")!,
+                name: "P\(index)",
+                response: "in",
+                starter: false,
+                ready: true
+            )
+        }
+        XCTAssertTrue(SpotCallRules.everyoneReady(full))
+        XCTAssertEqual(SpotProblem.from(serverMessage: "spot_full").message, "That spot call is full (8).")
+        XCTAssertEqual(SpotProblem.from(serverMessage: "spot_join_closed"), .joinClosed)
+    }
+
+    func testExpiredOpenCallHidesJoinAndLock() {
+        var card = call()
+        card.joinUntil = start
+        let now = start.addingTimeInterval(1)
+        XCTAssertEqual(card.status, .open)
+        XCTAssertNil(card.closedAt)
+        XCTAssertTrue(SpotCallRules.showsExpired(card, now: now))
+        XCTAssertEqual(SpotCallRules.countdown(joinUntil: card.joinUntil, now: now), "0:00")
+        XCTAssertFalse(SpotCallRules.canJoin(card, userId: member, now: now))
+        XCTAssertFalse(SpotCallRules.canLock(card, actorId: caller, ownerId: owner, now: now))
+        XCTAssertFalse(SpotCallRules.canLock(card, actorId: owner, ownerId: owner, now: now))
+        XCTAssertFalse(SpotCallRules.canCancel(card, actorId: caller, now: now))
+        XCTAssertFalse(SpotCallRules.showsPinnedBar(card, now: now))
+        XCTAssertNil(SpotCallRules.barAction(card, viewerId: caller, ownerId: owner, now: now))
+        XCTAssertNil(SpotCallRules.barAction(card, viewerId: member, ownerId: owner, now: now))
+        let open = call()
+        XCTAssertTrue(SpotCallRules.canCancel(open, actorId: caller, now: start))
+        XCTAssertEqual(SpotCallRules.barAction(open, viewerId: member, ownerId: owner, now: start), .join)
+    }
+}

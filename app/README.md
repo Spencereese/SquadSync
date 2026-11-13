@@ -78,11 +78,16 @@ xcrun simctl launch "$UDID" com.spencereese.squadsync -screen handoff
 xcrun simctl launch "$UDID" com.spencereese.squadsync -uitest-largeText -screen inbox
 xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario noSquad
 xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario invite
+xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario spotCall
 ```
 
 `-backend mock -scenario noSquad` opens the live session screen against the in-memory mock, already signed in and not in a squad. The create-squad form is on screen. It does not write to Supabase.
 
 `-backend mock -scenario invite` opens that screen as the owner of a mock squad named Friday, with Riley already in it and one message from Riley (`message-row-seed-1`). Create invite, share or copy the code, and the join field are on screen. Codes `EXPIRED2`, `REVOKED2`, `FULL2345`, and `ALREADY2` show those errors. Any other code adds Riley again only if she is not already seated. Nothing is written to Supabase.
+
+`-backend mock -scenario spotCall` opens the same screen with a half-filled Warzone spot card (4 of 8 in). You are not in it yet, so Join and then Ready are on the card. Ready stays on this phone. Nothing is written to Supabase.
+
+`-backend mock -scenario spotCallMine` opens that card with you as the caller, so Cancel and Lock are on it.
 
 The voice lounge is mock-only. `VoiceRoomService` is the seam for a later hosted room: join, leave, mute, participants, speaking levels, and a connection state of idle, connecting, connected, reconnecting, or failed. `InMemoryVoiceRoomService` is the fake. No voice SDK, account, or provider is included.
 

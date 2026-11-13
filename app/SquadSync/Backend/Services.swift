@@ -15,8 +15,39 @@ enum BackendFeature: String, Equatable {
 enum BackendFailure: Error, Equatable {
     case notConfigured
     case notSignedIn
+    case sessionEnded
+    case reconnecting
     case notSetUp(BackendFeature)
     case rejected(String)
+}
+
+enum SessionSurface: Equatable {
+    case signIn(String)
+    case reconnecting
+    case message(String)
+}
+
+enum SessionFailurePolicy {
+    static let ended = "Sign in again. The saved session ended."
+    static let reconnecting = "Reconnecting…"
+
+    /// An auth failure is never "you have no squad".
+    static func surface(_ failure: BackendFailure) -> SessionSurface {
+        switch failure {
+        case .sessionEnded, .notSignedIn:
+            return .signIn(ended)
+        case .reconnecting:
+            return .reconnecting
+        case .rejected(let message) where AuthFailure.mentionsJWT(message):
+            return .signIn(ended)
+        case .notConfigured:
+            return .message("Supabase is not configured.")
+        case .notSetUp(let feature):
+            return .message("\(feature.rawValue) are not set up yet.")
+        case .rejected(let message):
+            return .message(message)
+        }
+    }
 }
 
 struct BackendConfig: Equatable {
@@ -93,7 +124,8 @@ struct SquadRecord: Equatable, Identifiable {
 }
 
 enum SquadSelect {
-    static let columns = "id,owner_id,name"
+    /// Live `sq8_squads` is `id`, `owner_id`, `created_at`. `name` is only in the unapplied 0018 file.
+    static let columns = "id,owner_id"
 }
 
 struct SquadDetails: Decodable, Equatable {
@@ -179,7 +211,23 @@ protocol AuthService: AnyObject {
     func sendCode(to email: String) async throws
     func verify(email: String, code: String) async throws -> AuthSession
     func restore() throws -> AuthSession?
+    /// Refresh a stored session when the access token is near or past expiry.
+    func prepareSession(now: Date) async throws -> AuthSession?
     func signOut() async throws
+}
+
+enum TokenRefreshResult: Equatable {
+    case refreshed(String)
+    case rejected
+    case unreachable
+}
+
+protocol TokenRefreshing: AnyObject {
+    func refreshAfterRejection() async -> TokenRefreshResult
+}
+
+protocol HTTPTransport: Sendable {
+    func data(for request: URLRequest) async throws -> (Data, URLResponse)
 }
 
 protocol ProfileService: AnyObject {
@@ -200,6 +248,16 @@ struct MemberRead: Equatable {
 struct InviteTicket: Equatable {
     var code: String
     var squadId: UUID
+}
+
+protocol SpotServing: AnyObject {
+    func current(squadId: UUID) async throws -> SpotCall?
+    func call(squadId: UUID, game: String, startsAt: Date) async throws -> UUID
+    func rsvp(callId: UUID, response: String) async throws
+    func lock(callId: UUID) async throws
+    func cancel(callId: UUID) async throws
+    func end(callId: UUID) async throws
+    func setReady(callId: UUID, userId: UUID, ready: Bool) async throws
 }
 
 protocol InviteServing: AnyObject {

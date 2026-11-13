@@ -110,6 +110,150 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(count.waitForNonExistence(timeout: 5), "Reaction count stayed after it was removed")
     }
 
+    func testMockSpotCallJoinAndReady() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall"]
+        app.launch()
+
+        let title = app.descendants(matching: .any)["squad-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "Squad title was not on the chat screen")
+        XCTAssertEqual(title.label, "Friday · 5 of 8")
+        XCTAssertGreaterThan(title.frame.height, 1, "Squad title was squeezed out, frame \(title.frame)")
+        XCTAssertTrue(app.windows.firstMatch.frame.intersects(title.frame), "Squad title is off screen, frame \(title.frame)")
+        let join = app.buttons["spot-join"]
+        XCTAssertTrue(join.waitForExistence(timeout: 15), "Join was not on the spot card")
+        XCTAssertEqual(join.label, "Join the spot call")
+        reveal(join, in: app)
+        join.tap()
+
+        let ready = app.buttons["spot-ready"]
+        XCTAssertTrue(ready.waitForExistence(timeout: 5), "Ready was not on the spot card after joining")
+        XCTAssertEqual(ready.label, "Ready, off")
+        ready.tap()
+        XCTAssertEqual(ready.label, "Ready, on")
+        ready.tap()
+        XCTAssertEqual(ready.label, "Ready, off")
+        assertListClearsComposer(app)
+    }
+
+    func testMockSpotCallCallerCanCancel() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine"]
+        app.launch()
+
+        let cancel = app.buttons["spot-cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15), "Cancel was not on the caller's card")
+        XCTAssertEqual(cancel.label, "Cancel the spot call")
+        XCTAssertTrue(app.buttons["spot-lock"].waitForExistence(timeout: 5), "Lock was not on the caller's card")
+        reveal(cancel, in: app)
+        cancel.tap()
+
+        let status = app.descendants(matching: .any)["spot-countdown"]
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "Cancelled")
+        XCTAssertFalse(app.buttons["spot-join"].exists)
+        XCTAssertFalse(app.buttons["spot-lock"].exists)
+        XCTAssertFalse(app.buttons["spot-cancel"].exists)
+    }
+
+    func testMockSpotCallStaysReadableAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall", "-uitest-largeText"]
+        app.launch()
+
+        let card = app.descendants(matching: .any)["spot-card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 15), "Spot card was not in the accessibility tree")
+        let join = app.buttons["spot-join"]
+        XCTAssertTrue(join.waitForExistence(timeout: 5), "Join was not in the accessibility tree")
+        reveal(join, in: app)
+        XCTAssertTrue(join.isHittable, "Join was not reachable at the largest text size")
+        let composer = app.descendants(matching: .any)["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5), "Composer was not on screen")
+        XCTAssertLessThanOrEqual(join.frame.maxY + 8, composer.frame.minY, "Card Join is still under the composer")
+        XCTAssertLessThan(join.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
+        XCTAssertTrue(app.descendants(matching: .any)["spot-countdown"].exists)
+        assertListClearsComposer(app)
+    }
+
+    func testPinnedJoinStaysHittableAtLargeTextWithKeyboard() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall", "-uitest-largeText"]
+        app.launch()
+
+        let title = app.descendants(matching: .any)["squad-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "Squad title was not on the chat screen at large text")
+        XCTAssertEqual(title.label, "Friday · 5 of 8")
+        XCTAssertGreaterThan(title.frame.height, 1, "Squad title was squeezed out at large text, frame \(title.frame)")
+        let join = app.buttons["active-call-join"]
+        XCTAssertTrue(join.waitForExistence(timeout: 15), "Pinned Join was not under the title")
+        XCTAssertLessThanOrEqual(title.frame.maxY, join.frame.minY + 1, "Pinned Join covers the squad title")
+        XCTAssertEqual(join.label, "Join the spot call")
+        let field = app.textFields["Message"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "Message field was not on screen")
+        field.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3), "Keyboard did not come up")
+        XCTAssertTrue(join.isHittable, "Pinned Join was covered with the keyboard up, frame \(join.frame)")
+        XCTAssertLessThan(join.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
+    }
+
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        let list = app.scrollViews["message-list"]
+        var moves = 0
+        while !element.isHittable, moves < 24 {
+            if list.exists {
+                let start = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
+                let end = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.58))
+                start.press(forDuration: 0.01, thenDragTo: end)
+            } else {
+                app.swipeUp()
+            }
+            moves += 1
+        }
+    }
+
+    private func assertListClearsComposer(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let list = app.scrollViews["message-list"]
+        let composer = app.descendants(matching: .any)["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5), "Composer was not on screen", file: file, line: line)
+        var end = app.descendants(matching: .any)["message-list-end"]
+        var swipes = 0
+        while !end.exists, swipes < 30 {
+            if list.exists { list.swipeUp() } else { app.swipeUp() }
+            swipes += 1
+            end = app.descendants(matching: .any)["message-list-end"]
+        }
+        XCTAssertTrue(end.waitForExistence(timeout: 2), "List end was not in the accessibility tree after scrolling", file: file, line: line)
+        swipes = 0
+        while end.frame.maxY > composer.frame.minY + 1, swipes < 8 {
+            if list.exists { list.swipeUp() } else { app.swipeUp() }
+            swipes += 1
+        }
+        XCTAssertLessThanOrEqual(
+            end.frame.maxY,
+            composer.frame.minY + 1,
+            "List content ends under the composer. end \(end.frame) composer \(composer.frame)",
+            file: file,
+            line: line
+        )
+        let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'message-row-'"))
+        if rows.count > 0 {
+            var lowest = rows.element(boundBy: 0)
+            if rows.count > 1 {
+                for index in 1..<rows.count {
+                    let row = rows.element(boundBy: index)
+                    if row.frame.maxY > lowest.frame.maxY { lowest = row }
+                }
+            }
+            XCTAssertLessThanOrEqual(
+                lowest.frame.maxY + 8,
+                composer.frame.minY,
+                "Last row footer is under the composer. row \(lowest.frame) composer \(composer.frame)",
+                file: file,
+                line: line
+            )
+        }
+    }
+
     func testMockInviteSendShowsTheRow() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
@@ -117,6 +261,7 @@ final class AccessibilityUITests: XCTestCase {
 
         let field = app.textFields["Message"]
         XCTAssertTrue(field.waitForExistence(timeout: 15), "Message field was not on the invite screen")
+        assertListClearsComposer(app)
         let send = app.buttons["send-message"]
         XCTAssertTrue(send.waitForExistence(timeout: 5), "Send was not on screen")
         XCTAssertTrue(send.isHittable, "Send is covered, frame \(send.frame)")

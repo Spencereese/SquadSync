@@ -173,6 +173,7 @@ final class SquadNameTests: XCTestCase {
         log.ingest([row])
         ChatBackfill.apply(&log, history: [row, row])
         XCTAssertEqual(log.entries.count, 1)
+        XCTAssertEqual(RealtimeLink.connecting.polls, false)
         XCTAssertEqual(RealtimeLink.connected.polls, false)
         XCTAssertEqual(RealtimeLink.reconnecting.polls, true)
         XCTAssertEqual(RealtimeLink.down.polls, true)
@@ -309,14 +310,60 @@ final class SquadNameTests: XCTestCase {
         XCTAssertEqual(SquadTitle.line(name: "Friday", memberCount: 3), "Friday · 3 of 8")
     }
 
-    func testReloadDecodesTheSquadName() throws {
+    func testReloadDecodesASquadRowWithoutAName() throws {
         let json = """
-        {"id":"00000000-0000-0000-0000-000000000002","owner_id":"00000000-0000-0000-0000-000000000001","name":"Friday"}
+        {"id":"00000000-0000-0000-0000-000000000002","owner_id":"00000000-0000-0000-0000-000000000001"}
         """.data(using: .utf8)!
         let reloaded = try JSONDecoder().decode(SquadDetails.self, from: json)
-        XCTAssertEqual(reloaded.name, "Friday")
+        XCTAssertEqual(reloaded.name, "")
         XCTAssertEqual(reloaded.ownerId.uuidString, "00000000-0000-0000-0000-000000000001")
-        XCTAssertEqual(SquadSelect.columns, "id,owner_id,name")
+        XCTAssertEqual(SquadSelect.columns, "id,owner_id")
+        XCTAssertFalse(SquadSelect.columns.split(separator: ",").contains("name"))
+    }
+
+    func testLiveSquadSelectOmitsTheMissingNameColumn() async throws {
+        let owner = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let squad = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let transport = ScriptedTransport(responses: [
+            (200, Data("[{\"squad_id\":\"\(squad.uuidString)\"}]".utf8)),
+            (200, Data("[{\"id\":\"\(squad.uuidString)\",\"owner_id\":\"\(owner.uuidString)\"}]".utf8)),
+            (200, Data("[{\"user_id\":\"\(owner.uuidString)\"}]".utf8)),
+            (200, Data("[{\"id\":\"\(owner.uuidString)\",\"display_name\":\"A\",\"default_game\":\"Call of Duty\"}]".utf8))
+        ])
+        let config = BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: transport)
+        let loaded = try await service.currentSquad(userId: owner)
+        XCTAssertEqual(loaded?.name, "")
+        XCTAssertEqual(SquadTitle.line(name: loaded?.name ?? "", memberCount: loaded?.members.count ?? 0), "Your squad · 1 of 8")
+        let squadGet = try XCTUnwrap(transport.requests.first { $0.url?.path.hasSuffix("sq8_squads") == true })
+        let select = URLComponents(url: squadGet.url!, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first { $0.name == "select" }?
+            .value
+        XCTAssertEqual(select, "id,owner_id")
+        XCTAssertEqual(squadGet.httpMethod, "GET")
+    }
+
+    func testCreateSquadPostsOnlyTheLiveColumns() async throws {
+        let owner = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let squad = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let row = Data("[{\"id\":\"\(squad.uuidString)\",\"owner_id\":\"\(owner.uuidString)\"}]".utf8)
+        let transport = ScriptedTransport(responses: [
+            (201, row),
+            (200, row),
+            (200, Data("[{\"user_id\":\"\(owner.uuidString)\"}]".utf8)),
+            (200, Data("[{\"id\":\"\(owner.uuidString)\",\"display_name\":\"A\",\"default_game\":\"Call of Duty\"}]".utf8))
+        ])
+        let config = BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: transport)
+        let created = try await service.createSquad(ownerId: owner, name: "  Friday  ")
+        XCTAssertEqual(created.name, "Friday")
+        let post = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(post.httpMethod, "POST")
+        XCTAssertTrue(post.url?.path.hasSuffix("sq8_squads") == true)
+        let body = try JSONSerialization.jsonObject(with: post.httpBody ?? Data()) as? [String: String]
+        XCTAssertEqual(body?["owner_id"], owner.uuidString)
+        XCTAssertNil(body?["name"])
     }
 }
 
@@ -344,5 +391,393 @@ final class KeychainFallbackTests: XCTestCase {
     func testSuccessAndMissingItemStayOnTheKeychain() {
         XCTAssertEqual(KeychainFallbackPolicy.choose(status: 0, allowsFallback: false), .keychain)
         XCTAssertEqual(KeychainFallbackPolicy.choose(status: -25300, allowsFallback: true), .keychain)
+    }
+}
+
+final class ScriptedTransport: HTTPTransport, @unchecked Sendable {
+    var requests: [URLRequest] = []
+    var responses: [(Int, Data)]
+
+    init(responses: [(Int, Data)] = []) {
+        self.responses = responses
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        requests.append(request)
+        let next = responses.isEmpty ? (500, Data()) : responses.removeFirst()
+        let url = request.url ?? URL(string: "https://example.supabase.co")!
+        let response = HTTPURLResponse(url: url, statusCode: next.0, httpVersion: nil, headerFields: nil)!
+        return (next.1, response)
+    }
+}
+
+final class PausingTransport: HTTPTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var calls = 0
+    let status: Int
+    let body: Data
+
+    init(status: Int, body: Data) {
+        self.status = status
+        self.body = body
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        lock.withLock { calls += 1 }
+        try await Task.sleep(nanoseconds: 80_000_000)
+        let url = request.url ?? URL(string: "https://example.supabase.co")!
+        let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!
+        return (body, response)
+    }
+}
+
+final class RotatingRejectionTransport: HTTPTransport, @unchecked Sendable {
+    let store: MemorySessionStore
+    let access: String
+    let user: UUID
+
+    init(store: MemorySessionStore, access: String, user: UUID) {
+        self.store = store
+        self.access = access
+        self.user = user
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        try store.save(AuthSession(
+            accessToken: access,
+            refreshToken: "winner",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let url = request.url ?? URL(string: "https://example.supabase.co")!
+        let body = Data("{\"error\":\"invalid_grant\",\"error_description\":\"Invalid Refresh Token: Already Used\"}".utf8)
+        let response = HTTPURLResponse(url: url, statusCode: 400, httpVersion: nil, headerFields: nil)!
+        return (body, response)
+    }
+}
+
+final class StubRefresher: TokenRefreshing {
+    var calls = 0
+    var result: TokenRefreshResult
+
+    init(_ result: TokenRefreshResult) {
+        self.result = result
+    }
+
+    func refreshAfterRejection() async -> TokenRefreshResult {
+        calls += 1
+        return result
+    }
+}
+
+final class SessionRefreshTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_700_000_000)
+    private let user = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+
+    private var config: BackendConfig {
+        BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
+    }
+
+    private func jwt(exp: Date) -> String {
+        func part(_ json: String) -> String {
+            Data(json.utf8).base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+        let stamp = Int(exp.timeIntervalSince1970)
+        return "\(part(#"{"alg":"HS256"}"#)).\(part(#"{"exp":\#(stamp)}"#)).sig"
+    }
+
+    private func tokenJSON(access: String) -> Data {
+        let json = """
+        {"access_token":"\(access)","refresh_token":"rotated","user":{"id":"\(user.uuidString)","email":"a@squad.test"}}
+        """
+        return Data(json.utf8)
+    }
+
+    func testClockRefreshesNearAndPastExpiry() {
+        XCTAssertTrue(AccessTokenClock.needsRefresh(jwt(exp: now.addingTimeInterval(60)), now: now))
+        XCTAssertTrue(AccessTokenClock.needsRefresh(jwt(exp: now.addingTimeInterval(-5)), now: now))
+        XCTAssertFalse(AccessTokenClock.needsRefresh(jwt(exp: now.addingTimeInterval(61)), now: now))
+        XCTAssertTrue(AccessTokenClock.needsRefresh("not-a-jwt", now: now))
+        let hourToken = jwt(exp: now.addingTimeInterval(3600))
+        XCTAssertTrue(AccessTokenClock.needsRefresh(hourToken, now: now.addingTimeInterval(80 * 60)))
+        let dayToken = jwt(exp: now.addingTimeInterval(24 * 3600))
+        XCTAssertFalse(AccessTokenClock.needsRefresh(dayToken, now: now.addingTimeInterval(80 * 60)))
+        let forced = AccessTokenClock.replacingExpiry(dayToken, exp: now.addingTimeInterval(-120))
+        XCTAssertTrue(AccessTokenClock.needsRefresh(forced, now: now))
+    }
+
+    func testPrepareSessionRefreshesWithTheStoredRefreshToken() async throws {
+        let store = MemorySessionStore()
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(30)),
+            refreshToken: "stored-refresh",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let transport = ScriptedTransport(responses: [(200, tokenJSON(access: jwt(exp: now.addingTimeInterval(3600))))])
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        let session = try await auth.prepareSession(now: now)
+        XCTAssertEqual(session?.refreshToken, "rotated")
+        XCTAssertEqual(transport.requests.count, 1)
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertTrue(request.url?.absoluteString.contains("grant_type=refresh_token") == true)
+        XCTAssertTrue(request.url?.path.hasSuffix("/auth/v1/token") == true)
+        let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: String]
+        XCTAssertEqual(body?["refresh_token"], "stored-refresh")
+        XCTAssertEqual(try store.load()?.refreshToken, "rotated")
+    }
+
+    func testFreshTokenSkipsTheTokenEndpoint() async throws {
+        let store = MemorySessionStore()
+        let access = jwt(exp: now.addingTimeInterval(3600))
+        try store.save(AuthSession(accessToken: access, refreshToken: "stored-refresh", userId: user, email: "a@squad.test"))
+        let transport = ScriptedTransport()
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        let session = try await auth.prepareSession(now: now)
+        XCTAssertEqual(session?.accessToken, access)
+        XCTAssertTrue(transport.requests.isEmpty)
+    }
+
+    func testRejectedRefreshClearsTheSession() async throws {
+        let store = MemorySessionStore()
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(-10)),
+            refreshToken: "stored-refresh",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let transport = ScriptedTransport(responses: [(401, Data("{\"error\":\"invalid_grant\"}".utf8))])
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        do {
+            _ = try await auth.prepareSession(now: now)
+            XCTFail("Expected the refresh to end the session")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .sessionEnded)
+        }
+        XCTAssertNil(try store.load())
+    }
+
+    func testUnauthorizedPostgRESTRefreshesOnceAndRetriesOnce() async throws {
+        let transport = ScriptedTransport(responses: [
+            (401, Data("{\"message\":\"JWT expired\"}".utf8)),
+            (200, Data("[]".utf8))
+        ])
+        let refresher = StubRefresher(.refreshed("new-access"))
+        let http = SupabaseHTTP(
+            config: config,
+            accessToken: "old-access",
+            transport: transport,
+            refresher: refresher
+        )
+        let data = try await http.send(path: "rest/v1/sq8_profiles", method: "GET", feature: .profile)
+        XCTAssertEqual(String(data: data, encoding: .utf8), "[]")
+        XCTAssertEqual(refresher.calls, 1)
+        XCTAssertEqual(transport.requests.count, 2)
+        XCTAssertEqual(transport.requests[0].value(forHTTPHeaderField: "Authorization"), "Bearer old-access")
+        XCTAssertEqual(transport.requests[1].value(forHTTPHeaderField: "Authorization"), "Bearer new-access")
+    }
+
+    func testAFailedRefreshIsNotRetried() async throws {
+        let transport = ScriptedTransport(responses: [
+            (401, Data("{\"message\":\"JWT expired\"}".utf8))
+        ])
+        let refresher = StubRefresher(.rejected)
+        let http = SupabaseHTTP(
+            config: config,
+            accessToken: "old-access",
+            transport: transport,
+            refresher: refresher
+        )
+        do {
+            _ = try await http.send(path: "rest/v1/sq8_profiles", method: "GET", feature: .profile)
+            XCTFail("Expected the session to end")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .sessionEnded)
+        }
+        XCTAssertEqual(refresher.calls, 1)
+        XCTAssertEqual(transport.requests.count, 1)
+    }
+
+    func testConcurrentRefreshUsesTheTokenOnce() async throws {
+        let store = MemorySessionStore()
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(-5)),
+            refreshToken: "stored-refresh",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let transport = PausingTransport(status: 200, body: tokenJSON(access: jwt(exp: now.addingTimeInterval(3600))))
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        async let first = auth.prepareSession(now: now)
+        async let second = auth.prepareSession(now: now)
+        let firstSession = try await first
+        let secondSession = try await second
+        XCTAssertEqual(transport.calls, 1)
+        XCTAssertEqual(firstSession?.refreshToken, "rotated")
+        XCTAssertEqual(secondSession?.refreshToken, "rotated")
+        XCTAssertEqual(try store.load()?.refreshToken, "rotated")
+    }
+
+    func testACancelledWaiterDoesNotSendTheRefreshTokenAgain() async throws {
+        let store = MemorySessionStore()
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(-5)),
+            refreshToken: "stored-refresh",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let transport = PausingTransport(status: 200, body: tokenJSON(access: jwt(exp: now.addingTimeInterval(3600))))
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        let first = Task { try await auth.prepareSession(now: now) }
+        try await Task.sleep(nanoseconds: 20_000_000)
+        first.cancel()
+        let second = try await auth.prepareSession(now: now)
+        XCTAssertEqual(transport.calls, 1)
+        XCTAssertEqual(second?.refreshToken, "rotated")
+        XCTAssertEqual(try store.load()?.refreshToken, "rotated")
+    }
+
+    func testServerErrorDoesNotClearTheSession() async throws {
+        let store = MemorySessionStore()
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(-5)),
+            refreshToken: "stored-refresh",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let transport = ScriptedTransport(responses: [(500, Data("{}".utf8))])
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        do {
+            _ = try await auth.prepareSession(now: now)
+            XCTFail("Expected a reconnect")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .reconnecting)
+        }
+        XCTAssertEqual(try store.load()?.refreshToken, "stored-refresh")
+    }
+
+    func testAlreadyUsedRefreshKeepsTheRotatedSession() async throws {
+        let store = MemorySessionStore()
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(-5)),
+            refreshToken: "stored-refresh",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let winner = jwt(exp: now.addingTimeInterval(3600))
+        let transport = RotatingRejectionTransport(store: store, access: winner, user: user)
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        let session = try await auth.prepareSession(now: now)
+        XCTAssertEqual(session?.refreshToken, "winner")
+        XCTAssertEqual(try store.load()?.refreshToken, "winner")
+    }
+
+    func testRefreshBodyIsTheStoredToken() async throws {
+        let store = MemorySessionStore()
+        let refresh = "abcdefghijkl"
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(-5)),
+            refreshToken: refresh,
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let transport = ScriptedTransport(responses: [(200, tokenJSON(access: jwt(exp: now.addingTimeInterval(3600))))])
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        _ = try await auth.prepareSession(now: now)
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertTrue(request.url?.query?.contains("grant_type=refresh_token") == true)
+        XCTAssertTrue(request.url?.path.hasSuffix("/auth/v1/token") == true)
+        let body = try XCTUnwrap(request.httpBody)
+        XCTAssertEqual(body.count, 32)
+        XCTAssertEqual(String(data: body, encoding: .utf8), "{\"refresh_token\":\"\(refresh)\"}")
+    }
+
+    func testOtherRefreshFailureKeepsTheSession() async throws {
+        let store = MemorySessionStore()
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(-5)),
+            refreshToken: "stored-refresh",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let body = Data("{\"error\":\"invalid_request\",\"error_description\":\"bad json\"}".utf8)
+        let transport = ScriptedTransport(responses: [(400, body)])
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        do {
+            _ = try await auth.prepareSession(now: now)
+            XCTFail("Expected the refresh to fail closed")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .reconnecting)
+        }
+        XCTAssertEqual(try store.load()?.refreshToken, "stored-refresh")
+        XCTAssertFalse(RefreshRejection.clearsSession(status: 400, body: body))
+        let definitive = Data("{\"error\":\"invalid_grant\",\"error_code\":\"refresh_token_already_used\"}".utf8)
+        XCTAssertTrue(RefreshRejection.clearsSession(status: 400, body: definitive))
+    }
+
+    func testRotatedTokenIsWhatTheNextLaunchReads() throws {
+        let suite = "squadsync.session.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let service = "test.session.\(UUID().uuidString)"
+        let stale = AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(3600)),
+            refreshToken: "stale-fallback",
+            userId: user,
+            email: "a@squad.test"
+        )
+        defaults.set(try JSONEncoder().encode(stale), forKey: "sq8.session.fallback.\(service).test")
+        let first = KeychainSessionStore(defaults: defaults, service: service, account: "test")
+        let saved = AuthSession(
+            accessToken: stale.accessToken,
+            refreshToken: "rotated-token",
+            userId: user,
+            email: stale.email
+        )
+        try first.save(saved)
+        let second = KeychainSessionStore(defaults: defaults, service: service, account: "test")
+        XCTAssertEqual(try second.load()?.refreshToken, "rotated-token")
+        let older = SessionEnvelope(session: saved, savedAt: now.addingTimeInterval(-100))
+        var rotated = saved
+        rotated.refreshToken = "newer-token"
+        let newer = SessionEnvelope(session: rotated, savedAt: now)
+        XCTAssertEqual(SessionEnvelope.newer(older, newer)?.session.refreshToken, "newer-token")
+    }
+
+    func testMarkReadUpsertNamesThePrimaryKey() async throws {
+        let transport = ScriptedTransport(responses: [(201, Data()), (201, Data())])
+        let chat = SupabaseChatService(
+            config: config,
+            accessToken: "access",
+            transport: transport
+        )
+        try await chat.markRead(
+            squadId: UUID(uuidString: "00000000-0000-0000-0000-00000000C001")!,
+            userId: user,
+            at: now,
+            messageId: nil
+        )
+        XCTAssertEqual(transport.requests.count, 2)
+        for request in transport.requests {
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertTrue(request.url?.query?.contains("on_conflict=user_id") == true)
+            XCTAssertTrue(request.url?.path.hasSuffix("sq8_chat_read_state") == true
+                || request.url?.path.hasSuffix("sq8_message_reads") == true)
+            XCTAssertFalse(request.url?.path.contains("auth/v1/token") == true)
+        }
+    }
+
+    func testAuthFailureDoesNotMeanTheSquadIsMissing() {
+        XCTAssertEqual(SessionFailurePolicy.surface(.sessionEnded), .signIn(SessionFailurePolicy.ended))
+        XCTAssertEqual(SessionFailurePolicy.surface(.reconnecting), .reconnecting)
+        XCTAssertEqual(SessionFailurePolicy.surface(.rejected("JWT expired")), .signIn(SessionFailurePolicy.ended))
+        guard case .message = SessionFailurePolicy.surface(.rejected("Squad is full.")) else {
+            return XCTFail("A squad error was treated as an auth failure")
+        }
     }
 }

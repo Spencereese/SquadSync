@@ -50,7 +50,6 @@ final class LiveSessionModel {
     private let mockSpots: SpotServing?
     private var realtime: RealtimeClient?
     private var poll: Task<Void, Never>?
-    private var historyGeneration = 0
     private var loadedSquad: UUID?
 
     enum Phase {
@@ -458,7 +457,11 @@ final class LiveSessionModel {
         log.beginSend(id: id, senderId: session.userId, body: text, now: now)
         followSend = id
         draft = ""
-        await deliver(RemoteMessage(id: id, squadId: squad.id, senderId: session.userId, body: text, sentAt: now), session: session)
+        await deliver(
+            RemoteMessage(id: id, squadId: squad.id, senderId: session.userId, body: text, sentAt: now),
+            session: session,
+            retrying: false
+        )
     }
 
     func retry(_ id: UUID) async {
@@ -472,7 +475,7 @@ final class LiveSessionModel {
         }
         log.retry(id: id)
         let message = RemoteMessage(id: id, squadId: squad.id, senderId: entry.senderId, body: entry.body, sentAt: entry.sentAt)
-        await deliver(message, session: session)
+        await deliver(message, session: session, retrying: true)
     }
 
     func signOut() async {
@@ -513,19 +516,20 @@ final class LiveSessionModel {
         return session
     }
 
-    private func deliver(_ message: RemoteMessage, session: AuthSession) async {
+    private func deliver(_ message: RemoteMessage, session: AuthSession, retrying: Bool) async {
         let chat = chatService(session)
         var error: Error?
+        var receipt: SendReceipt?
         do {
-            try await chat.send(message)
+            receipt = try await chat.send(message)
         } catch let first {
             if RequestNoise.isCancellation(first) {
-                do { try await chat.send(message) } catch let second { error = second }
+                do { receipt = try await chat.send(message) } catch let second { error = second }
             } else {
                 error = first
             }
         }
-        switch OutboundSend.result(error: error) {
+        switch OutboundSend.result(receipt: receipt, error: error, retrying: retrying) {
         case .sent:
             log.markSent(id: message.id)
         case .staySending:
@@ -580,37 +584,39 @@ final class LiveSessionModel {
     }
 
     func catchUp(pinned: Bool) async {
-        guard pinned, let squad, let session = try? requiredSession() else { return }
+        guard ReadAdvance.catchesUp(pinned: pinned), let squad, let session = try? requiredSession() else { return }
         let seenAt = max(Date(), log.ordered.last?.sentAt ?? .distantPast)
-        log.markRead(at: seenAt)
-        try? await chatService(session).markRead(
-            squadId: squad.id,
-            userId: session.userId,
-            at: seenAt,
-            messageId: log.ordered.last?.id
-        )
+        do {
+            try await chatService(session).markRead(
+                squadId: squad.id,
+                userId: session.userId,
+                at: seenAt,
+                messageId: log.ordered.last?.id
+            )
+            log.markRead(at: seenAt)
+        } catch {
+            return
+        }
     }
 
     private func loadChat(_ session: AuthSession) async {
         guard let squad else { return }
-        historyGeneration += 1
-        let generation = historyGeneration
-        let replacing = loadedSquad != squad.id
-        if replacing {
+        let requested = squad.id
+        if loadedSquad != requested {
             log = ChatLog()
             reads = []
             board = ReactionBoard()
-            loadedSquad = squad.id
+            loadedSquad = requested
         }
         do {
             let chat = chatService(session)
-            let rows = try await chat.history(squadId: squad.id)
-            guard generation == historyGeneration else { return }
+            let rows = try await chat.history(squadId: requested)
+            guard HistoryMerge.accepts(requestSquad: requested, loadedSquad: loadedSquad) else { return }
             log.adopt(replacingSquad: false, history: rows.map { $0.entry() })
-            if let cursor = try? await chat.ownReadAt(squadId: squad.id, userId: session.userId) {
+            if let cursor = try? await chat.ownReadAt(squadId: requested, userId: session.userId) {
                 log.markRead(at: cursor)
             }
-            guard generation == historyGeneration else { return }
+            guard HistoryMerge.accepts(requestSquad: requested, loadedSquad: loadedSquad) else { return }
             if let marks = try? await chat.reactions(squadId: squad.id) {
                 board.replace(with: marks)
             }
@@ -652,6 +658,7 @@ final class LiveSessionModel {
             link = next
             if next.polls {
                 beginPoll(session)
+                await loadChat(session)
             } else {
                 poll?.cancel()
                 poll = nil
@@ -660,16 +667,6 @@ final class LiveSessionModel {
         case .message(let message):
             guard message.squadId == squad?.id else { return }
             log.ingest([message.entry()])
-            if message.senderId != session.userId {
-                let seenAt = max(Date(), message.sentAt)
-                log.markRead(at: seenAt)
-                try? await chatService(session).markRead(
-                    squadId: message.squadId,
-                    userId: session.userId,
-                    at: seenAt,
-                    messageId: message.id
-                )
-            }
         case .messageRemoved(let id):
             log.remove(id: id)
         case .roster:
@@ -679,11 +676,9 @@ final class LiveSessionModel {
         case .spots:
             await loadSpot(session)
         case .read(let read):
-            if let index = reads.firstIndex(where: { $0.userId == read.userId }) {
-                reads[index] = read
-            } else {
-                reads.append(read)
-            }
+            var book = ReceiptBook(reads: reads)
+            book.apply(read)
+            reads = book.reads
         }
     }
 
@@ -698,12 +693,11 @@ final class LiveSessionModel {
     }
 
     private func pollOnce(_ session: AuthSession) async {
-        guard let squad, squad.id == loadedSquad else { return }
-        historyGeneration += 1
-        let generation = historyGeneration
+        guard let squad, HistoryMerge.accepts(requestSquad: squad.id, loadedSquad: loadedSquad) else { return }
+        let requested = squad.id
         do {
-            let rows = try await chatService(session).history(squadId: squad.id)
-            guard generation == historyGeneration, squad.id == loadedSquad else { return }
+            let rows = try await chatService(session).history(squadId: requested)
+            guard HistoryMerge.accepts(requestSquad: requested, loadedSquad: loadedSquad) else { return }
             log.adopt(replacingSquad: false, history: rows.map { $0.entry() })
             await loadSpot(session)
         } catch {
@@ -1095,6 +1089,7 @@ struct LiveSessionView: View {
                 let unread = model.log.unreadCount(viewerId: model.profile?.id ?? model.viewerId ?? UUID())
                 if unread > 0 {
                     Text("Unread \(unread)")
+                    .accessibilityLabel("\(unread) unread")
                         .font(.caption)
                         .accessibilityIdentifier("unread-count")
                 }
@@ -1472,6 +1467,7 @@ struct LiveSessionView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
             }
+            .accessibilityLabel(MessageSpeech.row(body: entry.body, delivery: entry.delivery))
             .buttonStyle(WideRowButtonStyle())
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
@@ -1493,6 +1489,8 @@ struct LiveSessionView: View {
             }
             if entry.delivery == .failed {
                 Button("Retry") { Task { await model.retry(entry.id) } }
+                    .accessibilityIdentifier("retry-send")
+                    .accessibilityLabel("Retry sending")
             }
         }
         .padding(.vertical, SQSpace.xs)

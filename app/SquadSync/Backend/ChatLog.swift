@@ -200,11 +200,55 @@ enum OutboundSend {
         case failed
     }
 
-    /// The PostgREST insert response confirms the send. A cancelled request is not a failure, and no realtime echo is required.
-    static func result(error: Error?) -> Result {
-        guard let error else { return .sent }
-        if RequestNoise.isCancellation(error) { return .staySending }
-        return .failed
+    /// A 2xx with no matching row is not success. A duplicate is success only when this id was sent before.
+    static func result(receipt: SendReceipt?, error: Error?, retrying: Bool) -> Result {
+        if let error {
+            if RequestNoise.isCancellation(error) { return .staySending }
+            return .failed
+        }
+        switch receipt {
+        case .stored:
+            return .sent
+        case .duplicate:
+            return retrying ? .sent : .failed
+        case nil:
+            return .failed
+        }
+    }
+}
+
+enum HistoryMerge {
+    /// A fetch for a squad we have already left must not be written into the new thread.
+    static func accepts(requestSquad: UUID, loadedSquad: UUID?) -> Bool {
+        requestSquad == loadedSquad
+    }
+}
+
+enum ReadAdvance {
+    /// Arriving over the socket is not the same as the reader being at the bottom.
+    static func catchesUp(pinned: Bool) -> Bool { pinned }
+}
+
+struct ReceiptBook: Equatable {
+    var reads: [MemberRead]
+
+    mutating func apply(_ read: MemberRead) {
+        if let index = reads.firstIndex(where: { $0.userId == read.userId }) {
+            guard read.lastReadAt > reads[index].lastReadAt else { return }
+            reads[index] = read
+        } else {
+            reads.append(read)
+        }
+    }
+}
+
+enum MessageSpeech {
+    static func row(body: String, delivery: Delivery) -> String {
+        switch delivery {
+        case .sending: "\(body), sending"
+        case .sent: body
+        case .failed: "\(body), failed. Retry sending."
+        }
     }
 }
 

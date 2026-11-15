@@ -201,9 +201,10 @@ final class MockChatService: ChatService {
         stored.filter { $0.squadId == squadId }
     }
 
-    func send(_ message: RemoteMessage) async throws {
-        if stored.contains(where: { $0.id == message.id }) { return }
+    func send(_ message: RemoteMessage) async throws -> SendReceipt {
+        if stored.contains(where: { $0.id == message.id }) { return .duplicate }
         stored.append(message)
+        return .stored
     }
 
     func newer(squadId: UUID, after: Date) async throws -> [RemoteMessage] {

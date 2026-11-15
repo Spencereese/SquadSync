@@ -278,12 +278,14 @@ final class SquadNameTests: XCTestCase {
         let me = UUID()
         let sentAt = Date(timeIntervalSince1970: 1_700_000_000)
         let message = RemoteMessage(id: id, squadId: ChatSeed.squadId, senderId: me, body: "hello", sentAt: sentAt)
-        try await chat.send(message)
+        XCTAssertEqual(try await chat.send(message), .stored)
+        XCTAssertEqual(try await chat.send(message), .duplicate)
         let stored = try await chat.history(squadId: ChatSeed.squadId)
         XCTAssertEqual(stored.map(\.body), ["hello"])
+        XCTAssertEqual(stored.count, 1)
         var log = ChatLog()
         log.beginSend(id: id, senderId: me, body: "hello", now: sentAt)
-        XCTAssertEqual(OutboundSend.result(error: nil), .sent)
+        XCTAssertEqual(OutboundSend.result(receipt: .stored, error: nil, retrying: false), .sent)
         log.markSent(id: id)
         XCTAssertEqual(log.entries.map(\.body), ["hello"])
         XCTAssertEqual(log.entries.first?.delivery, .sent)
@@ -294,12 +296,57 @@ final class SquadNameTests: XCTestCase {
         let id = UUID()
         let me = UUID()
         log.beginSend(id: id, senderId: me, body: "rt test 3", now: Date())
-        XCTAssertEqual(OutboundSend.result(error: nil), .sent)
-        if OutboundSend.result(error: nil) == .sent { log.markSent(id: id) }
+        XCTAssertEqual(OutboundSend.result(receipt: .stored, error: nil, retrying: false), .sent)
+        if OutboundSend.result(receipt: .stored, error: nil, retrying: false) == .sent { log.markSent(id: id) }
         XCTAssertEqual(log.entries.first?.delivery, .sent)
-        XCTAssertEqual(OutboundSend.result(error: CancellationError()), .staySending)
+        XCTAssertEqual(OutboundSend.result(receipt: nil, error: CancellationError(), retrying: false), .staySending)
+        XCTAssertEqual(OutboundSend.result(receipt: .duplicate, error: nil, retrying: false), .failed)
+        XCTAssertEqual(OutboundSend.result(receipt: .duplicate, error: nil, retrying: true), .sent)
+        XCTAssertEqual(OutboundSend.result(receipt: nil, error: nil, retrying: false), .failed)
         log.ingest([ChatEntry(id: id, senderId: me, body: "rt test 3", sentAt: Date(), delivery: .sent)])
         XCTAssertEqual(log.entries.count, 1)
+    }
+
+    func testSendRequiresTheStoredRow() async throws {
+        let me = UUID()
+        let sentAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let message = RemoteMessage(id: UUID(), squadId: ChatSeed.squadId, senderId: me, body: "hello", sentAt: sentAt)
+        let config = BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
+        let empty = ScriptedTransport(responses: [(201, Data("[]".utf8))])
+        let chat = SupabaseChatService(config: config, accessToken: "access", transport: empty)
+        let ignored = try await chat.send(message)
+        XCTAssertEqual(ignored, .duplicate)
+        XCTAssertEqual(OutboundSend.result(receipt: ignored, error: nil, retrying: false), .failed)
+        let request = try XCTUnwrap(empty.requests.first)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Prefer"), "return=representation,resolution=ignore-duplicates")
+
+        let echoed = try BackendJSON.encoder.encode([message])
+        let stored = ScriptedTransport(responses: [(201, echoed)])
+        let confirmed = SupabaseChatService(config: config, accessToken: "access", transport: stored)
+        XCTAssertEqual(try await confirmed.send(message), .stored)
+    }
+
+    func testADroppedSocketStillAcceptsHistoryForTheOpenSquad() {
+        XCTAssertTrue(HistoryMerge.accepts(requestSquad: ChatSeed.squadId, loadedSquad: ChatSeed.squadId))
+        XCTAssertFalse(HistoryMerge.accepts(requestSquad: ChatSeed.squadId, loadedSquad: UUID()))
+        XCTAssertFalse(ReadAdvance.catchesUp(pinned: false))
+        XCTAssertTrue(ReadAdvance.catchesUp(pinned: true))
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let them = UUID()
+        var book = ReceiptBook(reads: [MemberRead(userId: them, lastReadAt: start.addingTimeInterval(10))])
+        book.apply(MemberRead(userId: them, lastReadAt: start))
+        XCTAssertEqual(book.reads.first?.lastReadAt, start.addingTimeInterval(10))
+        book.apply(MemberRead(userId: them, lastReadAt: start.addingTimeInterval(20)))
+        XCTAssertEqual(book.reads.first?.lastReadAt, start.addingTimeInterval(20))
+        XCTAssertEqual(
+            Receipts.seenNames(
+                messageSentAt: start.addingTimeInterval(15),
+                reads: [(id: them, name: "Riley", at: book.reads[0].lastReadAt)],
+                viewerId: UUID()
+            ),
+            ["Riley"]
+        )
+        XCTAssertEqual(MessageSpeech.row(body: "hello", delivery: .failed), "hello, failed. Retry sending.")
     }
 
     func testBackfillAfterAGapKeepsTheOldRowAndAddsTheNewOne() {

@@ -472,15 +472,20 @@ final class SupabaseChatService: ChatService {
         try await fetch(squadId: squadId, after: nil)
     }
 
-    func send(_ message: RemoteMessage) async throws {
+    func send(_ message: RemoteMessage) async throws -> SendReceipt {
         let body = try BackendJSON.encoder.encode(message)
-        _ = try await http.send(
+        let data = try await http.send(
             path: "rest/v1/sq8_messages",
             method: "POST",
             body: body,
-            prefer: "return=minimal,resolution=ignore-duplicates",
+            prefer: "return=representation,resolution=ignore-duplicates",
             feature: .messages
         )
+        let rows = (try? BackendJSON.decoder.decode([RemoteMessage].self, from: data)) ?? []
+        let stored = rows.contains { row in
+            row.id == message.id && row.squadId == message.squadId && row.body == message.body
+        }
+        return stored ? .stored : .duplicate
     }
 
     func newer(squadId: UUID, after: Date) async throws -> [RemoteMessage] {

@@ -270,9 +270,16 @@ protocol InviteServing: AnyObject {
     func join(code: String) async throws -> UUID
 }
 
+enum SendReceipt: Equatable {
+    /// The response body included this id, squad, and body.
+    case stored
+    /// The insert was ignored. A retry of the same id can treat that as already saved.
+    case duplicate
+}
+
 protocol ChatService: AnyObject {
     func history(squadId: UUID) async throws -> [RemoteMessage]
-    func send(_ message: RemoteMessage) async throws
+    func send(_ message: RemoteMessage) async throws -> SendReceipt
     func newer(squadId: UUID, after: Date) async throws -> [RemoteMessage]
     func markRead(squadId: UUID, userId: UUID, at: Date, messageId: UUID?) async throws
     func reactions(squadId: UUID) async throws -> [ReactionMark]

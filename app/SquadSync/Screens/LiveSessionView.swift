@@ -28,7 +28,10 @@ final class LiveSessionModel {
     var viewerId: UUID?
     var spot: SpotCall?
     var spotGame = "Warzone"
-    var spotBusy = false
+    var spotGate = SpotActionGate()
+    var resumedAt = Date.distantPast
+    var leaveAvailable = false
+    var transferTo: UUID?
     var spotNote = ""
     var status = ""
     var reconnecting = false
@@ -48,6 +51,7 @@ final class LiveSessionModel {
     private var realtime: RealtimeClient?
     private var poll: Task<Void, Never>?
     private var historyGeneration = 0
+    private var loadedSquad: UUID?
 
     enum Phase {
         case email
@@ -253,6 +257,47 @@ final class LiveSessionModel {
         }
     }
 
+    func probeLeave() async {
+        guard let session = try? requiredSession() else {
+            leaveAvailable = false
+            return
+        }
+        leaveAvailable = await squadService(session).leaveAvailable()
+    }
+
+    func leaveSquad() async {
+        guard leaveAvailable, let squad else { return }
+        let me = profile?.id ?? viewerId
+        if squad.ownerId == me, squad.members.count > 1, transferTo == nil {
+            membershipIsError = true
+            status = InviteProblem.ownerMustTransfer.message
+            return
+        }
+        membershipIsError = false
+        status = "Leaving…"
+        await run {
+            let session = try requiredSession()
+            do {
+                try await squadService(session).leaveSquad(newOwner: squad.ownerId == me ? transferTo : nil)
+                realtime?.stop()
+                realtime = nil
+                poll?.cancel()
+                poll = nil
+                self.squad = nil
+                self.spot = nil
+                self.log = ChatLog()
+                self.inviteCode = ""
+                self.transferTo = nil
+                self.loadedSquad = nil
+                membershipIsError = false
+                status = "You left the squad."
+            } catch let problem as InviteProblem {
+                membershipIsError = true
+                status = problem.message
+            }
+        }
+    }
+
     func removeMember(_ member: SquadMemberRecord) async {
         guard let squad else { return }
         membershipIsError = false
@@ -323,8 +368,8 @@ final class LiveSessionModel {
             spotNote = SpotProblem.gameBlank.message
             return
         }
-        spotBusy = true
-        defer { spotBusy = false }
+        guard spotGate.begin() else { return }
+        defer { spotGate.finish() }
         do {
             let session = try requiredSession()
             guard let squad else { return }
@@ -353,8 +398,8 @@ final class LiveSessionModel {
     func toggleReady() async {
         guard let call = spot, let user = viewerId ?? profile?.id else { return }
         let next = !(call.seat(for: user)?.ready ?? false)
-        spotBusy = true
-        defer { spotBusy = false }
+        guard spotGate.begin() else { return }
+        defer { spotGate.finish() }
         do {
             let session = try requiredSession()
             try await spotService(session).setReady(callId: call.id, userId: user, ready: next)
@@ -385,9 +430,8 @@ final class LiveSessionModel {
     }
 
     private func changeSpot(_ work: (AuthSession, SpotCall) async throws -> Void) async {
-        guard let call = spot else { return }
-        spotBusy = true
-        defer { spotBusy = false }
+        guard let call = spot, spotGate.begin() else { return }
+        defer { spotGate.finish() }
         do {
             let session = try requiredSession()
             try await work(session, call)
@@ -496,6 +540,7 @@ final class LiveSessionModel {
         guard usesLiveSocket else { return }
         poll?.cancel()
         poll = nil
+        resumedAt = Date()
         expireStoredTokenIfRequested()
         do {
             guard let session = try await auth.prepareSession(now: Date()) else { return }
@@ -534,22 +579,38 @@ final class LiveSessionModel {
         }
     }
 
+    func catchUp(pinned: Bool) async {
+        guard pinned, let squad, let session = try? requiredSession() else { return }
+        let seenAt = max(Date(), log.ordered.last?.sentAt ?? .distantPast)
+        log.markRead(at: seenAt)
+        try? await chatService(session).markRead(
+            squadId: squad.id,
+            userId: session.userId,
+            at: seenAt,
+            messageId: log.ordered.last?.id
+        )
+    }
+
     private func loadChat(_ session: AuthSession) async {
         guard let squad else { return }
         historyGeneration += 1
         let generation = historyGeneration
+        let replacing = loadedSquad != squad.id
+        if replacing {
+            log = ChatLog()
+            reads = []
+            board = ReactionBoard()
+            loadedSquad = squad.id
+        }
         do {
             let chat = chatService(session)
             let rows = try await chat.history(squadId: squad.id)
             guard generation == historyGeneration else { return }
-            log.ingest(rows.map { $0.entry() })
+            log.adopt(replacingSquad: false, history: rows.map { $0.entry() })
             if let cursor = try? await chat.ownReadAt(squadId: squad.id, userId: session.userId) {
                 log.markRead(at: cursor)
             }
             guard generation == historyGeneration else { return }
-            let caughtUp = Date()
-            log.markRead(at: caughtUp)
-            try? await chat.markRead(squadId: squad.id, userId: session.userId, at: caughtUp, messageId: log.ordered.last?.id)
             if let marks = try? await chat.reactions(squadId: squad.id) {
                 board.replace(with: marks)
             }
@@ -637,13 +698,13 @@ final class LiveSessionModel {
     }
 
     private func pollOnce(_ session: AuthSession) async {
-        guard let squad else { return }
+        guard let squad, squad.id == loadedSquad else { return }
         historyGeneration += 1
         let generation = historyGeneration
         do {
             let rows = try await chatService(session).history(squadId: squad.id)
-            guard generation == historyGeneration else { return }
-            log.ingest(rows.map { $0.entry() })
+            guard generation == historyGeneration, squad.id == loadedSquad else { return }
+            log.adopt(replacingSquad: false, history: rows.map { $0.entry() })
             await loadSpot(session)
         } catch {
             if RequestNoise.isCancellation(error) { return }
@@ -787,6 +848,7 @@ struct LiveSessionView: View {
                             Image(systemName: "person.3")
                         }
                         .accessibilityLabel("Members")
+                        .accessibilityHint("Opens invite, join, and remove")
                         .accessibilityIdentifier("members")
                     }
                 }
@@ -823,7 +885,10 @@ struct LiveSessionView: View {
             if phase == .background { wentToBackground = true }
             guard phase == .active, wentToBackground else { return }
             wentToBackground = false
-            Task { await model.becameActive() }
+            Task {
+                await model.becameActive()
+                await model.catchUp(pinned: pinnedToBottom)
+            }
         }
     }
 
@@ -886,8 +951,9 @@ struct LiveSessionView: View {
         VStack(alignment: .leading, spacing: SQSpace.m) {
             if let spot = model.spot {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    if SpotCallRules.showsPinnedBar(spot, now: context.date) {
-                        activeCallBar(spot, now: context.date)
+                    let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
+                    if SpotCallRules.showsPinnedBar(spot, now: now) {
+                        activeCallBar(spot, now: now)
                     }
                 }
             }
@@ -987,6 +1053,7 @@ struct LiveSessionView: View {
                 guard model.log.ordered.last != nil else { return }
                 Task { @MainActor in
                     scrollChatToBottom(proxy)
+                    await model.catchUp(pinned: pinnedToBottom)
                 }
             }
             .onChange(of: model.log.ordered.last?.id) { _, id in
@@ -996,6 +1063,7 @@ struct LiveSessionView: View {
                     scrollChatToBottom(proxy)
                     showNewMessages = false
                     if own { model.followSend = nil }
+                    Task { await model.catchUp(pinned: true) }
                 } else {
                     showNewMessages = true
                 }
@@ -1047,7 +1115,7 @@ struct LiveSessionView: View {
             TextField("Game", text: Binding(get: { model.spotGame }, set: { model.spotGame = $0 }))
                 .textFieldStyle(.roundedBorder)
             Button("Call spots") { Task { await model.callSpots() } }
-                .disabled(model.spotBusy)
+                .disabled(model.spotGate.busy)
             Text("Seats are capped at 8. This server does not store a smaller target.")
                 .font(.caption)
                 .foregroundStyle(SQColor.muted)
@@ -1058,7 +1126,8 @@ struct LiveSessionView: View {
 
     private func spotCard(_ spot: SpotCall) -> some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
-            let expired = SpotCallRules.showsExpired(spot, now: context.date)
+            let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
+            let expired = SpotCallRules.showsExpired(spot, now: now)
             let viewer = model.viewerId ?? model.profile?.id
             let mine = viewer.flatMap { spot.seat(for: $0) }
             VStack(alignment: .leading, spacing: SQSpace.s) {
@@ -1066,7 +1135,8 @@ struct LiveSessionView: View {
                     .font(.headline)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(statusLine(spot, expired: expired, now: context.date))
+                Text(statusLine(spot, expired: expired, now: now))
+                    .accessibilityLabel(statusLine(spot, expired: expired, now: now))
                     .font(.subheadline.monospacedDigit())
                     .foregroundStyle(SQColor.warning)
                     .accessibilityIdentifier("spot-countdown")
@@ -1090,25 +1160,25 @@ struct LiveSessionView: View {
                 }
                 if spot.status == .open && !expired {
                     Button("Join") { Task { await model.joinSpot() } }
-                        .disabled(model.spotBusy || viewer == nil || !SpotCallRules.canJoin(spot, userId: viewer!, now: context.date))
+                        .disabled(model.spotGate.busy || viewer == nil || !SpotCallRules.canJoin(spot, userId: viewer!, now: now))
                         .accessibilityIdentifier("spot-join")
                         .accessibilityLabel("Join the spot call")
                     if mine?.isIn == true {
                         Button(mine?.ready == true ? "Ready" : "Ready") { Task { await model.toggleReady() } }
-                            .disabled(model.spotBusy || model.readyIsLocalOnly)
+                            .disabled(model.spotGate.busy || model.readyIsLocalOnly)
                             .accessibilityIdentifier("spot-ready")
                             .accessibilityLabel(mine?.ready == true ? "Ready, on" : "Ready, off")
                     }
-                    if let viewer, SpotCallRules.canLock(spot, actorId: viewer, ownerId: model.squad?.ownerId ?? viewer, now: context.date) {
+                    if let viewer, SpotCallRules.canLock(spot, actorId: viewer, ownerId: model.squad?.ownerId ?? viewer, now: now) {
                         Button("Lock") { Task { await model.lockSpot() } }
-                            .disabled(model.spotBusy)
+                            .disabled(model.spotGate.busy)
                             .accessibilityIdentifier("spot-lock")
                             .accessibilityLabel("Lock the spot call")
                     }
                 }
-                if let viewer, SpotCallRules.canCancel(spot, actorId: viewer, now: context.date) {
+                if let viewer, SpotCallRules.canCancel(spot, actorId: viewer, now: now) {
                     Button("Cancel") { Task { await model.cancelSpot() } }
-                        .disabled(model.spotBusy)
+                        .disabled(model.spotGate.busy)
                         .accessibilityIdentifier("spot-cancel")
                         .accessibilityLabel("Cancel the spot call")
                 }
@@ -1217,7 +1287,7 @@ struct LiveSessionView: View {
 
     private func barButton(_ action: SpotBarAction) -> some View {
         Button(action.title) { Task { await runBar(action) } }
-            .disabled(model.spotBusy || (action == .ready && model.readyIsLocalOnly))
+            .disabled(model.spotGate.busy || (action == .ready && model.readyIsLocalOnly))
             .accessibilityIdentifier(action.identifier)
             .accessibilityLabel(barLabel(action))
     }
@@ -1281,10 +1351,13 @@ struct LiveSessionView: View {
                             }
                         }
                     }
-                    if !isOwner {
+                    if model.leaveAvailable {
+                        leaveControls(squad: squad, isOwner: isOwner)
+                    } else if !isOwner {
                         Text("Only the owner can remove a member. You can't leave on your own.")
                             .font(.footnote)
                             .foregroundStyle(SQColor.muted)
+                            .accessibilityIdentifier("leave-unavailable")
                     }
                 }
                 if isOwner {
@@ -1309,6 +1382,32 @@ struct LiveSessionView: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .onAppear { Task { await model.probeLeave() } }
+    }
+
+    private func leaveControls(squad: SquadRecord, isOwner: Bool) -> some View {
+        let me = model.profile?.id ?? model.viewerId
+        let others = squad.members.filter { !$0.isOwner }
+        return VStack(alignment: .leading, spacing: SQSpace.s) {
+            if isOwner && squad.members.count > 1 {
+                Text(InviteProblem.ownerMustTransfer.message)
+                    .font(.footnote)
+                    .foregroundStyle(SQColor.muted)
+                ForEach(others) { member in
+                    Button(model.transferTo == member.id ? "Next owner \(member.displayName)" : "Transfer to \(member.displayName)") {
+                        model.transferTo = member.id
+                    }
+                    .disabled(model.busy)
+                    .accessibilityIdentifier("transfer-\(member.displayName)")
+                }
+            }
+            if me != nil {
+                Button("Leave") { Task { await model.leaveSquad() } }
+                    .disabled(model.busy)
+                    .accessibilityIdentifier("leave-squad")
+                    .accessibilityLabel(isOwner && squad.members.count > 1 ? "Leave and transfer ownership" : "Leave the squad")
+            }
+        }
     }
 
     private var inviteControls: some View {

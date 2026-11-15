@@ -327,6 +327,62 @@ final class SupabaseSquadService: SquadService {
         }
     }
 
+    func leaveAvailable() async -> Bool {
+        do {
+            _ = try await http.send(
+                path: "rest/v1/rpc/sq8_leave_squad",
+                method: "GET",
+                feature: .squad
+            )
+            return true
+        } catch let failure as BackendFailure {
+            if case .notSetUp = failure { return false }
+            if case .rejected(let message) = failure {
+                let text = message.lowercased()
+                if text.contains("pgrst202") || text.contains("could not find the function") {
+                    return false
+                }
+                return true
+            }
+            return false
+        } catch {
+            return false
+        }
+    }
+
+    func leaveSquad(newOwner: UUID?) async throws {
+        let body = try JSONEncoder().encode(LeaveBody(newOwner: newOwner))
+        let data = try await http.send(
+            path: "rest/v1/rpc/sq8_leave_squad",
+            method: "POST",
+            body: body,
+            feature: .squad
+        )
+        let payload = try JSONDecoder().decode(LeavePayload.self, from: data)
+        guard payload.ok else {
+            throw InviteProblem.from(serverCode: payload.error ?? "not_in_squad")
+        }
+    }
+
+    private struct LeaveBody: Encodable {
+        let newOwner: UUID?
+        enum CodingKeys: String, CodingKey { case newOwner = "new_owner" }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            if let newOwner {
+                try container.encode(newOwner, forKey: .newOwner)
+            } else {
+                try container.encodeNil(forKey: .newOwner)
+            }
+        }
+    }
+
+    private struct LeavePayload: Decodable {
+        let ok: Bool
+        let error: String?
+    }
+
     private func load(squadId: UUID) async throws -> SquadRecord {
         let squad = try await fetchSquad(squadId: squadId)
         let memberData = try await http.send(

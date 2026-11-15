@@ -191,4 +191,23 @@ final class SpotCallRulesTests: XCTestCase {
         XCTAssertTrue(SpotCallRules.canCancel(open, actorId: caller, now: start))
         XCTAssertEqual(SpotCallRules.barAction(open, viewerId: member, ownerId: owner, now: start), .join)
     }
+
+    func testASecondSpotActionDoesNotStart() {
+        var gate = SpotActionGate()
+        XCTAssertTrue(gate.begin())
+        XCTAssertFalse(gate.begin())
+        gate.finish()
+        XCTAssertTrue(gate.begin())
+    }
+
+    func testResumeAfterTheJoinWindowExpiresTheCall() {
+        let card = call()
+        let staleTimeline = card.joinUntil.addingTimeInterval(-30)
+        let resumed = card.joinUntil.addingTimeInterval(5)
+        let now = SpotClock.now(timeline: staleTimeline, resumedAt: resumed)
+        XCTAssertTrue(SpotCallRules.showsExpired(card, now: now))
+        XCTAssertFalse(SpotCallRules.showsPinnedBar(card, now: now))
+        XCTAssertFalse(SpotCallRules.canLock(card, actorId: caller, ownerId: owner, now: now))
+        XCTAssertFalse(SpotCallRules.canCancel(card, actorId: caller, now: now))
+    }
 }

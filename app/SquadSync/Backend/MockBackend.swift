@@ -124,6 +124,12 @@ final class MockSquadService: SquadService {
         return created
     }
 
+    func leaveAvailable() async -> Bool { false }
+
+    func leaveSquad(newOwner: UUID?) async throws {
+        throw InviteProblem.notInSquad
+    }
+
     func removeMember(squadId: UUID, userId: UUID) async throws {
         guard var squad, squad.id == squadId else { throw InviteProblem.other("You can't remove that person.") }
         guard let member = squad.members.first(where: { $0.id == userId }) else {

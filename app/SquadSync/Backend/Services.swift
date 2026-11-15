@@ -240,6 +240,9 @@ protocol SquadService: AnyObject {
     func createSquad(ownerId: UUID, name: String) async throws -> SquadRecord
     /// Owner-only. The applied delete policy does not let a member remove their own row.
     func removeMember(squadId: UUID, userId: UUID) async throws
+    /// False until `sq8_leave_squad` exists. A missing function keeps the honest line.
+    func leaveAvailable() async -> Bool
+    func leaveSquad(newOwner: UUID?) async throws
 }
 
 struct MemberRead: Equatable {

@@ -70,7 +70,18 @@ struct ChatLog: Equatable {
         }
     }
 
+    /// A full refresh of the same squad merges. Switching squads drops the previous thread, including unconfirmed sends for that squad.
+    mutating func adopt(replacingSquad: Bool, history: [ChatEntry]) {
+        if replacingSquad {
+            entries = []
+            lastReadAt = nil
+        }
+        ingest(history)
+    }
+
+    /// The cursor only moves forward. A slower refresh must not mark a seen message unread again.
     mutating func markRead(at date: Date) {
+        if let lastReadAt, date <= lastReadAt { return }
         lastReadAt = date
     }
 
@@ -292,6 +303,9 @@ enum InviteProblem: Error, Equatable {
     case alreadyInASquad
     case ownsSquadWithMembers
     case notOwner
+    case ownerMustTransfer
+    case notInSquad
+    case signedOut
     case other(String)
 
     var message: String {
@@ -308,6 +322,12 @@ enum InviteProblem: Error, Equatable {
             "You own a squad that still has members."
         case .notOwner:
             "Only the owner can make an invite."
+        case .ownerMustTransfer:
+            "Choose the next owner before you leave."
+        case .notInSquad:
+            "You're not in a squad."
+        case .signedOut:
+            "Sign in again before leaving."
         case .other(let text):
             text
         }
@@ -321,6 +341,9 @@ enum InviteProblem: Error, Equatable {
         case "already_in_squad": .alreadyInASquad
         case "owns_squad_with_members": .ownsSquadWithMembers
         case "not_owner": .notOwner
+        case "owner_must_transfer": .ownerMustTransfer
+        case "not_in_squad": .notInSquad
+        case "signed_out": .signedOut
         default: .other(serverCode)
         }
     }

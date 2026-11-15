@@ -227,6 +227,16 @@ final class SquadNameTests: XCTestCase {
         ])
         log.markRead(at: start)
         XCTAssertEqual(log.unreadCount(viewerId: me), 1)
+        log.markRead(at: start.addingTimeInterval(-30))
+        XCTAssertEqual(log.unreadCount(viewerId: me), 1)
+        XCTAssertEqual(
+            Receipts.seenNames(
+                messageSentAt: start.addingTimeInterval(5),
+                reads: [(id: them, name: "Riley", at: start)],
+                viewerId: me
+            ),
+            []
+        )
         XCTAssertEqual(
             Receipts.seenNames(
                 messageSentAt: start,
@@ -904,6 +914,67 @@ final class InviteFlowTests: XCTestCase {
         } catch let problem as InviteProblem {
             XCTAssertEqual(problem, .other("The owner stays in the squad."))
         }
+    }
+
+    func testLeaveStaysHiddenUntilTheFunctionExists() async throws {
+        let missing = Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function public.sq8_leave_squad in the schema cache\"}".utf8)
+        let absent = ScriptedTransport(responses: [(404, missing)])
+        let hidden = SupabaseSquadService(config: config, accessToken: "access", transport: absent)
+        let available = await hidden.leaveAvailable()
+        XCTAssertFalse(available)
+
+        let present = ScriptedTransport(responses: [(405, Data("{\"message\":\"GET is not allowed\"}".utf8))])
+        let shown = SupabaseSquadService(config: config, accessToken: "access", transport: present)
+        let ready = await shown.leaveAvailable()
+        XCTAssertTrue(ready)
+
+        let squadId = squad
+        let successor = member
+        let transport = ScriptedTransport(responses: [
+            (200, Data("{\"ok\":false,\"error\":\"owner_must_transfer\"}".utf8)),
+            (200, Data("{\"ok\":true,\"squad_id\":\"\(squadId.uuidString)\"}".utf8))
+        ])
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: transport)
+        do {
+            try await service.leaveSquad(newOwner: nil)
+            XCTFail("An owner with members has to name the next owner")
+        } catch let problem as InviteProblem {
+            XCTAssertEqual(problem, .ownerMustTransfer)
+            XCTAssertEqual(problem.message, "Choose the next owner before you leave.")
+        }
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertTrue(request.url?.path.hasSuffix("sq8_leave_squad") == true)
+        XCTAssertEqual(String(data: request.httpBody ?? Data(), encoding: .utf8), "{\"new_owner\":null}")
+        try await service.leaveSquad(newOwner: successor)
+        let second = try XCTUnwrap(transport.requests.last)
+        XCTAssertEqual(
+            String(data: second.httpBody ?? Data(), encoding: .utf8),
+            "{\"new_owner\":\"\(successor.uuidString)\"}"
+        )
+    }
+
+    func testSwitchingSquadsDropsTheOldThreadAndKeepsAnUnconfirmedSend() {
+        let me = UUID()
+        let them = UUID()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var log = ChatLog()
+        let old = UUID()
+        let pending = UUID()
+        log.ingest([ChatEntry(id: old, senderId: them, body: "old thread", sentAt: start, delivery: .sent)])
+        log.beginSend(id: pending, senderId: me, body: "not yet", now: start.addingTimeInterval(1))
+        log.markRead(at: start)
+        let incoming = ChatEntry(id: UUID(), senderId: them, body: "new thread", sentAt: start.addingTimeInterval(2), delivery: .sent)
+        log.adopt(replacingSquad: true, history: [incoming])
+        XCTAssertEqual(log.ordered.map(\.body), ["new thread"])
+        XCTAssertEqual(log.unreadCount(viewerId: me), 1)
+        log.markRead(at: start)
+        XCTAssertEqual(log.unreadCount(viewerId: me), 1)
+
+        log.beginSend(id: pending, senderId: me, body: "not yet", now: start.addingTimeInterval(3))
+        log.adopt(replacingSquad: false, history: [incoming])
+        XCTAssertEqual(log.entries.first { $0.id == pending }?.delivery, .sending)
+        XCTAssertFalse(log.ordered.contains { $0.body == "old thread" })
     }
 
     private func expectInvite(create: Bool, body: String, equals problem: InviteProblem) async throws {

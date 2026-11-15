@@ -125,6 +125,25 @@ struct SpotCall: Equatable, Identifiable {
     }
 }
 
+struct SpotActionGate: Equatable {
+    private(set) var busy = false
+
+    mutating func begin() -> Bool {
+        if busy { return false }
+        busy = true
+        return true
+    }
+
+    mutating func finish() { busy = false }
+}
+
+enum SpotClock {
+    /// A timeline paused in the background can sit before `join_until`. The resume instant still counts.
+    static func now(timeline: Date, resumedAt: Date) -> Date {
+        max(timeline, resumedAt)
+    }
+}
+
 enum SpotCallRules {
     static let cap = 8
     static let window: TimeInterval = 5 * 60

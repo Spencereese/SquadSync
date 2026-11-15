@@ -302,6 +302,31 @@ final class SupabaseSquadService: SquadService {
         return record
     }
 
+    func removeMember(squadId: UUID, userId: UUID) async throws {
+        let data: Data
+        do {
+            data = try await http.send(
+                path: "rest/v1/sq8_squad_members",
+                method: "DELETE",
+                query: [
+                    URLQueryItem(name: "squad_id", value: "eq.\(squadId.uuidString)"),
+                    URLQueryItem(name: "user_id", value: "eq.\(userId.uuidString)")
+                ],
+                prefer: "return=representation",
+                feature: .squad
+            )
+        } catch let failure as BackendFailure {
+            if case .rejected(let message) = failure, message.lowercased().contains("sq8_owner_protected") {
+                throw InviteProblem.other("The owner stays in the squad.")
+            }
+            throw failure
+        }
+        let rows = try BackendJSON.decoder.decode([MemberRow].self, from: data)
+        guard rows.contains(where: { $0.userId == userId }) else {
+            throw InviteProblem.other("You can't remove that person.")
+        }
+    }
+
     private func load(squadId: UUID) async throws -> SquadRecord {
         let squad = try await fetchSquad(squadId: squadId)
         let memberData = try await http.send(
@@ -590,8 +615,13 @@ final class SupabaseChatService: ChatService {
 final class SupabaseInviteService: InviteServing {
     private let http: SupabaseHTTP
 
-    init(config: BackendConfig, accessToken: String, refresher: TokenRefreshing? = nil) {
-        self.http = SupabaseHTTP(config: config, accessToken: accessToken, refresher: refresher)
+    init(
+        config: BackendConfig,
+        accessToken: String,
+        refresher: TokenRefreshing? = nil,
+        transport: HTTPTransport = URLSessionTransport.shared
+    ) {
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken, transport: transport, refresher: refresher)
     }
 
     func createInvite() async throws -> InviteTicket {
@@ -642,8 +672,13 @@ final class SupabaseInviteService: InviteServing {
 final class SupabaseSpotService: SpotServing {
     private let http: SupabaseHTTP
 
-    init(config: BackendConfig, accessToken: String, refresher: TokenRefreshing? = nil) {
-        self.http = SupabaseHTTP(config: config, accessToken: accessToken, refresher: refresher)
+    init(
+        config: BackendConfig,
+        accessToken: String,
+        refresher: TokenRefreshing? = nil,
+        transport: HTTPTransport = URLSessionTransport.shared
+    ) {
+        self.http = SupabaseHTTP(config: config, accessToken: accessToken, transport: transport, refresher: refresher)
     }
 
     func current(squadId: UUID) async throws -> SpotCall? {

@@ -276,6 +276,15 @@ enum Receipts {
     }
 }
 
+enum MembershipChange {
+    static func note(beforeId: UUID?, beforeCount: Int, afterId: UUID?, afterCount: Int) -> String {
+        if let beforeId, beforeId == afterId, beforeCount == afterCount {
+            return "You're already in this squad."
+        }
+        return "Joined."
+    }
+}
+
 enum InviteProblem: Error, Equatable {
     case expired
     case revokedOrUnknown

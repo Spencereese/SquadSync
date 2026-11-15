@@ -238,6 +238,8 @@ protocol ProfileService: AnyObject {
 protocol SquadService: AnyObject {
     func currentSquad(userId: UUID) async throws -> SquadRecord?
     func createSquad(ownerId: UUID, name: String) async throws -> SquadRecord
+    /// Owner-only. The applied delete policy does not let a member remove their own row.
+    func removeMember(squadId: UUID, userId: UUID) async throws
 }
 
 struct MemberRead: Equatable {

@@ -196,6 +196,16 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertLessThan(join.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
     }
 
+    private func tapJoin(in app: XCUIApplication) {
+        let join = app.buttons["join-squad"]
+        XCTAssertTrue(join.waitForExistence(timeout: 5), "Join was not in the members sheet")
+        if join.isHittable {
+            join.tap()
+        } else {
+            join.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+    }
+
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
         let list = app.scrollViews["message-list"]
         var moves = 0
@@ -252,6 +262,77 @@ final class AccessibilityUITests: XCTestCase {
                 line: line
             )
         }
+    }
+
+    func testMockInviteLeaveAndRejoin() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
+        app.launch()
+
+        let title = app.descendants(matching: .any)["squad-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "Squad title was not on the invite screen")
+        XCTAssertEqual(title.label, "Friday · 2 of 8")
+        let members = app.buttons["members"]
+        XCTAssertTrue(members.waitForExistence(timeout: 5), "Members button was not in the bar")
+        members.tap()
+
+        let count = app.descendants(matching: .any)["squad-count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 5), "Member count was not in the sheet")
+        XCTAssertEqual(count.label, "Friday · 2 of 8")
+        XCTAssertTrue(app.descendants(matching: .any)["invite-empty"].waitForExistence(timeout: 5), "Empty invite state was missing")
+        app.buttons["create-invite"].tap()
+        let code = app.descendants(matching: .any)["invite-code"]
+        XCTAssertTrue(code.waitForExistence(timeout: 5), "Invite code was not shown")
+        XCTAssertEqual(code.label, "ABCD2345")
+        XCTAssertFalse(app.descendants(matching: .any)["invite-empty"].exists)
+
+        app.buttons["remove-Riley"].tap()
+        let status = app.descendants(matching: .any)["membership-status"]
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "Removed Riley.")
+        XCTAssertEqual(count.label, "Friday · 1 of 8")
+
+        let field = app.textFields["join-code"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "Join field was not in the sheet")
+        field.tap()
+        field.typeText("JOIN2345")
+        tapJoin(in: app)
+        XCTAssertEqual(status.label, "Joined.")
+        XCTAssertEqual(count.label, "Friday · 2 of 8")
+
+        field.tap()
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 8))
+        field.typeText("EXPIRED2")
+        tapJoin(in: app)
+        XCTAssertEqual(status.label, "This invite has expired.")
+        XCTAssertEqual(count.label, "Friday · 2 of 8")
+    }
+
+    func testMockEighthJoinFillsAndNinthIsRejected() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "almostFull"]
+        app.launch()
+
+        let title = app.descendants(matching: .any)["squad-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 15))
+        XCTAssertEqual(title.label, "Friday · 7 of 8")
+        let members = app.buttons["members"]
+        XCTAssertTrue(members.waitForExistence(timeout: 5), "Members button was not in the bar")
+        members.tap()
+        let count = app.descendants(matching: .any)["squad-count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 5))
+        XCTAssertEqual(count.label, "Friday · 7 of 8")
+        let field = app.textFields["join-code"]
+        field.tap()
+        field.typeText("JOIN2345")
+        tapJoin(in: app)
+        let status = app.descendants(matching: .any)["membership-status"]
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "Joined.")
+        XCTAssertEqual(count.label, "Friday · 8 of 8")
+        tapJoin(in: app)
+        XCTAssertEqual(status.label, "That squad is full (8).")
+        XCTAssertEqual(count.label, "Friday · 8 of 8")
     }
 
     func testMockInviteSendShowsTheRow() {

@@ -17,6 +17,7 @@ final class LiveSessionModel {
     var squadNameError = ""
     var inviteCode = ""
     var joinCode = ""
+    var membershipIsError = false
     var board = ReactionBoard()
     var reads: [MemberRead] = []
     var link: RealtimeLink = .down
@@ -86,8 +87,12 @@ final class LiveSessionModel {
                 self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: card)
             } else {
                 self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: nil)
-                if scenario == .invite {
-                    let seeded = squads.seed(ownerId: session.userId, name: "Friday")
+                if scenario == .almostFull {
+                    self.squad = squads.seedAlmostFull(ownerId: session.userId)
+                } else if scenario == .invite {
+                    var seeded = squads.seed(ownerId: session.userId, name: "Friday")
+                    squads.addMember(id: ChatSeed.otherId, name: "Riley")
+                    seeded.members.append(SquadMemberRecord(id: ChatSeed.otherId, displayName: "Riley", defaultGame: "", isOwner: false))
                     self.squad = seeded
                     let message = RemoteMessage(
                         id: ChatSeed.messageId,
@@ -200,13 +205,17 @@ final class LiveSessionModel {
     }
 
     func createInvite() async {
+        membershipIsError = false
+        status = "Creating invite…"
         await run {
             let session = try requiredSession()
             do {
                 let ticket = try await inviteService(session).createInvite()
                 inviteCode = ticket.code
+                membershipIsError = false
                 status = "Invite \(ticket.code) is ready."
             } catch let problem as InviteProblem {
+                membershipIsError = true
                 status = problem.message
             }
         }
@@ -215,19 +224,48 @@ final class LiveSessionModel {
     func joinSquad() async {
         let trimmed = joinCode.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            status = InviteProblem.revokedOrUnknown.message
+            membershipIsError = true
+            status = "Enter an invite code."
             return
         }
+        membershipIsError = false
+        status = "Joining…"
         await run {
             let session = try requiredSession()
-            let existing = squad?.id
+            let beforeId = squad?.id
+            let beforeCount = squad?.members.count ?? 0
             do {
-                let joined = try await inviteService(session).join(code: trimmed)
+                _ = try await inviteService(session).join(code: trimmed)
                 squad = try await squadService(session).currentSquad(userId: session.userId)
-                status = existing == joined ? "You're already in this squad." : "Joined."
+                membershipIsError = false
+                status = MembershipChange.note(
+                    beforeId: beforeId,
+                    beforeCount: beforeCount,
+                    afterId: squad?.id,
+                    afterCount: squad?.members.count ?? 0
+                )
                 await loadChat(session)
                 startLive(session)
             } catch let problem as InviteProblem {
+                membershipIsError = true
+                status = problem.message
+            }
+        }
+    }
+
+    func removeMember(_ member: SquadMemberRecord) async {
+        guard let squad else { return }
+        membershipIsError = false
+        status = "Removing \(member.displayName)…"
+        await run {
+            let session = try requiredSession()
+            do {
+                try await squadService(session).removeMember(squadId: squad.id, userId: member.id)
+                self.squad = try await squadService(session).currentSquad(userId: session.userId)
+                membershipIsError = false
+                status = "Removed \(member.displayName)."
+            } catch let problem as InviteProblem {
+                membershipIsError = true
                 status = problem.message
             }
         }
@@ -719,6 +757,7 @@ struct LiveSessionView: View {
     @State private var showNewMessages = false
     @State private var wentToBackground = false
     @State private var confirmSignOut = false
+    @State private var showMembers = false
     @ScaledMetric(relativeTo: .body) private var composerLine: CGFloat = 22
     @Environment(\.scenePhase) private var scenePhase
 
@@ -740,12 +779,24 @@ struct LiveSessionView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
             .toolbar {
+                if model.phase == .ready {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button {
+                            showMembers = true
+                        } label: {
+                            Image(systemName: "person.3")
+                        }
+                        .accessibilityLabel("Members")
+                        .accessibilityIdentifier("members")
+                    }
+                }
                 if let squadTitle {
                     ToolbarItem(placement: .principal) {
                         Text(squadTitle)
                             .lineLimit(1)
                             .minimumScaleFactor(0.65)
                             .accessibilityIdentifier("squad-title")
+                            .accessibilityLabel(squadTitle)
                             .accessibilityAddTraits(.isHeader)
                     }
                 }
@@ -763,6 +814,9 @@ struct LiveSessionView: View {
         }
         .sheet(isPresented: $confirmSignOut) {
             signOutSheet
+        }
+        .sheet(isPresented: $showMembers) {
+            membershipSheet
         }
         .task { await model.restore() }
         .onChange(of: scenePhase) { _, phase in
@@ -847,14 +901,7 @@ struct LiveSessionView: View {
                         Button("Save profile") { Task { await model.saveProfile() } }
                             .disabled(model.busy)
                     }
-                    if let squad = model.squad {
-                        ForEach(squad.members) { member in
-                            Text(member.isOwner ? "\(member.displayName) · Owner" : member.displayName)
-                        }
-                        if squad.ownerId == (model.profile?.id ?? model.viewerId) {
-                            inviteControls
-                        }
-                        joinControls
+                    if model.squad != nil {
                         if let notice = liveNotice {
                             Text(notice).font(.caption).foregroundStyle(SQColor.muted)
                         }
@@ -1208,10 +1255,67 @@ struct LiveSessionView: View {
         .frame(maxHeight: composerLine * 3)
     }
 
+    private var membershipSheet: some View {
+        let ownerId = model.profile?.id ?? model.viewerId
+        let isOwner = model.squad?.ownerId == ownerId
+        return ScrollView {
+            VStack(alignment: .leading, spacing: SQSpace.m) {
+                Text("Members")
+                    .font(.title2.weight(.semibold))
+                Text(model.squad.map { SquadTitle.line(name: $0.name, memberCount: $0.members.count) } ?? "You're not in a squad yet.")
+                    .accessibilityIdentifier("squad-count")
+                if model.squad?.members.isEmpty != false && model.squad != nil {
+                    Text("No members yet.")
+                }
+                if let squad = model.squad {
+                    ForEach(squad.members) { member in
+                        HStack {
+                            Text(member.isOwner ? "\(member.displayName) · Owner" : member.displayName)
+                            Spacer()
+                            if isOwner && !member.isOwner {
+                                Button("Remove \(member.displayName)") {
+                                    Task { await model.removeMember(member) }
+                                }
+                                .disabled(model.busy)
+                                .accessibilityIdentifier("remove-\(member.displayName)")
+                            }
+                        }
+                    }
+                    if !isOwner {
+                        Text("Only the owner can remove a member. You can't leave on your own.")
+                            .font(.footnote)
+                            .foregroundStyle(SQColor.muted)
+                    }
+                }
+                if isOwner {
+                    inviteControls
+                    if model.inviteCode.isEmpty {
+                        Text("No invite yet.")
+                            .font(.footnote)
+                            .foregroundStyle(SQColor.muted)
+                            .accessibilityIdentifier("invite-empty")
+                    }
+                }
+                joinControls
+                if !model.status.isEmpty {
+                    Text(model.status)
+                        .font(.footnote)
+                        .foregroundStyle(model.membershipIsError ? SQColor.danger : SQColor.muted)
+                        .accessibilityIdentifier("membership-status")
+                }
+            }
+            .padding(SQSpace.l)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+    }
+
     private var inviteControls: some View {
         VStack(alignment: .leading, spacing: SQSpace.s) {
             Button("Create invite") { Task { await model.createInvite() } }
                 .disabled(model.busy)
+                .accessibilityIdentifier("create-invite")
             if !model.inviteCode.isEmpty {
                 Text(model.inviteCode)
                     .font(.body.monospaced())
@@ -1221,6 +1325,7 @@ struct LiveSessionView: View {
                 }
                 Button("Copy") {
                     UIPasteboard.general.string = model.inviteCode
+                    model.membershipIsError = false
                     model.status = "Copied."
                 }
             }
@@ -1235,6 +1340,7 @@ struct LiveSessionView: View {
                 .accessibilityIdentifier("join-code")
             Button("Join") { Task { await model.joinSquad() } }
                 .disabled(model.busy)
+                .accessibilityIdentifier("join-squad")
         }
     }
 

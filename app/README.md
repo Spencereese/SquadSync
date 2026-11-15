@@ -64,7 +64,7 @@ Arguments go after the bundle id. `-screen` jumps to a state. `-scenario` picks 
 
 Screens: `inbox`, `thread-general`, `thread-warzone`, `party`, `voice`, `voice-pill`, `space`, `handoff`.
 
-Scenarios: `seated` (viewer is Ready), `unseated` (I'm in can be tapped), `ready4` (Lock can be tapped), `noSquad` (create-squad form on the mock backend), `invite` (invite and join on the mock backend).
+Scenarios: `seated` (viewer is Ready), `unseated` (I'm in can be tapped), `ready4` (Lock can be tapped), `noSquad` (create-squad form on the mock backend), `invite` (invite, remove, and join on the mock backend), `almostFull` (7 members, so the next join fills 8 and the one after is rejected).
 
 ```bash
 xcrun simctl launch "$UDID" com.spencereese.squadsync -screen inbox -scenario seated
@@ -83,7 +83,9 @@ xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario sp
 
 `-backend mock -scenario noSquad` opens the live session screen against the in-memory mock, already signed in and not in a squad. The create-squad form is on screen. It does not write to Supabase.
 
-`-backend mock -scenario invite` opens that screen as the owner of a mock squad named Friday, with Riley already in it and one message from Riley (`message-row-seed-1`). Create invite, share or copy the code, and the join field are on screen. Codes `EXPIRED2`, `REVOKED2`, `FULL2345`, and `ALREADY2` show those errors. Any other code adds Riley again only if she is not already seated. Nothing is written to Supabase.
+`-backend mock -scenario invite` opens that screen as the owner of a mock squad named Friday, with Riley already in it and one message from Riley (`message-row-seed-1`). The Members button opens invite, join, and remove. Create invite, share or copy the code, and the join field are in that sheet. Codes `EXPIRED2`, `REVOKED2`, `FULL2345`, and `ALREADY2` show those errors. Any other code seats the next person who is not already in the squad, until 8. Nothing is written to Supabase.
+
+`-backend mock -scenario almostFull` opens the same screen with 7 members. One join fills it to 8. The next join says the squad is full. The owner can remove someone; a member cannot leave on their own.
 
 `-backend mock -scenario spotCall` opens the same screen with a half-filled Warzone spot card (4 of 8 in). You are not in it yet, so Join and then Ready are on the card. Ready stays on this phone. Nothing is written to Supabase.
 

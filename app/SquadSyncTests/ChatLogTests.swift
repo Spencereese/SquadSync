@@ -781,3 +781,143 @@ final class SessionRefreshTests: XCTestCase {
         }
     }
 }
+
+final class InviteFlowTests: XCTestCase {
+    private let squad = UUID(uuidString: "00000000-0000-0000-0000-000000000010")!
+    private let owner = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    private let member = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!
+
+    private var config: BackendConfig {
+        BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
+    }
+
+    func testCreateInviteOutcomes() async throws {
+        let created = Data("{\"ok\":true,\"code\":\"ABCD2345\",\"squad_id\":\"\(squad.uuidString)\"}".utf8)
+        let transport = ScriptedTransport(responses: [(200, created)])
+        let invites = SupabaseInviteService(config: config, accessToken: "access", transport: transport)
+        let ticket = try await invites.createInvite()
+        XCTAssertEqual(ticket.code, "ABCD2345")
+        XCTAssertEqual(ticket.squadId, squad)
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertTrue(request.url?.path.hasSuffix("sq8_create_invite") == true)
+
+        try await expectInvite(create: true, body: "{\"ok\":false,\"error\":\"not_owner\"}", equals: .notOwner)
+        try await expectInvite(create: true, body: "{\"ok\":false,\"error\":\"full\"}", equals: .full)
+    }
+
+    func testJoinOutcomes() async throws {
+        let joined = Data("{\"ok\":true,\"squad_id\":\"\(squad.uuidString)\"}".utf8)
+        let transport = ScriptedTransport(responses: [(200, joined)])
+        let invites = SupabaseInviteService(config: config, accessToken: "access", transport: transport)
+        let id = try await invites.join(code: "abcd2345")
+        XCTAssertEqual(id, squad)
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertTrue(request.url?.path.hasSuffix("sq8_join_with_code") == true)
+        let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: String]
+        XCTAssertEqual(body?["code"], "abcd2345")
+
+        try await expectInvite(create: false, body: "{\"ok\":false,\"error\":\"expired\"}", equals: .expired)
+        try await expectInvite(create: false, body: "{\"ok\":false,\"error\":\"invalid\"}", equals: .revokedOrUnknown)
+        try await expectInvite(create: false, body: "{\"ok\":false,\"error\":\"full\"}", equals: .full)
+        try await expectInvite(create: false, body: "{\"ok\":false,\"error\":\"already_in_squad\"}", equals: .alreadyInASquad)
+        try await expectInvite(create: false, body: "{\"ok\":false,\"error\":\"owns_squad_with_members\"}", equals: .ownsSquadWithMembers)
+        XCTAssertEqual(
+            MembershipChange.note(beforeId: squad, beforeCount: 2, afterId: squad, afterCount: 2),
+            "You're already in this squad."
+        )
+        XCTAssertEqual(
+            MembershipChange.note(beforeId: squad, beforeCount: 2, afterId: squad, afterCount: 3),
+            "Joined."
+        )
+    }
+
+    func testRemoveMemberUsesTheOwnerDelete() async throws {
+        let row = Data("[{\"user_id\":\"\(member.uuidString)\"}]".utf8)
+        let transport = ScriptedTransport(responses: [(200, row)])
+        let squads = SupabaseSquadService(config: config, accessToken: "access", transport: transport)
+        try await squads.removeMember(squadId: squad, userId: member)
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(request.httpMethod, "DELETE")
+        XCTAssertTrue(request.url?.path.hasSuffix("sq8_squad_members") == true)
+        XCTAssertTrue(request.url?.query?.contains("user_id=eq.\(member.uuidString)") == true)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Prefer"), "return=representation")
+
+        let empty = ScriptedTransport(responses: [(200, Data("[]".utf8))])
+        let denied = SupabaseSquadService(config: config, accessToken: "access", transport: empty)
+        do {
+            try await denied.removeMember(squadId: squad, userId: member)
+            XCTFail("An empty delete should not look like a removal")
+        } catch let problem as InviteProblem {
+            XCTAssertEqual(problem, .other("You can't remove that person."))
+        }
+
+        let protected = Data("{\"message\":\"sq8_owner_protected\"}".utf8)
+        let blocked = ScriptedTransport(responses: [(400, protected)])
+        let owners = SupabaseSquadService(config: config, accessToken: "access", transport: blocked)
+        do {
+            try await owners.removeMember(squadId: squad, userId: owner)
+            XCTFail("The owner row should stay")
+        } catch let problem as InviteProblem {
+            XCTAssertEqual(problem, .other("The owner stays in the squad."))
+        }
+    }
+
+    func testSpotFullIsTheCapacityError() async throws {
+        let body = Data("{\"code\":\"P0001\",\"message\":\"spot_full\"}".utf8)
+        let transport = ScriptedTransport(responses: [(400, body)])
+        let spots = SupabaseSpotService(config: config, accessToken: "access", transport: transport)
+        do {
+            try await spots.rsvp(callId: squad, response: "in")
+            XCTFail("An eighth seat past the cap should fail")
+        } catch let problem as SpotProblem {
+            XCTAssertEqual(problem, .full)
+            XCTAssertEqual(problem.message, "That spot call is full (8).")
+        }
+    }
+
+    func testMockJoinFillsToEightThenRejectsTheNinth() async throws {
+        let squads = MockSquadService()
+        let owner = UUID()
+        let seeded = squads.seedAlmostFull(ownerId: owner)
+        XCTAssertEqual(SquadTitle.line(name: seeded.name, memberCount: seeded.members.count), "Friday · 7 of 8")
+        let invites = MockInviteService(squads: squads)
+        _ = try await invites.join(code: "JOIN2345")
+        let filled = try await squads.currentSquad(userId: owner)
+        XCTAssertEqual(filled?.members.count, 8)
+        XCTAssertEqual(SquadTitle.line(name: "Friday", memberCount: 8), "Friday · 8 of 8")
+        do {
+            _ = try await invites.join(code: "JOIN2345")
+            XCTFail("The ninth person should be rejected")
+        } catch let problem as InviteProblem {
+            XCTAssertEqual(problem, .full)
+        }
+        try await squads.removeMember(squadId: seeded.id, userId: MockSquadService.quinn)
+        let afterLeave = try await squads.currentSquad(userId: owner)
+        XCTAssertEqual(afterLeave?.members.count, 7)
+        _ = try await invites.join(code: "JOIN2345")
+        XCTAssertEqual(try await squads.currentSquad(userId: owner)?.members.count, 8)
+        do {
+            try await squads.removeMember(squadId: seeded.id, userId: owner)
+            XCTFail("The owner row should stay")
+        } catch let problem as InviteProblem {
+            XCTAssertEqual(problem, .other("The owner stays in the squad."))
+        }
+    }
+
+    private func expectInvite(create: Bool, body: String, equals problem: InviteProblem) async throws {
+        let transport = ScriptedTransport(responses: [(200, Data(body.utf8))])
+        let invites = SupabaseInviteService(config: config, accessToken: "access", transport: transport)
+        do {
+            if create {
+                _ = try await invites.createInvite()
+            } else {
+                _ = try await invites.join(code: "ABCD2345")
+            }
+            XCTFail("Expected \(problem)")
+        } catch let caught as InviteProblem {
+            XCTAssertEqual(caught, problem)
+        }
+    }
+}

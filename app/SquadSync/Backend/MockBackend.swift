@@ -104,6 +104,50 @@ final class MockSquadService: SquadService {
         squad = created
         return created
     }
+
+    func seedAlmostFull(ownerId: UUID) -> SquadRecord {
+        let created = SquadRecord(
+            id: ChatSeed.squadId,
+            ownerId: ownerId,
+            name: "Friday",
+            members: [
+                SquadMemberRecord(id: ownerId, displayName: "You", defaultGame: "Call of Duty", isOwner: true),
+                SquadMemberRecord(id: SpotSeed.alex, displayName: "Alex", defaultGame: "", isOwner: false),
+                SquadMemberRecord(id: SpotSeed.jordan, displayName: "Jordan", defaultGame: "", isOwner: false),
+                SquadMemberRecord(id: SpotSeed.sam, displayName: "Sam", defaultGame: "", isOwner: false),
+                SquadMemberRecord(id: SpotSeed.casey, displayName: "Casey", defaultGame: "", isOwner: false),
+                SquadMemberRecord(id: MockSquadService.morgan, displayName: "Morgan", defaultGame: "", isOwner: false),
+                SquadMemberRecord(id: MockSquadService.quinn, displayName: "Quinn", defaultGame: "", isOwner: false)
+            ]
+        )
+        squad = created
+        return created
+    }
+
+    func removeMember(squadId: UUID, userId: UUID) async throws {
+        guard var squad, squad.id == squadId else { throw InviteProblem.other("You can't remove that person.") }
+        guard let member = squad.members.first(where: { $0.id == userId }) else {
+            throw InviteProblem.other("You can't remove that person.")
+        }
+        guard !member.isOwner else { throw InviteProblem.other("The owner stays in the squad.") }
+        squad.members.removeAll { $0.id == userId }
+        self.squad = squad
+    }
+
+    func nextGuest() -> (id: UUID, name: String)? {
+        guard let squad else { return nil }
+        return Self.bench.first { guest in !squad.members.contains { $0.id == guest.id } }
+    }
+
+    static let morgan = UUID(uuidString: "00000000-0000-0000-0000-00000000B015")!
+    static let quinn = UUID(uuidString: "00000000-0000-0000-0000-00000000B016")!
+    static let avery = UUID(uuidString: "00000000-0000-0000-0000-00000000B017")!
+    static let bench: [(id: UUID, name: String)] = [
+        (ChatSeed.otherId, "Riley"),
+        (avery, "Avery"),
+        (morgan, "Morgan"),
+        (quinn, "Quinn")
+    ]
 }
 
 final class MockChatService: ChatService {
@@ -257,13 +301,16 @@ final class MockInviteService: InviteServing {
 
     func createInvite() async throws -> InviteTicket {
         guard let squad = try await squads.currentSquad(userId: UUID()) else { throw InviteProblem.notOwner }
+        if squad.members.count >= 8 { throw InviteProblem.full }
         return InviteTicket(code: "ABCD2345", squadId: squad.id)
     }
 
     func join(code: String) async throws -> UUID {
         if let problem = Self.problem(for: code) { throw problem }
         guard let squad = try await squads.currentSquad(userId: UUID()) else { throw InviteProblem.revokedOrUnknown }
-        squads.addMember(id: UUID(uuidString: "00000000-0000-0000-0000-000000000011")!, name: "Riley")
+        if squad.members.count >= 8 { throw InviteProblem.full }
+        guard let guest = squads.nextGuest() else { throw InviteProblem.full }
+        squads.addMember(id: guest.id, name: guest.name)
         return squad.id
     }
 

@@ -222,6 +222,13 @@ enum HistoryMerge {
     }
 }
 
+enum ChatCatchUp {
+    /// Returning to the bottom, or tapping New messages, is the reader catching up.
+    static func requests(becamePinned: Bool, tappedNewMessages: Bool) -> Bool {
+        becamePinned || tappedNewMessages
+    }
+}
+
 enum ReadAdvance {
     /// Arriving over the socket is not the same as the reader being at the bottom.
     static func catchesUp(pinned: Bool) -> Bool { pinned }

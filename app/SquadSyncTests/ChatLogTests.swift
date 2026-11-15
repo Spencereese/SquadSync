@@ -278,8 +278,10 @@ final class SquadNameTests: XCTestCase {
         let me = UUID()
         let sentAt = Date(timeIntervalSince1970: 1_700_000_000)
         let message = RemoteMessage(id: id, squadId: ChatSeed.squadId, senderId: me, body: "hello", sentAt: sentAt)
-        XCTAssertEqual(try await chat.send(message), .stored)
-        XCTAssertEqual(try await chat.send(message), .stored)
+        let firstSend = try await chat.send(message)
+        let secondSend = try await chat.send(message)
+        XCTAssertEqual(firstSend, .stored)
+        XCTAssertEqual(secondSend, .stored)
         let stored = try await chat.history(squadId: ChatSeed.squadId)
         XCTAssertEqual(stored.map(\.body), ["hello"])
         XCTAssertEqual(stored.count, 1)
@@ -334,14 +336,16 @@ final class SquadNameTests: XCTestCase {
         let inserted = try BackendJSON.encoder.encode([message])
         let stored = ScriptedTransport(responses: [(201, inserted)])
         let confirmed = SupabaseChatService(config: config, accessToken: "access", transport: stored)
-        XCTAssertEqual(try await confirmed.send(message), .stored)
+        let confirmedReceipt = try await confirmed.send(message)
+        XCTAssertEqual(confirmedReceipt, .stored)
 
         var other = message
         other = RemoteMessage(id: message.id, squadId: message.squadId, senderId: me, body: "different", sentAt: sentAt)
         let mismatch = try BackendJSON.encoder.encode([other])
         let wrong = ScriptedTransport(responses: [(201, Data("[]".utf8)), (200, mismatch)])
         let rejected = SupabaseChatService(config: config, accessToken: "access", transport: wrong)
-        XCTAssertEqual(try await rejected.send(message), .missing)
+        let rejectedReceipt = try await rejected.send(message)
+        XCTAssertEqual(rejectedReceipt, .missing)
     }
 
     func testADroppedSocketStillAcceptsHistoryForTheOpenSquad() {
@@ -349,6 +353,9 @@ final class SquadNameTests: XCTestCase {
         XCTAssertFalse(HistoryMerge.accepts(requestSquad: ChatSeed.squadId, loadedSquad: UUID()))
         XCTAssertFalse(ReadAdvance.catchesUp(pinned: false))
         XCTAssertTrue(ReadAdvance.catchesUp(pinned: true))
+        XCTAssertTrue(ChatCatchUp.requests(becamePinned: true, tappedNewMessages: false))
+        XCTAssertTrue(ChatCatchUp.requests(becamePinned: false, tappedNewMessages: true))
+        XCTAssertFalse(ChatCatchUp.requests(becamePinned: false, tappedNewMessages: false))
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         let them = UUID()
         var book = ReceiptBook(reads: [MemberRead(userId: them, lastReadAt: start.addingTimeInterval(10))])
@@ -972,7 +979,8 @@ final class InviteFlowTests: XCTestCase {
         let afterLeave = try await squads.currentSquad(userId: owner)
         XCTAssertEqual(afterLeave?.members.count, 7)
         _ = try await invites.join(code: "JOIN2345")
-        XCTAssertEqual(try await squads.currentSquad(userId: owner)?.members.count, 8)
+        let filledAgain = try await squads.currentSquad(userId: owner)
+        XCTAssertEqual(filledAgain?.members.count, 8)
         do {
             try await squads.removeMember(squadId: seeded.id, userId: owner)
             XCTFail("The owner row should stay")
@@ -1042,7 +1050,8 @@ final class InviteFlowTests: XCTestCase {
             XCTAssertEqual(problem, .ownerMustTransfer)
         }
         try await squads.leaveSquad(newOwner: ChatSeed.otherId)
-        XCTAssertNil(try await squads.currentSquad(userId: owner))
+        let afterLeaving = try await squads.currentSquad(userId: owner)
+        XCTAssertNil(afterLeaving)
         do {
             try await squads.leaveSquad(newOwner: ChatSeed.otherId)
             XCTFail("A second leave should say they already left")

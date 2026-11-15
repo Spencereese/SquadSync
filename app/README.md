@@ -85,7 +85,9 @@ xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario sp
 
 `-backend mock -scenario invite` opens that screen as the owner of a mock squad named Friday, with Riley already in it and one message from Riley (`message-row-seed-1`). The Members button opens invite, join, and remove. Create invite, share or copy the code, and the join field are in that sheet. Codes `EXPIRED2`, `REVOKED2`, `FULL2345`, and `ALREADY2` show those errors. Any other code seats the next person who is not already in the squad, until 8. Nothing is written to Supabase.
 
-`-backend mock -scenario almostFull` opens the same screen with 7 members. One join fills it to 8. The next join says the squad is full. The owner can remove someone. A member cannot leave on their own until `supabase/migrations/20261115_0019_self_leave.sql` is applied. That file is proposed only. The Members sheet probes for `sq8_leave_squad` and keeps the current line while the function is missing.
+`-backend mock -scenario almostFull` opens the same screen with 7 members. One join fills it to 8. The next join says the squad is full. The owner can remove someone. A member cannot leave on their own until `supabase/migrations/20261115_0019_self_leave.sql` is applied. That file is not applied. The Members sheet probes for `sq8_leave_squad` and keeps an honest line while the function is missing.
+
+`-debug-fail-sends N` is a DEBUG launch flag. The next N message sends fail, and the ones after that succeed. Use it with Retry on the simulator.
 
 `-backend mock -scenario spotCall` opens the same screen with a half-filled Warzone spot card (4 of 8 in). You are not in it yet, so Join and then Ready are on the card. Ready stays on this phone. Nothing is written to Supabase.
 

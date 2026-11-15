@@ -202,6 +202,11 @@ final class MockChatService: ChatService {
     }
 
     func send(_ message: RemoteMessage) async throws -> SendReceipt {
+        var probe = URLRequest(url: URL(string: "https://example.supabase.co/rest/v1/sq8_messages")!)
+        probe.httpMethod = "POST"
+        if DebugSendFailures.failIfNeeded(probe) {
+            throw BackendFailure.rejected("Debug send failed.")
+        }
         if let existing = stored.first(where: { $0.id == message.id }) {
             let matches = existing.squadId == message.squadId
                 && existing.senderId == message.senderId

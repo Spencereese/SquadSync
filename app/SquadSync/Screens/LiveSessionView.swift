@@ -813,6 +813,10 @@ struct LiveSessionView: View {
     @State private var confirmSignOut = false
     @State private var showMembers = false
     @State private var confirmLeave = false
+
+    private var largeTextLaunch: Bool {
+        ProcessInfo.processInfo.arguments.contains("-uitest-largeText")
+    }
     @ScaledMetric(relativeTo: .body) private var composerLine: CGFloat = 22
     @Environment(\.scenePhase) private var scenePhase
 
@@ -870,9 +874,11 @@ struct LiveSessionView: View {
         }
         .sheet(isPresented: $confirmSignOut) {
             signOutSheet
+                .modifier(LargeTextLaunch(enabled: largeTextLaunch))
         }
         .sheet(isPresented: $showMembers) {
             membershipSheet
+                .modifier(LargeTextLaunch(enabled: largeTextLaunch))
         }
         .task { await model.restore() }
         .onChange(of: scenePhase) { _, phase in
@@ -1050,6 +1056,11 @@ struct LiveSessionView: View {
                     await model.catchUp(pinned: pinnedToBottom)
                 }
             }
+            .onChange(of: pinnedToBottom) { wasPinned, isPinned in
+                if ChatCatchUp.requests(becamePinned: isPinned && !wasPinned, tappedNewMessages: false) {
+                    Task { await model.catchUp(pinned: true) }
+                }
+            }
             .onChange(of: model.log.ordered.last?.id) { _, id in
                 guard let id else { return }
                 let own = model.followSend == id
@@ -1081,6 +1092,9 @@ struct LiveSessionView: View {
                         showNewMessages = false
                         pinnedToBottom = true
                         scrollChatToBottom(proxy)
+                        if ChatCatchUp.requests(becamePinned: false, tappedNewMessages: true) {
+                            Task { await model.catchUp(pinned: true) }
+                        }
                     }
                     .buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("new-messages")
@@ -1335,6 +1349,7 @@ struct LiveSessionView: View {
                     .accessibilityIdentifier("squad-count")
                 if model.squad?.members.isEmpty != false && model.squad != nil {
                     Text("No members yet.")
+                        .accessibilityIdentifier("members-empty")
                 }
                 if let squad = model.squad {
                     ForEach(squad.members) { member in
@@ -1357,10 +1372,13 @@ struct LiveSessionView: View {
                     }
                     if model.leaveAvailable {
                         leaveControls(squad: squad, isOwner: isOwner)
-                    } else if !isOwner {
-                        Text("Only the owner can remove a member. You can't leave on your own.")
+                    } else {
+                        Text(isOwner
+                             ? "Leave isn't available on this server yet. You can still remove a member."
+                             : "Only the owner can remove a member. You can't leave on your own.")
                             .font(.footnote)
                             .foregroundStyle(SQColor.muted)
+                            .fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("leave-unavailable")
                     }
                 }
@@ -1373,16 +1391,25 @@ struct LiveSessionView: View {
                             .accessibilityIdentifier("invite-empty")
                     }
                 }
-                joinControls
+            }
+            .padding(SQSpace.l)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .safeAreaInset(edge: .bottom) {
+            VStack(alignment: .leading, spacing: SQSpace.s) {
                 if !model.status.isEmpty {
                     Text(model.status)
                         .font(.footnote)
                         .foregroundStyle(model.membershipIsError ? SQColor.danger : SQColor.muted)
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("membership-status")
                 }
+                joinControls
             }
             .padding(SQSpace.l)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(SQColor.canvas)
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
@@ -1393,25 +1420,32 @@ struct LiveSessionView: View {
         let me = model.profile?.id ?? model.viewerId
         let others = squad.members.filter { !$0.isOwner }
         return VStack(alignment: .leading, spacing: SQSpace.s) {
-            if isOwner && squad.members.count > 1 {
-                Text(InviteProblem.ownerMustTransfer.message)
-                    .font(.footnote)
-                    .foregroundStyle(SQColor.muted)
-                ForEach(others) { member in
-                    Button(model.transferTo == member.id ? "Next owner \(member.displayName)" : "Transfer to \(member.displayName)") {
-                        model.transferTo = member.id
-                    }
-                    .disabled(model.busy)
-                    .accessibilityIdentifier("transfer-\(member.displayName)")
-                    .accessibilityLabel(model.transferTo == member.id ? "Next owner \(member.displayName), selected" : "Transfer to \(member.displayName)")
-                }
-            }
             if me != nil {
                 Button("Leave") { confirmLeave = true }
                     .disabled(model.busy)
                     .accessibilityIdentifier("leave-squad")
                     .accessibilityLabel(isOwner && squad.members.count > 1 ? "Leave and transfer ownership" : "Leave the squad")
                 if confirmLeave {
+                    if isOwner && squad.members.count > 1 {
+                        if model.transferTo == nil {
+                            Text(InviteProblem.ownerMustTransfer.message)
+                                .font(.footnote)
+                                .foregroundStyle(SQColor.muted)
+                                .accessibilityIdentifier("transfer-prompt")
+                        }
+                        ForEach(others) { member in
+                            Button(model.transferTo == member.id ? "Next owner \(member.displayName)" : "Transfer to \(member.displayName)") {
+                                model.transferTo = member.id
+                                if model.status == InviteProblem.ownerMustTransfer.message {
+                                    model.membershipIsError = false
+                                    model.status = ""
+                                }
+                            }
+                            .disabled(model.busy)
+                            .accessibilityIdentifier("transfer-\(member.displayName)")
+                            .accessibilityLabel(model.transferTo == member.id ? "Next owner \(member.displayName), selected" : "Transfer to \(member.displayName)")
+                        }
+                    }
                     Text("Leave the squad?")
                         .font(.headline)
                         .accessibilityAddTraits(.isHeader)
@@ -1420,8 +1454,13 @@ struct LiveSessionView: View {
                         .font(.footnote)
                         .foregroundStyle(SQColor.muted)
                     Button(model.busy ? "Leaving…" : "Leave squad") {
-                        confirmLeave = false
-                        Task { await model.leaveSquad() }
+                        Task {
+                            await model.leaveSquad()
+                            if model.squad == nil {
+                                confirmLeave = false
+                                showMembers = false
+                            }
+                        }
                     }
                     .disabled(model.busy)
                     .accessibilityIdentifier("confirm-leave")

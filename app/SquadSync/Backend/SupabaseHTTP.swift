@@ -16,7 +16,38 @@ struct URLSessionTransport: HTTPTransport {
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        if DebugSendFailures.failIfNeeded(request) {
+            throw URLError(.networkConnectionLost)
+        }
         try await session.data(for: request)
+    }
+}
+
+enum DebugSendFailures {
+    private static var remaining: Int = {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "-debug-fail-sends"),
+              arguments.index(after: index) < arguments.endIndex,
+              let count = Int(arguments[arguments.index(after: index)]),
+              count > 0 else { return 0 }
+        return count
+        #else
+        return 0
+        #endif
+    }()
+
+    /// True when this message insert should fail. Later sends succeed.
+    static func failIfNeeded(_ request: URLRequest) -> Bool {
+        #if DEBUG
+        guard remaining > 0 else { return false }
+        let path = request.url?.path ?? ""
+        guard request.httpMethod == "POST", path.hasSuffix("sq8_messages") else { return false }
+        remaining -= 1
+        return true
+        #else
+        return false
+        #endif
     }
 }
 

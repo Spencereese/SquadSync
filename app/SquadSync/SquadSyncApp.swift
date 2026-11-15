@@ -280,7 +280,7 @@ private struct TabBarAccessibility: UIViewRepresentable {
     }
 }
 
-private struct LargeTextLaunch: ViewModifier {
+struct LargeTextLaunch: ViewModifier {
     let enabled: Bool
     func body(content: Content) -> some View {
         if enabled {

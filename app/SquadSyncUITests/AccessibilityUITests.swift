@@ -329,21 +329,46 @@ final class AccessibilityUITests: XCTestCase {
         let status = app.descendants(matching: .any)["membership-status"]
         XCTAssertTrue(status.waitForExistence(timeout: 5))
         XCTAssertEqual(status.label, "Choose the next owner before you leave.")
+        XCTAssertTrue(app.descendants(matching: .any)["transfer-prompt"].exists)
 
         app.buttons["transfer-Riley"].tap()
-        app.buttons["leave-squad"].tap()
+        XCTAssertFalse(app.descendants(matching: .any)["transfer-prompt"].exists)
+        XCTAssertFalse(status.exists)
         app.buttons["confirm-leave"].tap()
-        XCTAssertEqual(status.label, "You left the squad.")
-        let count = app.descendants(matching: .any)["squad-count"]
-        XCTAssertEqual(count.label, "You're not in a squad yet.")
+
+        XCTAssertTrue(app.staticTexts["You're not in a squad yet."].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.textFields.matching(identifier: "join-code").count, 1)
+        XCTAssertEqual(app.buttons.matching(identifier: "join-squad").count, 1)
 
         let field = app.textFields["join-code"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
         field.typeText("JOIN2345")
         tapJoin(in: app)
-        XCTAssertEqual(status.label, "Joined.")
-        XCTAssertEqual(count.label, "Friday · 2 of 8")
+        let title = app.descendants(matching: .any)["squad-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertEqual(title.label, "Friday · 2 of 8")
+    }
+
+    func testDebugFailSendRetriesIntoOneBubble() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-debug-fail-sends", "1"]
+        app.launch()
+
+        let field = app.textFields["Message"]
+        XCTAssertTrue(field.waitForExistence(timeout: 15))
+        field.tap()
+        field.typeText("once")
+        app.buttons["send-message"].tap()
+        let retry = app.buttons["retry-send"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5), "Failed send did not offer Retry")
+        if retry.isHittable {
+            retry.tap()
+        } else {
+            retry.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        }
+        let sent = app.staticTexts.matching(NSPredicate(format: "label == %@", "once"))
+        XCTAssertEqual(sent.count, 1)
+        XCTAssertFalse(app.buttons["retry-send"].waitForExistence(timeout: 2))
     }
 
     func testMockEighthJoinFillsAndNinthIsRejected() {

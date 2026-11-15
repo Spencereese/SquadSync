@@ -222,6 +222,26 @@ enum HistoryMerge {
     }
 }
 
+enum MembershipPrompt {
+    static let transfer = InviteProblem.ownerMustTransfer.message
+
+    static func shows(selected: UUID?) -> Bool { selected == nil }
+
+    static func status(afterSelecting current: String) -> String {
+        current == transfer ? "" : current
+    }
+}
+
+enum LeaveAvailabilityCopy {
+    static func line(isOwner: Bool, leaveShown: Bool) -> String? {
+        guard !leaveShown else { return nil }
+        if isOwner {
+            return "Leave isn't available on this server yet. You can still remove a member."
+        }
+        return "Only the owner can remove a member. You can't leave on your own."
+    }
+}
+
 enum ChatCatchUp {
     /// Returning to the bottom, or tapping New messages, is the reader catching up.
     static func requests(becamePinned: Bool, tappedNewMessages: Bool) -> Bool {

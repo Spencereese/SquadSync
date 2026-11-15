@@ -53,6 +53,7 @@ struct PartyCardView: View {
         .accessibilityLabel("\(party.game), \(SpotRules.filled(party)) of \(party.targetSize). Open the party card")
         .sheet(isPresented: $open) {
             partySheet(party)
+                .adoptingLaunchDynamicType()
         }
     }
 

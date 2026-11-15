@@ -353,6 +353,19 @@ final class SquadNameTests: XCTestCase {
         XCTAssertFalse(HistoryMerge.accepts(requestSquad: ChatSeed.squadId, loadedSquad: UUID()))
         XCTAssertFalse(ReadAdvance.catchesUp(pinned: false))
         XCTAssertTrue(ReadAdvance.catchesUp(pinned: true))
+        XCTAssertTrue(MembershipPrompt.shows(selected: nil))
+        XCTAssertFalse(MembershipPrompt.shows(selected: UUID()))
+        XCTAssertEqual(MembershipPrompt.status(afterSelecting: MembershipPrompt.transfer), "")
+        XCTAssertEqual(MembershipPrompt.status(afterSelecting: "Joined."), "Joined.")
+        XCTAssertEqual(
+            LeaveAvailabilityCopy.line(isOwner: true, leaveShown: false),
+            "Leave isn't available on this server yet. You can still remove a member."
+        )
+        XCTAssertEqual(
+            LeaveAvailabilityCopy.line(isOwner: false, leaveShown: false),
+            "Only the owner can remove a member. You can't leave on your own."
+        )
+        XCTAssertNil(LeaveAvailabilityCopy.line(isOwner: true, leaveShown: true))
         XCTAssertTrue(ChatCatchUp.requests(becamePinned: true, tappedNewMessages: false))
         XCTAssertTrue(ChatCatchUp.requests(becamePinned: false, tappedNewMessages: true))
         XCTAssertFalse(ChatCatchUp.requests(becamePinned: false, tappedNewMessages: false))

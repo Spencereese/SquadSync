@@ -349,6 +349,18 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertEqual(title.label, "Friday · 2 of 8")
     }
 
+    func testMembersSheetUsesTheLaunchTextSize() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-uitest-largeText"]
+        app.launch()
+        let members = app.buttons["members"]
+        XCTAssertTrue(members.waitForExistence(timeout: 15))
+        members.tap()
+        let heading = app.staticTexts["Members"]
+        XCTAssertTrue(heading.waitForExistence(timeout: 5), "Members title was not in the sheet")
+        XCTAssertGreaterThan(heading.frame.height, 40, "Members sheet did not pick up the launch text size, height \(heading.frame.height)")
+    }
+
     func testDebugFailSendRetriesIntoOneBubble() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-debug-fail-sends", "1"]

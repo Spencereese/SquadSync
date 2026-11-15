@@ -167,7 +167,7 @@ private struct PresenceStrip: View {
         }
         .frame(height: typeSize.isAccessibilitySize ? 44 : 68)
         .accessibilityElement(children: .contain)
-        .sheet(isPresented: $showRest) { restSheet }
+        .sheet(isPresented: $showRest) { restSheet.adoptingLaunchDynamicType() }
     }
 
     private var cellWidth: CGFloat { typeSize.isAccessibilitySize ? 54 : 52 }

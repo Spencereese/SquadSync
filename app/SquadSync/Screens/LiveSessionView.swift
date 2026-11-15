@@ -813,10 +813,6 @@ struct LiveSessionView: View {
     @State private var confirmSignOut = false
     @State private var showMembers = false
     @State private var confirmLeave = false
-
-    private var largeTextLaunch: Bool {
-        ProcessInfo.processInfo.arguments.contains("-uitest-largeText")
-    }
     @ScaledMetric(relativeTo: .body) private var composerLine: CGFloat = 22
     @Environment(\.scenePhase) private var scenePhase
 
@@ -874,11 +870,11 @@ struct LiveSessionView: View {
         }
         .sheet(isPresented: $confirmSignOut) {
             signOutSheet
-                .modifier(LargeTextLaunch(enabled: largeTextLaunch))
+                .adoptingLaunchDynamicType()
         }
         .sheet(isPresented: $showMembers) {
             membershipSheet
-                .modifier(LargeTextLaunch(enabled: largeTextLaunch))
+                .adoptingLaunchDynamicType()
         }
         .task { await model.restore() }
         .onChange(of: scenePhase) { _, phase in
@@ -1372,10 +1368,9 @@ struct LiveSessionView: View {
                     }
                     if model.leaveAvailable {
                         leaveControls(squad: squad, isOwner: isOwner)
-                    } else {
-                        Text(isOwner
-                             ? "Leave isn't available on this server yet. You can still remove a member."
-                             : "Only the owner can remove a member. You can't leave on your own.")
+                    }
+                    if let line = LeaveAvailabilityCopy.line(isOwner: isOwner, leaveShown: model.leaveAvailable) {
+                        Text(line)
                             .font(.footnote)
                             .foregroundStyle(SQColor.muted)
                             .fixedSize(horizontal: false, vertical: true)
@@ -1413,6 +1408,7 @@ struct LiveSessionView: View {
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .adoptingLaunchDynamicType()
         .onAppear { Task { await model.probeLeave() } }
     }
 
@@ -1427,8 +1423,8 @@ struct LiveSessionView: View {
                     .accessibilityLabel(isOwner && squad.members.count > 1 ? "Leave and transfer ownership" : "Leave the squad")
                 if confirmLeave {
                     if isOwner && squad.members.count > 1 {
-                        if model.transferTo == nil {
-                            Text(InviteProblem.ownerMustTransfer.message)
+                        if MembershipPrompt.shows(selected: model.transferTo) {
+                            Text(MembershipPrompt.transfer)
                                 .font(.footnote)
                                 .foregroundStyle(SQColor.muted)
                                 .accessibilityIdentifier("transfer-prompt")
@@ -1436,10 +1432,8 @@ struct LiveSessionView: View {
                         ForEach(others) { member in
                             Button(model.transferTo == member.id ? "Next owner \(member.displayName)" : "Transfer to \(member.displayName)") {
                                 model.transferTo = member.id
-                                if model.status == InviteProblem.ownerMustTransfer.message {
-                                    model.membershipIsError = false
-                                    model.status = ""
-                                }
+                                model.status = MembershipPrompt.status(afterSelecting: model.status)
+                                if model.status.isEmpty { model.membershipIsError = false }
                             }
                             .disabled(model.busy)
                             .accessibilityIdentifier("transfer-\(member.displayName)")

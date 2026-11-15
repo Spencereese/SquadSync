@@ -134,6 +134,7 @@ struct RootView: View {
             }
         }) {
             VoiceRoomView(store: store)
+                .adoptingLaunchDynamicType()
         }
         .sheet(isPresented: $store.handoffSheetPresented, onDismiss: {
             if store.openVoiceAfterHandoff {
@@ -142,6 +143,7 @@ struct RootView: View {
             }
         }) {
             HandoffSheet(store: store)
+                .adoptingLaunchDynamicType()
         }
         .onAppear(perform: applyLaunch)
         .modifier(LargeTextLaunch(enabled: launch.largeText))
@@ -284,10 +286,19 @@ struct LargeTextLaunch: ViewModifier {
     let enabled: Bool
     func body(content: Content) -> some View {
         if enabled {
-            content.dynamicTypeSize(.accessibility5)
+            content
+                .environment(\.dynamicTypeSize, .accessibility5)
+                .dynamicTypeSize(.accessibility5)
         } else {
             content
         }
+    }
+}
+
+extension View {
+    /// Sheets and covers do not inherit the window's Dynamic Type override.
+    func adoptingLaunchDynamicType() -> some View {
+        modifier(LargeTextLaunch(enabled: ProcessInfo.processInfo.arguments.contains("-uitest-largeText")))
     }
 }
 

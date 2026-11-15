@@ -52,8 +52,13 @@ final class MockProfileService: ProfileService {
 
 final class MockSquadService: SquadService {
     private var squad: SquadRecord?
+    private var viewerJoined = true
+    private var leftUser: (id: UUID, name: String)?
 
-    func currentSquad(userId: UUID) async throws -> SquadRecord? { squad }
+    func currentSquad(userId: UUID) async throws -> SquadRecord? {
+        guard viewerJoined else { return nil }
+        return squad
+    }
 
     func seed(ownerId: UUID, name: String) -> SquadRecord {
         let created = SquadRecord(
@@ -124,10 +129,38 @@ final class MockSquadService: SquadService {
         return created
     }
 
-    func leaveAvailable() async -> Bool { false }
+    func leaveAvailable() async -> Bool { true }
 
     func leaveSquad(newOwner: UUID?) async throws {
-        throw InviteProblem.notInSquad
+        guard viewerJoined, var squad else { throw InviteProblem.alreadyLeft }
+        guard let owner = squad.members.first(where: { $0.isOwner }) else { throw InviteProblem.alreadyLeft }
+        if squad.members.count > 1 {
+            guard let newOwner,
+                  newOwner != owner.id,
+                  squad.members.contains(where: { $0.id == newOwner })
+            else { throw InviteProblem.ownerMustTransfer }
+            var members = squad.members.filter { $0.id != owner.id }
+            if let index = members.firstIndex(where: { $0.id == newOwner }) {
+                members[index].isOwner = true
+            }
+            leftUser = (owner.id, owner.displayName)
+            viewerJoined = false
+            self.squad = SquadRecord(id: squad.id, ownerId: newOwner, name: squad.name, members: members)
+            return
+        }
+        leftUser = (owner.id, owner.displayName)
+        viewerJoined = false
+        self.squad = nil
+    }
+
+    func rejoinLeftViewer() -> UUID? {
+        guard !viewerJoined, var squad, let leftUser else { return nil }
+        guard squad.members.count < 8 else { return nil }
+        squad.members.append(SquadMemberRecord(id: leftUser.id, displayName: leftUser.name, defaultGame: "", isOwner: false))
+        self.squad = squad
+        viewerJoined = true
+        self.leftUser = nil
+        return squad.id
     }
 
     func removeMember(squadId: UUID, userId: UUID) async throws {
@@ -313,6 +346,10 @@ final class MockInviteService: InviteServing {
 
     func join(code: String) async throws -> UUID {
         if let problem = Self.problem(for: code) { throw problem }
+        if try await squads.currentSquad(userId: UUID()) == nil {
+            if let rejoined = squads.rejoinLeftViewer() { return rejoined }
+            throw InviteProblem.revokedOrUnknown
+        }
         guard let squad = try await squads.currentSquad(userId: UUID()) else { throw InviteProblem.revokedOrUnknown }
         if squad.members.count >= 8 { throw InviteProblem.full }
         guard let guest = squads.nextGuest() else { throw InviteProblem.full }

@@ -360,7 +360,7 @@ final class SupabaseSquadService: SquadService {
         )
         let payload = try JSONDecoder().decode(LeavePayload.self, from: data)
         guard payload.ok else {
-            throw InviteProblem.from(serverCode: payload.error ?? "not_in_squad")
+            throw InviteProblem.from(serverCode: payload.error ?? "already_left")
         }
     }
 

@@ -954,6 +954,55 @@ final class InviteFlowTests: XCTestCase {
         )
     }
 
+    func testEveryLeaveOutcome() async throws {
+        try await expectLeave("{\"ok\":false,\"error\":\"signed_out\"}", equals: .signedOut)
+        try await expectLeave("{\"ok\":false,\"error\":\"already_left\"}", equals: .alreadyLeft)
+        try await expectLeave("{\"ok\":false,\"error\":\"owner_must_transfer\"}", equals: .ownerMustTransfer)
+        try await expectLeave("{\"ok\":true,\"squad_id\":null}", equals: nil)
+        try await expectLeave("{\"ok\":true,\"squad_id\":\"\(squad.uuidString)\"}", equals: nil)
+        XCTAssertEqual(InviteProblem.alreadyLeft.message, "You already left this squad.")
+        XCTAssertEqual(InviteProblem.signedOut.message, "Sign in again before leaving.")
+    }
+
+    func testMockLeaveThenRejoinRestoresTheRoster() async throws {
+        let squads = MockSquadService()
+        let owner = UUID()
+        let seeded = squads.seed(ownerId: owner, name: "Friday")
+        squads.addMember(id: ChatSeed.otherId, name: "Riley")
+        let invites = MockInviteService(squads: squads)
+        do {
+            try await squads.leaveSquad(newOwner: nil)
+            XCTFail("The owner still has Riley")
+        } catch let problem as InviteProblem {
+            XCTAssertEqual(problem, .ownerMustTransfer)
+        }
+        try await squads.leaveSquad(newOwner: ChatSeed.otherId)
+        XCTAssertNil(try await squads.currentSquad(userId: owner))
+        do {
+            try await squads.leaveSquad(newOwner: ChatSeed.otherId)
+            XCTFail("A second leave should say they already left")
+        } catch let problem as InviteProblem {
+            XCTAssertEqual(problem, .alreadyLeft)
+        }
+        let rejoined = try await invites.join(code: "JOIN2345")
+        XCTAssertEqual(rejoined, seeded.id)
+        let back = try await squads.currentSquad(userId: owner)
+        XCTAssertEqual(back?.ownerId, ChatSeed.otherId)
+        XCTAssertEqual(back?.members.count, 2)
+        XCTAssertEqual(SquadTitle.line(name: back?.name ?? "", memberCount: back?.members.count ?? 0), "Friday · 2 of 8")
+    }
+
+    private func expectLeave(_ body: String, equals problem: InviteProblem?) async throws {
+        let transport = ScriptedTransport(responses: [(200, Data(body.utf8))])
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: transport)
+        do {
+            try await service.leaveSquad(newOwner: nil)
+            XCTAssertNil(problem)
+        } catch let caught as InviteProblem {
+            XCTAssertEqual(caught, problem)
+        }
+    }
+
     func testSwitchingSquadsDropsTheOldThreadAndKeepsAnUnconfirmedSend() {
         let me = UUID()
         let them = UUID()

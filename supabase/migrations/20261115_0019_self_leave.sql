@@ -1,5 +1,5 @@
--- Proposed. Not applied. Spencer has to approve this before it runs.
--- Not listed in supabase/tests/run.sh, so CI does not apply it.
+-- Ready to apply. Not applied. Not listed in supabase/tests/run.sh.
+-- Spencer applies this file. The down section at the bottom is commented out.
 -- A member can leave their squad. An owner who still has other members must
 -- name one of them as the next owner, or the call returns owner_must_transfer.
 -- A solo owner leaves by deleting that empty squad. The delete is allowed
@@ -29,7 +29,7 @@ begin
   where members.user_id = me;
 
   if mine_squad is null then
-    return jsonb_build_object('ok', false, 'error', 'not_in_squad');
+    return jsonb_build_object('ok', false, 'error', 'already_left');
   end if;
 
   select squad.owner_id
@@ -39,7 +39,7 @@ begin
   for update;
 
   if mine_owner is null then
-    return jsonb_build_object('ok', false, 'error', 'not_in_squad');
+    return jsonb_build_object('ok', false, 'error', 'already_left');
   end if;
 
   select count(*)
@@ -106,3 +106,10 @@ $$;
 
 revoke all on function public.sq8_leave_squad(uuid) from public, anon;
 grant execute on function public.sq8_leave_squad(uuid) to authenticated;
+
+-- Down. Do not run this with the up section. It only drops the two functions
+-- this file creates. It does not touch tables, policies, or triggers.
+--
+-- revoke all on function public.sq8_leave_squad(uuid) from authenticated;
+-- drop function if exists public.sq8_leave_squad(uuid);
+-- drop function if exists sq8.leave_squad(uuid);

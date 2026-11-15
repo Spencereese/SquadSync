@@ -308,6 +308,40 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertEqual(count.label, "Friday · 2 of 8")
     }
 
+    func testMockLeaveSquadThenRejoin() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
+        app.launch()
+
+        let members = app.buttons["members"]
+        XCTAssertTrue(members.waitForExistence(timeout: 15), "Members button was not in the bar")
+        members.tap()
+        let leave = app.buttons["leave-squad"]
+        XCTAssertTrue(leave.waitForExistence(timeout: 5), "Leave was not in the members sheet")
+        leave.tap()
+        let confirm = app.buttons["confirm-leave"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "Leave did not ask for confirmation")
+        confirm.tap()
+        let status = app.descendants(matching: .any)["membership-status"]
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "Choose the next owner before you leave.")
+
+        app.buttons["transfer-Riley"].tap()
+        app.buttons["leave-squad"].tap()
+        app.buttons["confirm-leave"].tap()
+        XCTAssertEqual(status.label, "You left the squad.")
+        let count = app.descendants(matching: .any)["squad-count"]
+        XCTAssertEqual(count.label, "You're not in a squad yet.")
+
+        let field = app.textFields["join-code"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        field.tap()
+        field.typeText("JOIN2345")
+        tapJoin(in: app)
+        XCTAssertEqual(status.label, "Joined.")
+        XCTAssertEqual(count.label, "Friday · 2 of 8")
+    }
+
     func testMockEighthJoinFillsAndNinthIsRejected() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "almostFull"]

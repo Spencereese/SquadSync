@@ -819,6 +819,7 @@ struct LiveSessionView: View {
     @State private var wentToBackground = false
     @State private var confirmSignOut = false
     @State private var showMembers = false
+    @State private var confirmLeave = false
     @ScaledMetric(relativeTo: .body) private var composerLine: CGFloat = 22
     @Environment(\.scenePhase) private var scenePhase
 
@@ -1402,10 +1403,26 @@ struct LiveSessionView: View {
                 }
             }
             if me != nil {
-                Button("Leave") { Task { await model.leaveSquad() } }
+                Button("Leave") { confirmLeave = true }
                     .disabled(model.busy)
                     .accessibilityIdentifier("leave-squad")
                     .accessibilityLabel(isOwner && squad.members.count > 1 ? "Leave and transfer ownership" : "Leave the squad")
+                if confirmLeave {
+                    Text("Leave the squad?")
+                        .font(.headline)
+                    Text("You can join again with a code.")
+                        .font(.footnote)
+                        .foregroundStyle(SQColor.muted)
+                    Button(model.busy ? "Leaving…" : "Leave squad") {
+                        confirmLeave = false
+                        Task { await model.leaveSquad() }
+                    }
+                    .disabled(model.busy)
+                    .accessibilityIdentifier("confirm-leave")
+                    Button("Stay") { confirmLeave = false }
+                        .disabled(model.busy)
+                        .accessibilityIdentifier("cancel-leave")
+                }
             }
         }
     }

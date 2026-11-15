@@ -305,6 +305,7 @@ enum InviteProblem: Error, Equatable {
     case notOwner
     case ownerMustTransfer
     case notInSquad
+    case alreadyLeft
     case signedOut
     case other(String)
 
@@ -326,6 +327,8 @@ enum InviteProblem: Error, Equatable {
             "Choose the next owner before you leave."
         case .notInSquad:
             "You're not in a squad."
+        case .alreadyLeft:
+            "You already left this squad."
         case .signedOut:
             "Sign in again before leaving."
         case .other(let text):
@@ -343,6 +346,7 @@ enum InviteProblem: Error, Equatable {
         case "not_owner": .notOwner
         case "owner_must_transfer": .ownerMustTransfer
         case "not_in_squad": .notInSquad
+        case "already_left": .alreadyLeft
         case "signed_out": .signedOut
         default: .other(serverCode)
         }

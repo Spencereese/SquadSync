@@ -202,7 +202,12 @@ final class MockChatService: ChatService {
     }
 
     func send(_ message: RemoteMessage) async throws -> SendReceipt {
-        if stored.contains(where: { $0.id == message.id }) { return .duplicate }
+        if let existing = stored.first(where: { $0.id == message.id }) {
+            let matches = existing.squadId == message.squadId
+                && existing.senderId == message.senderId
+                && existing.body == message.body
+            return matches ? .stored : .missing
+        }
         stored.append(message)
         return .stored
     }

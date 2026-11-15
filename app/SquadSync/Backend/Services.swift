@@ -271,10 +271,10 @@ protocol InviteServing: AnyObject {
 }
 
 enum SendReceipt: Equatable {
-    /// The response body included this id, squad, and body.
+    /// The insert returned this row, or a later read found the same sender, squad, and body.
     case stored
-    /// The insert was ignored. A retry of the same id can treat that as already saved.
-    case duplicate
+    /// The insert returned nothing, and no matching row is stored.
+    case missing
 }
 
 protocol ChatService: AnyObject {

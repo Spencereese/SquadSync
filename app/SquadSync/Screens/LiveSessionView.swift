@@ -459,8 +459,7 @@ final class LiveSessionModel {
         draft = ""
         await deliver(
             RemoteMessage(id: id, squadId: squad.id, senderId: session.userId, body: text, sentAt: now),
-            session: session,
-            retrying: false
+            session: session
         )
     }
 
@@ -475,7 +474,7 @@ final class LiveSessionModel {
         }
         log.retry(id: id)
         let message = RemoteMessage(id: id, squadId: squad.id, senderId: entry.senderId, body: entry.body, sentAt: entry.sentAt)
-        await deliver(message, session: session, retrying: true)
+        await deliver(message, session: session)
     }
 
     func signOut() async {
@@ -516,7 +515,7 @@ final class LiveSessionModel {
         return session
     }
 
-    private func deliver(_ message: RemoteMessage, session: AuthSession, retrying: Bool) async {
+    private func deliver(_ message: RemoteMessage, session: AuthSession) async {
         let chat = chatService(session)
         var error: Error?
         var receipt: SendReceipt?
@@ -529,7 +528,7 @@ final class LiveSessionModel {
                 error = first
             }
         }
-        switch OutboundSend.result(receipt: receipt, error: error, retrying: retrying) {
+        switch OutboundSend.result(receipt: receipt, error: error) {
         case .sent:
             log.markSent(id: message.id)
         case .staySending:
@@ -1131,6 +1130,8 @@ struct LiveSessionView: View {
                     .font(.headline)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("spot-title")
                 Text(statusLine(spot, expired: expired, now: now))
                     .accessibilityLabel(statusLine(spot, expired: expired, now: now))
                     .font(.subheadline.monospacedDigit())
@@ -1153,6 +1154,8 @@ struct LiveSessionView: View {
                     Text(model.spotNote)
                         .font(.caption)
                         .foregroundStyle(SQColor.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("spot-note")
                 }
                 if spot.status == .open && !expired {
                     Button("Join") { Task { await model.joinSpot() } }
@@ -1337,6 +1340,10 @@ struct LiveSessionView: View {
                     ForEach(squad.members) { member in
                         HStack {
                             Text(member.isOwner ? "\(member.displayName) · Owner" : member.displayName)
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .layoutPriority(1)
+                                .accessibilityLabel(member.isOwner ? "\(member.displayName), owner" : member.displayName)
                             Spacer()
                             if isOwner && !member.isOwner {
                                 Button("Remove \(member.displayName)") {
@@ -1344,6 +1351,7 @@ struct LiveSessionView: View {
                                 }
                                 .disabled(model.busy)
                                 .accessibilityIdentifier("remove-\(member.displayName)")
+                                .accessibilityLabel("Remove \(member.displayName)")
                             }
                         }
                     }
@@ -1395,6 +1403,7 @@ struct LiveSessionView: View {
                     }
                     .disabled(model.busy)
                     .accessibilityIdentifier("transfer-\(member.displayName)")
+                    .accessibilityLabel(model.transferTo == member.id ? "Next owner \(member.displayName), selected" : "Transfer to \(member.displayName)")
                 }
             }
             if me != nil {
@@ -1405,6 +1414,8 @@ struct LiveSessionView: View {
                 if confirmLeave {
                     Text("Leave the squad?")
                         .font(.headline)
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("confirm-leave-title")
                     Text("You can join again with a code.")
                         .font(.footnote)
                         .foregroundStyle(SQColor.muted)
@@ -1414,6 +1425,7 @@ struct LiveSessionView: View {
                     }
                     .disabled(model.busy)
                     .accessibilityIdentifier("confirm-leave")
+                    .accessibilityLabel("Confirm leaving the squad")
                     Button("Stay") { confirmLeave = false }
                         .disabled(model.busy)
                         .accessibilityIdentifier("cancel-leave")

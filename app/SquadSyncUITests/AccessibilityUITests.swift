@@ -120,6 +120,9 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertEqual(title.label, "Friday · 5 of 8")
         XCTAssertGreaterThan(title.frame.height, 1, "Squad title was squeezed out, frame \(title.frame)")
         XCTAssertTrue(app.windows.firstMatch.frame.intersects(title.frame), "Squad title is off screen, frame \(title.frame)")
+        let heading = app.descendants(matching: .any)["spot-title"]
+        XCTAssertTrue(heading.waitForExistence(timeout: 15), "Spot title was not on the card")
+        XCTAssertTrue(heading.label.contains("Calling spots"))
         let join = app.buttons["spot-join"]
         XCTAssertTrue(join.waitForExistence(timeout: 15), "Join was not on the spot card")
         XCTAssertEqual(join.label, "Join the spot call")
@@ -319,6 +322,7 @@ final class AccessibilityUITests: XCTestCase {
         let leave = app.buttons["leave-squad"]
         XCTAssertTrue(leave.waitForExistence(timeout: 5), "Leave was not in the members sheet")
         leave.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["confirm-leave-title"].waitForExistence(timeout: 5))
         let confirm = app.buttons["confirm-leave"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), "Leave did not ask for confirmation")
         confirm.tap()

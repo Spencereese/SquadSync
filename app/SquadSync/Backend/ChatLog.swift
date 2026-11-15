@@ -200,8 +200,8 @@ enum OutboundSend {
         case failed
     }
 
-    /// A 2xx with no matching row is not success. A duplicate is success only when this id was sent before.
-    static func result(receipt: SendReceipt?, error: Error?, retrying: Bool) -> Result {
+    /// Sent only when a stored row matches. An empty insert is not a failure until the follow-up read misses.
+    static func result(receipt: SendReceipt?, error: Error?) -> Result {
         if let error {
             if RequestNoise.isCancellation(error) { return .staySending }
             return .failed
@@ -209,9 +209,7 @@ enum OutboundSend {
         switch receipt {
         case .stored:
             return .sent
-        case .duplicate:
-            return retrying ? .sent : .failed
-        case nil:
+        case .missing, nil:
             return .failed
         }
     }

@@ -482,10 +482,28 @@ final class SupabaseChatService: ChatService {
             feature: .messages
         )
         let rows = (try? BackendJSON.decoder.decode([RemoteMessage].self, from: data)) ?? []
-        let stored = rows.contains { row in
-            row.id == message.id && row.squadId == message.squadId && row.body == message.body
+        if Self.matches(message, in: rows) { return .stored }
+        let found = try await http.send(
+            path: "rest/v1/sq8_messages",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "id", value: "eq.\(message.id.uuidString)"),
+                URLQueryItem(name: "squad_id", value: "eq.\(message.squadId.uuidString)"),
+                URLQueryItem(name: "select", value: "id,squad_id,sender_id,body,sent_at")
+            ],
+            feature: .messages
+        )
+        let stored = (try? BackendJSON.decoder.decode([RemoteMessage].self, from: found)) ?? []
+        return Self.matches(message, in: stored) ? .stored : .missing
+    }
+
+    private static func matches(_ message: RemoteMessage, in rows: [RemoteMessage]) -> Bool {
+        rows.contains { row in
+            row.id == message.id
+                && row.squadId == message.squadId
+                && row.senderId == message.senderId
+                && row.body == message.body
         }
-        return stored ? .stored : .duplicate
     }
 
     func newer(squadId: UUID, after: Date) async throws -> [RemoteMessage] {

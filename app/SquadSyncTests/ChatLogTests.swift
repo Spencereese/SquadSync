@@ -1,0 +1,1142 @@
+import XCTest
+@testable import SquadSync
+
+final class ChatLogTests: XCTestCase {
+    private let me = UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!
+    private let them = UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!
+    private let start = Date(timeIntervalSince1970: 1_700_000_000)
+
+    func testSendThenSent() {
+        var log = ChatLog()
+        let id = UUID()
+        log.beginSend(id: id, senderId: me, body: "hi", now: start)
+        XCTAssertEqual(log.entries.first?.delivery, .sending)
+        log.markSent(id: id)
+        XCTAssertEqual(log.entries.first?.delivery, .sent)
+    }
+
+    func testFailedRetryKeepsTheSameId() {
+        var log = ChatLog()
+        let id = UUID()
+        log.beginSend(id: id, senderId: me, body: "hi", now: start)
+        log.markFailed(id: id)
+        XCTAssertEqual(log.entries.first?.delivery, .failed)
+        log.retry(id: id)
+        XCTAssertEqual(log.entries.map(\.id), [id])
+        XCTAssertEqual(log.entries.first?.delivery, .sending)
+        log.markSent(id: id)
+        XCTAssertEqual(log.entries.count, 1)
+        XCTAssertEqual(log.entries.first?.delivery, .sent)
+    }
+
+    func testDuplicateEchoDoesNotDoubleTheRow() {
+        var log = ChatLog()
+        let id = UUID()
+        log.beginSend(id: id, senderId: me, body: "hi", now: start)
+        let echo = ChatEntry(id: id, senderId: me, body: "hi", sentAt: start, delivery: .sent)
+        log.ingest([echo, echo])
+        XCTAssertEqual(log.entries.count, 1)
+        XCTAssertEqual(log.entries.first?.delivery, .sent)
+    }
+
+    func testOrderingIsTimeThenId() {
+        var log = ChatLog()
+        let later = UUID(uuidString: "00000000-0000-0000-0000-0000000000AA")!
+        let earlier = UUID(uuidString: "00000000-0000-0000-0000-0000000000BB")!
+        log.ingest([
+            ChatEntry(id: later, senderId: them, body: "second", sentAt: start.addingTimeInterval(10), delivery: .sent),
+            ChatEntry(id: earlier, senderId: them, body: "first", sentAt: start, delivery: .sent)
+        ])
+        XCTAssertEqual(log.ordered.map(\.body), ["first", "second"])
+    }
+
+    func testUnreadCountsOthersAfterTheCursor() {
+        var log = ChatLog()
+        log.ingest([
+            ChatEntry(id: UUID(), senderId: them, body: "old", sentAt: start, delivery: .sent),
+            ChatEntry(id: UUID(), senderId: me, body: "mine", sentAt: start.addingTimeInterval(5), delivery: .sent),
+            ChatEntry(id: UUID(), senderId: them, body: "new", sentAt: start.addingTimeInterval(10), delivery: .sent)
+        ])
+        log.markRead(at: start.addingTimeInterval(1))
+        XCTAssertEqual(log.unreadCount(viewerId: me), 1)
+    }
+}
+
+final class AuthSessionTests: XCTestCase {
+    func testRestoreReturnsTheSavedSession() throws {
+        let store = MemorySessionStore()
+        let session = AuthSession(
+            accessToken: "access",
+            refreshToken: "refresh",
+            userId: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+            email: "a@b.c"
+        )
+        try store.save(session)
+        let auth = MockAuthService(store: store)
+        XCTAssertEqual(try auth.restore(), session)
+    }
+
+    func testSignOutClearsTheRestoredSession() async throws {
+        let store = MemorySessionStore()
+        try store.save(AuthSession(
+            accessToken: "access",
+            refreshToken: "refresh",
+            userId: UUID(),
+            email: "a@b.c"
+        ))
+        let auth = MockAuthService(store: store)
+        try await auth.signOut()
+        XCTAssertNil(try auth.restore())
+    }
+
+    func testLaunchBackendDefaultsToMock() {
+        let options = LaunchOptions.current(["SquadSync", "-screen", "inbox"])
+        XCTAssertEqual(options.backend, .mock)
+        XCTAssertEqual(LaunchOptions.current(["-backend", "live"]).backend, .live)
+    }
+}
+
+final class BackendConfigTests: XCTestCase {
+    func testParseReadsBothKeys() {
+        let config = BackendConfig.parse([
+            "SupabaseURL": "https://sfckxrnoiwetmzdycqaa.supabase.co",
+            "SupabaseAnonKey": "anon-key"
+        ])
+        XCTAssertEqual(config.url?.host, "sfckxrnoiwetmzdycqaa.supabase.co")
+        XCTAssertTrue(config.isConfigured)
+        XCTAssertNil(config.configurationError)
+    }
+
+    func testEmptyDictionaryNamesBothKeys() {
+        let config = BackendConfig.parse([:])
+        XCTAssertFalse(config.isConfigured)
+        XCTAssertEqual(
+            config.configurationError,
+            "Supabase is not configured. Empty: SupabaseURL, SupabaseAnonKey."
+        )
+    }
+
+    func testPlaceholderKeyNamesOnlyTheAnonKey() {
+        let config = BackendConfig.parse([
+            "SupabaseURL": "https://sfckxrnoiwetmzdycqaa.supabase.co",
+            "SupabaseAnonKey": "paste-anon-key-here"
+        ])
+        XCTAssertEqual(
+            config.configurationError,
+            "Supabase is not configured. Empty: SupabaseAnonKey."
+        )
+    }
+}
+
+final class SignInCodeTests: XCTestCase {
+    func testAcceptsSixThroughTenDigits() {
+        XCTAssertTrue(SignInCode.isValid("123456"))
+        XCTAssertTrue(SignInCode.isValid("12345678"))
+        XCTAssertTrue(SignInCode.isValid(" 1234567890 "))
+        XCTAssertFalse(SignInCode.isValid("12345"))
+        XCTAssertFalse(SignInCode.isValid("12345678901"))
+        XCTAssertFalse(SignInCode.isValid("12345a"))
+        XCTAssertFalse(SignInCode.isValid(""))
+    }
+}
+
+final class SquadNameTests: XCTestCase {
+    func testTrimsToOneThroughFortyCharacters() {
+        XCTAssertNil(SquadName.validationError(" A "))
+        XCTAssertNil(SquadName.validationError(String(repeating: "a", count: 40)))
+        XCTAssertEqual(SquadName.validationError("   "), "Enter a squad name.")
+        XCTAssertEqual(
+            SquadName.validationError(String(repeating: "a", count: 41)),
+            "Use 40 characters or fewer."
+        )
+    }
+
+    func testCreateSquadKeepsTheTrimmedName() async throws {
+        let service = MockSquadService()
+        let squad = try await service.createSquad(ownerId: UUID(), name: "  Friday  ")
+        XCTAssertEqual(squad.name, "Friday")
+        let again = MockSquadService()
+        do {
+            _ = try await again.createSquad(ownerId: UUID(), name: " ")
+            XCTFail("A blank name should be rejected.")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .rejected("Enter a squad name."))
+        }
+    }
+
+    func testPollAndRealtimeDedupeById() {
+        let them = UUID()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var log = ChatLog()
+        let id = UUID()
+        let row = ChatEntry(id: id, senderId: them, body: "hi", sentAt: start, delivery: .sent)
+        log.ingest([row])
+        ChatBackfill.apply(&log, history: [row, row])
+        XCTAssertEqual(log.entries.count, 1)
+        XCTAssertEqual(RealtimeLink.connecting.polls, false)
+        XCTAssertEqual(RealtimeLink.connected.polls, false)
+        XCTAssertEqual(RealtimeLink.reconnecting.polls, true)
+        XCTAssertEqual(RealtimeLink.down.polls, true)
+    }
+
+    func testReconnectBackfillAddsTheMissedRow() {
+        let them = UUID()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var log = ChatLog()
+        let kept = UUID()
+        let missed = UUID()
+        log.ingest([ChatEntry(id: kept, senderId: them, body: "kept", sentAt: start, delivery: .sent)])
+        ChatBackfill.apply(&log, history: [
+            ChatEntry(id: kept, senderId: them, body: "kept", sentAt: start, delivery: .sent),
+            ChatEntry(id: missed, senderId: them, body: "missed", sentAt: start.addingTimeInterval(5), delivery: .sent)
+        ])
+        XCTAssertEqual(log.ordered.map(\.body), ["kept", "missed"])
+    }
+
+    func testInviteErrorsMatchTheServerCodes() {
+        XCTAssertEqual(InviteProblem.from(serverCode: "expired"), .expired)
+        XCTAssertEqual(InviteProblem.from(serverCode: "invalid"), .revokedOrUnknown)
+        XCTAssertEqual(InviteProblem.from(serverCode: "full"), .full)
+        XCTAssertEqual(InviteProblem.from(serverCode: "already_in_squad"), .alreadyInASquad)
+        XCTAssertEqual(InviteProblem.expired.message, "This invite has expired.")
+        XCTAssertEqual(InviteProblem.full.message, "That squad is full (8).")
+        XCTAssertTrue(InviteProblem.revokedOrUnknown.message.contains("revoked"))
+        XCTAssertEqual(InviteProblem.alreadyInASquad.message, "You're already in a squad.")
+    }
+
+    func testReactionToggleReplacesAndRemoves() {
+        var board = ReactionBoard()
+        let message = UUID()
+        let user = UUID()
+        XCTAssertEqual(board.toggle(messageId: message, userId: user, emoji: "👍"), [.insert("👍")])
+        XCTAssertEqual(board.toggle(messageId: message, userId: user, emoji: "🎮"), [.remove("👍"), .insert("🎮")])
+        XCTAssertEqual(board.marks.map(\.emoji), ["🎮"])
+        XCTAssertEqual(board.toggle(messageId: message, userId: user, emoji: "🎮"), [.remove("🎮")])
+        XCTAssertTrue(board.marks.isEmpty)
+    }
+
+    func testUnreadIgnoresTheCursorInstantAndOwnMessages() {
+        let me = UUID()
+        let them = UUID()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var log = ChatLog()
+        log.ingest([
+            ChatEntry(id: UUID(), senderId: them, body: "at cursor", sentAt: start, delivery: .sent),
+            ChatEntry(id: UUID(), senderId: me, body: "mine later", sentAt: start.addingTimeInterval(5), delivery: .sent),
+            ChatEntry(id: UUID(), senderId: them, body: "after", sentAt: start.addingTimeInterval(5), delivery: .sent)
+        ])
+        log.markRead(at: start)
+        XCTAssertEqual(log.unreadCount(viewerId: me), 1)
+        log.markRead(at: start.addingTimeInterval(-30))
+        XCTAssertEqual(log.unreadCount(viewerId: me), 1)
+        XCTAssertEqual(
+            Receipts.seenNames(
+                messageSentAt: start.addingTimeInterval(5),
+                reads: [(id: them, name: "Riley", at: start)],
+                viewerId: me
+            ),
+            []
+        )
+        XCTAssertEqual(
+            Receipts.seenNames(
+                messageSentAt: start,
+                reads: [(id: them, name: "Riley", at: start)],
+                viewerId: me
+            ),
+            ["Riley"]
+        )
+    }
+
+    func testScrolledUpKeepsThePlaceAndShowsThePill() {
+        let atBottom = ScrollSample(offset: 400, content: 800, viewport: 400)
+        let grown = ScrollSample(offset: 400, content: 900, viewport: 400)
+        XCTAssertTrue(ChatFollow.isAtBottom(atBottom))
+        XCTAssertTrue(ChatFollow.pinned(previous: true, oldOffset: 400, sample: grown))
+        XCTAssertTrue(ChatFollow.scrolls(pinned: true, ownSend: false))
+
+        let up = ScrollSample(offset: 80, content: 900, viewport: 400)
+        XCTAssertFalse(ChatFollow.isAtBottom(up))
+        XCTAssertFalse(ChatFollow.pinned(previous: true, oldOffset: 400, sample: up))
+        XCTAssertFalse(ChatFollow.scrolls(pinned: false, ownSend: false))
+        XCTAssertTrue(ChatFollow.scrolls(pinned: false, ownSend: true))
+        let midScroll = ScrollSample(offset: 420, content: 900, viewport: 400)
+        XCTAssertTrue(ChatFollow.pinned(previous: true, oldOffset: 400, sample: midScroll))
+    }
+
+    func testCancellationIsNotAStatus() {
+        XCTAssertTrue(RequestNoise.isCancellation(CancellationError()))
+        XCTAssertTrue(RequestNoise.isCancellation(URLError(.cancelled)))
+        XCTAssertTrue(RequestNoise.isCancellation(BackendFailure.rejected("cancelled")))
+        let ns = NSError(domain: NSURLErrorDomain, code: NSURLErrorCancelled)
+        XCTAssertTrue(RequestNoise.isCancellation(ns))
+        XCTAssertFalse(RequestNoise.isCancellation(BackendFailure.rejected("Squad is full.")))
+    }
+
+    func testMockSendAppendsTheRow() async throws {
+        let chat = MockChatService()
+        let id = UUID()
+        let me = UUID()
+        let sentAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let message = RemoteMessage(id: id, squadId: ChatSeed.squadId, senderId: me, body: "hello", sentAt: sentAt)
+        let firstSend = try await chat.send(message)
+        let secondSend = try await chat.send(message)
+        XCTAssertEqual(firstSend, .stored)
+        XCTAssertEqual(secondSend, .stored)
+        let stored = try await chat.history(squadId: ChatSeed.squadId)
+        XCTAssertEqual(stored.map(\.body), ["hello"])
+        XCTAssertEqual(stored.count, 1)
+        var log = ChatLog()
+        log.beginSend(id: id, senderId: me, body: "hello", now: sentAt)
+        XCTAssertEqual(OutboundSend.result(receipt: .stored, error: nil), .sent)
+        log.markSent(id: id)
+        XCTAssertEqual(log.entries.map(\.body), ["hello"])
+        XCTAssertEqual(log.entries.first?.delivery, .sent)
+    }
+
+    func testSendIsConfirmedWithoutAnEcho() {
+        var log = ChatLog()
+        let id = UUID()
+        let me = UUID()
+        log.beginSend(id: id, senderId: me, body: "rt test 3", now: Date())
+        XCTAssertEqual(OutboundSend.result(receipt: .stored, error: nil), .sent)
+        if OutboundSend.result(receipt: .stored, error: nil) == .sent { log.markSent(id: id) }
+        XCTAssertEqual(log.entries.first?.delivery, .sent)
+        XCTAssertEqual(OutboundSend.result(receipt: nil, error: CancellationError()), .staySending)
+        XCTAssertEqual(OutboundSend.result(receipt: .missing, error: nil), .failed)
+        XCTAssertEqual(OutboundSend.result(receipt: nil, error: nil), .failed)
+        log.ingest([ChatEntry(id: id, senderId: me, body: "rt test 3", sentAt: Date(), delivery: .sent)])
+        XCTAssertEqual(log.entries.count, 1)
+    }
+
+    func testSendRequiresTheStoredRow() async throws {
+        let me = UUID()
+        let sentAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let message = RemoteMessage(id: UUID(), squadId: ChatSeed.squadId, senderId: me, body: "hello", sentAt: sentAt)
+        let config = BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
+        let echoed = try BackendJSON.encoder.encode([message])
+        let lost = ScriptedTransport(responses: [(201, Data("[]".utf8)), (200, echoed)])
+        let retry = SupabaseChatService(config: config, accessToken: "access", transport: lost)
+        let recovered = try await retry.send(message)
+        XCTAssertEqual(recovered, .stored)
+        XCTAssertEqual(OutboundSend.result(receipt: recovered, error: nil), .sent)
+        XCTAssertEqual(lost.requests.count, 2)
+        XCTAssertEqual(lost.requests[0].httpMethod, "POST")
+        XCTAssertEqual(lost.requests[1].httpMethod, "GET")
+        XCTAssertTrue(lost.requests[1].url?.query?.contains("id=eq.\(message.id.uuidString)") == true)
+        XCTAssertTrue(lost.requests[1].url?.query?.contains("squad_id=eq.\(message.squadId.uuidString)") == true)
+
+        let missing = ScriptedTransport(responses: [(201, Data("[]".utf8)), (200, Data("[]".utf8))])
+        let chat = SupabaseChatService(config: config, accessToken: "access", transport: missing)
+        let ignored = try await chat.send(message)
+        XCTAssertEqual(ignored, .missing)
+        XCTAssertEqual(OutboundSend.result(receipt: ignored, error: nil), .failed)
+        let request = try XCTUnwrap(missing.requests.first)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Prefer"), "return=representation,resolution=ignore-duplicates")
+
+        let inserted = try BackendJSON.encoder.encode([message])
+        let stored = ScriptedTransport(responses: [(201, inserted)])
+        let confirmed = SupabaseChatService(config: config, accessToken: "access", transport: stored)
+        let confirmedReceipt = try await confirmed.send(message)
+        XCTAssertEqual(confirmedReceipt, .stored)
+
+        var other = message
+        other = RemoteMessage(id: message.id, squadId: message.squadId, senderId: me, body: "different", sentAt: sentAt)
+        let mismatch = try BackendJSON.encoder.encode([other])
+        let wrong = ScriptedTransport(responses: [(201, Data("[]".utf8)), (200, mismatch)])
+        let rejected = SupabaseChatService(config: config, accessToken: "access", transport: wrong)
+        let rejectedReceipt = try await rejected.send(message)
+        XCTAssertEqual(rejectedReceipt, .missing)
+    }
+
+    func testADroppedSocketStillAcceptsHistoryForTheOpenSquad() {
+        XCTAssertTrue(HistoryMerge.accepts(requestSquad: ChatSeed.squadId, loadedSquad: ChatSeed.squadId))
+        XCTAssertFalse(HistoryMerge.accepts(requestSquad: ChatSeed.squadId, loadedSquad: UUID()))
+        XCTAssertFalse(ReadAdvance.catchesUp(pinned: false))
+        XCTAssertTrue(ReadAdvance.catchesUp(pinned: true))
+        XCTAssertTrue(MembershipPrompt.shows(selected: nil))
+        XCTAssertFalse(MembershipPrompt.shows(selected: UUID()))
+        XCTAssertEqual(MembershipPrompt.status(afterSelecting: MembershipPrompt.transfer), "")
+        XCTAssertEqual(MembershipPrompt.status(afterSelecting: "Joined."), "Joined.")
+        XCTAssertEqual(
+            LeaveAvailabilityCopy.line(isOwner: true, leaveShown: false),
+            "Leave isn't available on this server yet. You can still remove a member."
+        )
+        XCTAssertEqual(
+            LeaveAvailabilityCopy.line(isOwner: false, leaveShown: false),
+            "Only the owner can remove a member. You can't leave on your own."
+        )
+        XCTAssertNil(LeaveAvailabilityCopy.line(isOwner: true, leaveShown: true))
+        XCTAssertTrue(ChatCatchUp.requests(becamePinned: true, tappedNewMessages: false))
+        XCTAssertTrue(ChatCatchUp.requests(becamePinned: false, tappedNewMessages: true))
+        XCTAssertFalse(ChatCatchUp.requests(becamePinned: false, tappedNewMessages: false))
+        XCTAssertTrue(ChatCatchUp.hidesNewMessages(pinned: true))
+        XCTAssertFalse(ChatCatchUp.hidesNewMessages(pinned: false))
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let them = UUID()
+        var book = ReceiptBook(reads: [MemberRead(userId: them, lastReadAt: start.addingTimeInterval(10))])
+        book.apply(MemberRead(userId: them, lastReadAt: start))
+        XCTAssertEqual(book.reads.first?.lastReadAt, start.addingTimeInterval(10))
+        book.apply(MemberRead(userId: them, lastReadAt: start.addingTimeInterval(20)))
+        XCTAssertEqual(book.reads.first?.lastReadAt, start.addingTimeInterval(20))
+        XCTAssertEqual(
+            Receipts.seenNames(
+                messageSentAt: start.addingTimeInterval(15),
+                reads: [(id: them, name: "Riley", at: book.reads[0].lastReadAt)],
+                viewerId: UUID()
+            ),
+            ["Riley"]
+        )
+        XCTAssertEqual(MessageSpeech.row(body: "hello", delivery: .failed), "hello, failed. Retry sending.")
+    }
+
+    func testBackfillAfterAGapKeepsTheOldRowAndAddsTheNewOne() {
+        var log = ChatLog()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        let them = UUID()
+        let kept = ChatEntry(id: UUID(), senderId: them, body: "kept", sentAt: start, delivery: .sent)
+        let missed = ChatEntry(id: UUID(), senderId: them, body: "rt test 3", sentAt: start.addingTimeInterval(30), delivery: .sent)
+        log.ingest([kept])
+        XCTAssertEqual(ChatBackfill.missing(in: log, history: [kept, missed]).map(\.body), ["rt test 3"])
+        ChatBackfill.apply(&log, history: [kept, missed])
+        XCTAssertEqual(log.ordered.map(\.body), ["kept", "rt test 3"])
+    }
+
+    func testEmptySquadNameUsesYourSquad() {
+        XCTAssertEqual(SquadTitle.line(name: "", memberCount: 1), "Your squad · 1 of 8")
+        XCTAssertEqual(SquadTitle.line(name: "   ", memberCount: 1), "Your squad · 1 of 8")
+        XCTAssertEqual(SquadTitle.line(name: "Friday", memberCount: 3), "Friday · 3 of 8")
+    }
+
+    func testReloadDecodesASquadRowWithoutAName() throws {
+        let json = """
+        {"id":"00000000-0000-0000-0000-000000000002","owner_id":"00000000-0000-0000-0000-000000000001"}
+        """.data(using: .utf8)!
+        let reloaded = try JSONDecoder().decode(SquadDetails.self, from: json)
+        XCTAssertEqual(reloaded.name, "")
+        XCTAssertEqual(reloaded.ownerId.uuidString, "00000000-0000-0000-0000-000000000001")
+        XCTAssertEqual(SquadSelect.columns, "id,owner_id")
+        XCTAssertFalse(SquadSelect.columns.split(separator: ",").contains("name"))
+    }
+
+    func testLiveSquadSelectOmitsTheMissingNameColumn() async throws {
+        let owner = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let squad = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let transport = ScriptedTransport(responses: [
+            (200, Data("[{\"squad_id\":\"\(squad.uuidString)\"}]".utf8)),
+            (200, Data("[{\"id\":\"\(squad.uuidString)\",\"owner_id\":\"\(owner.uuidString)\"}]".utf8)),
+            (200, Data("[{\"user_id\":\"\(owner.uuidString)\"}]".utf8)),
+            (200, Data("[{\"id\":\"\(owner.uuidString)\",\"display_name\":\"A\",\"default_game\":\"Call of Duty\"}]".utf8))
+        ])
+        let config = BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: transport)
+        let loaded = try await service.currentSquad(userId: owner)
+        XCTAssertEqual(loaded?.name, "")
+        XCTAssertEqual(SquadTitle.line(name: loaded?.name ?? "", memberCount: loaded?.members.count ?? 0), "Your squad · 1 of 8")
+        let squadGet = try XCTUnwrap(transport.requests.first { $0.url?.path.hasSuffix("sq8_squads") == true })
+        let select = URLComponents(url: squadGet.url!, resolvingAgainstBaseURL: false)?
+            .queryItems?
+            .first { $0.name == "select" }?
+            .value
+        XCTAssertEqual(select, "id,owner_id")
+        XCTAssertEqual(squadGet.httpMethod, "GET")
+    }
+
+    func testCreateSquadPostsOnlyTheLiveColumns() async throws {
+        let owner = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let squad = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let row = Data("[{\"id\":\"\(squad.uuidString)\",\"owner_id\":\"\(owner.uuidString)\"}]".utf8)
+        let transport = ScriptedTransport(responses: [
+            (201, row),
+            (200, row),
+            (200, Data("[{\"user_id\":\"\(owner.uuidString)\"}]".utf8)),
+            (200, Data("[{\"id\":\"\(owner.uuidString)\",\"display_name\":\"A\",\"default_game\":\"Call of Duty\"}]".utf8))
+        ])
+        let config = BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: transport)
+        let created = try await service.createSquad(ownerId: owner, name: "  Friday  ")
+        XCTAssertEqual(created.name, "Friday")
+        let post = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(post.httpMethod, "POST")
+        XCTAssertTrue(post.url?.path.hasSuffix("sq8_squads") == true)
+        let body = try JSONSerialization.jsonObject(with: post.httpBody ?? Data()) as? [String: String]
+        XCTAssertEqual(body?["owner_id"], owner.uuidString)
+        XCTAssertNil(body?["name"])
+    }
+}
+
+final class KeychainFallbackTests: XCTestCase {
+    func testMissingEntitlementFallsBackOnlyWhenAllowed() {
+        let status = KeychainFallbackPolicy.missingEntitlement
+        XCTAssertEqual(
+            KeychainFallbackPolicy.choose(status: status, allowsFallback: true),
+            .insecureFallback
+        )
+        XCTAssertEqual(
+            KeychainFallbackPolicy.choose(status: status, allowsFallback: false),
+            .failure(status)
+        )
+    }
+
+    func testOtherKeychainErrorsStayFailures() {
+        let status: OSStatus = -25299
+        XCTAssertEqual(
+            KeychainFallbackPolicy.choose(status: status, allowsFallback: true),
+            .failure(status)
+        )
+    }
+
+    func testSuccessAndMissingItemStayOnTheKeychain() {
+        XCTAssertEqual(KeychainFallbackPolicy.choose(status: 0, allowsFallback: false), .keychain)
+        XCTAssertEqual(KeychainFallbackPolicy.choose(status: -25300, allowsFallback: true), .keychain)
+    }
+}
+
+final class ScriptedTransport: HTTPTransport, @unchecked Sendable {
+    var requests: [URLRequest] = []
+    var responses: [(Int, Data)]
+
+    init(responses: [(Int, Data)] = []) {
+        self.responses = responses
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        requests.append(request)
+        let next = responses.isEmpty ? (500, Data()) : responses.removeFirst()
+        let url = request.url ?? URL(string: "https://example.supabase.co")!
+        let response = HTTPURLResponse(url: url, statusCode: next.0, httpVersion: nil, headerFields: nil)!
+        return (next.1, response)
+    }
+}
+
+final class PausingTransport: HTTPTransport, @unchecked Sendable {
+    private let lock = NSLock()
+    private(set) var calls = 0
+    let status: Int
+    let body: Data
+
+    init(status: Int, body: Data) {
+        self.status = status
+        self.body = body
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        lock.withLock { calls += 1 }
+        try await Task.sleep(nanoseconds: 80_000_000)
+        let url = request.url ?? URL(string: "https://example.supabase.co")!
+        let response = HTTPURLResponse(url: url, statusCode: status, httpVersion: nil, headerFields: nil)!
+        return (body, response)
+    }
+}
+
+final class RotatingRejectionTransport: HTTPTransport, @unchecked Sendable {
+    let store: MemorySessionStore
+    let access: String
+    let user: UUID
+
+    init(store: MemorySessionStore, access: String, user: UUID) {
+        self.store = store
+        self.access = access
+        self.user = user
+    }
+
+    func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        try store.save(AuthSession(
+            accessToken: access,
+            refreshToken: "winner",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let url = request.url ?? URL(string: "https://example.supabase.co")!
+        let body = Data("{\"error\":\"invalid_grant\",\"error_description\":\"Invalid Refresh Token: Already Used\"}".utf8)
+        let response = HTTPURLResponse(url: url, statusCode: 400, httpVersion: nil, headerFields: nil)!
+        return (body, response)
+    }
+}
+
+final class StubRefresher: TokenRefreshing {
+    var calls = 0
+    var result: TokenRefreshResult
+
+    init(_ result: TokenRefreshResult) {
+        self.result = result
+    }
+
+    func refreshAfterRejection() async -> TokenRefreshResult {
+        calls += 1
+        return result
+    }
+}
+
+final class SessionRefreshTests: XCTestCase {
+    private let now = Date(timeIntervalSince1970: 1_700_000_000)
+    private let user = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+
+    private var config: BackendConfig {
+        BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
+    }
+
+    private func jwt(exp: Date) -> String {
+        func part(_ json: String) -> String {
+            Data(json.utf8).base64EncodedString()
+                .replacingOccurrences(of: "+", with: "-")
+                .replacingOccurrences(of: "/", with: "_")
+                .replacingOccurrences(of: "=", with: "")
+        }
+        let stamp = Int(exp.timeIntervalSince1970)
+        return "\(part(#"{"alg":"HS256"}"#)).\(part(#"{"exp":\#(stamp)}"#)).sig"
+    }
+
+    private func tokenJSON(access: String) -> Data {
+        let json = """
+        {"access_token":"\(access)","refresh_token":"rotated","user":{"id":"\(user.uuidString)","email":"a@squad.test"}}
+        """
+        return Data(json.utf8)
+    }
+
+    func testClockRefreshesNearAndPastExpiry() {
+        XCTAssertTrue(AccessTokenClock.needsRefresh(jwt(exp: now.addingTimeInterval(60)), now: now))
+        XCTAssertTrue(AccessTokenClock.needsRefresh(jwt(exp: now.addingTimeInterval(-5)), now: now))
+        XCTAssertFalse(AccessTokenClock.needsRefresh(jwt(exp: now.addingTimeInterval(61)), now: now))
+        XCTAssertTrue(AccessTokenClock.needsRefresh("not-a-jwt", now: now))
+        let hourToken = jwt(exp: now.addingTimeInterval(3600))
+        XCTAssertTrue(AccessTokenClock.needsRefresh(hourToken, now: now.addingTimeInterval(80 * 60)))
+        let dayToken = jwt(exp: now.addingTimeInterval(24 * 3600))
+        XCTAssertFalse(AccessTokenClock.needsRefresh(dayToken, now: now.addingTimeInterval(80 * 60)))
+        let forced = AccessTokenClock.replacingExpiry(dayToken, exp: now.addingTimeInterval(-120))
+        XCTAssertTrue(AccessTokenClock.needsRefresh(forced, now: now))
+    }
+
+    func testPrepareSessionRefreshesWithTheStoredRefreshToken() async throws {
+        let store = MemorySessionStore()
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(30)),
+            refreshToken: "stored-refresh",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let transport = ScriptedTransport(responses: [(200, tokenJSON(access: jwt(exp: now.addingTimeInterval(3600))))])
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        let session = try await auth.prepareSession(now: now)
+        XCTAssertEqual(session?.refreshToken, "rotated")
+        XCTAssertEqual(transport.requests.count, 1)
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertTrue(request.url?.absoluteString.contains("grant_type=refresh_token") == true)
+        XCTAssertTrue(request.url?.path.hasSuffix("/auth/v1/token") == true)
+        let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: String]
+        XCTAssertEqual(body?["refresh_token"], "stored-refresh")
+        XCTAssertEqual(try store.load()?.refreshToken, "rotated")
+    }
+
+    func testFreshTokenSkipsTheTokenEndpoint() async throws {
+        let store = MemorySessionStore()
+        let access = jwt(exp: now.addingTimeInterval(3600))
+        try store.save(AuthSession(accessToken: access, refreshToken: "stored-refresh", userId: user, email: "a@squad.test"))
+        let transport = ScriptedTransport()
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        let session = try await auth.prepareSession(now: now)
+        XCTAssertEqual(session?.accessToken, access)
+        XCTAssertTrue(transport.requests.isEmpty)
+    }
+
+    func testRejectedRefreshClearsTheSession() async throws {
+        let store = MemorySessionStore()
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(-10)),
+            refreshToken: "stored-refresh",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let transport = ScriptedTransport(responses: [(401, Data("{\"error\":\"invalid_grant\"}".utf8))])
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        do {
+            _ = try await auth.prepareSession(now: now)
+            XCTFail("Expected the refresh to end the session")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .sessionEnded)
+        }
+        XCTAssertNil(try store.load())
+    }
+
+    func testUnauthorizedPostgRESTRefreshesOnceAndRetriesOnce() async throws {
+        let transport = ScriptedTransport(responses: [
+            (401, Data("{\"message\":\"JWT expired\"}".utf8)),
+            (200, Data("[]".utf8))
+        ])
+        let refresher = StubRefresher(.refreshed("new-access"))
+        let http = SupabaseHTTP(
+            config: config,
+            accessToken: "old-access",
+            transport: transport,
+            refresher: refresher
+        )
+        let data = try await http.send(path: "rest/v1/sq8_profiles", method: "GET", feature: .profile)
+        XCTAssertEqual(String(data: data, encoding: .utf8), "[]")
+        XCTAssertEqual(refresher.calls, 1)
+        XCTAssertEqual(transport.requests.count, 2)
+        XCTAssertEqual(transport.requests[0].value(forHTTPHeaderField: "Authorization"), "Bearer old-access")
+        XCTAssertEqual(transport.requests[1].value(forHTTPHeaderField: "Authorization"), "Bearer new-access")
+    }
+
+    func testAFailedRefreshIsNotRetried() async throws {
+        let transport = ScriptedTransport(responses: [
+            (401, Data("{\"message\":\"JWT expired\"}".utf8))
+        ])
+        let refresher = StubRefresher(.rejected)
+        let http = SupabaseHTTP(
+            config: config,
+            accessToken: "old-access",
+            transport: transport,
+            refresher: refresher
+        )
+        do {
+            _ = try await http.send(path: "rest/v1/sq8_profiles", method: "GET", feature: .profile)
+            XCTFail("Expected the session to end")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .sessionEnded)
+        }
+        XCTAssertEqual(refresher.calls, 1)
+        XCTAssertEqual(transport.requests.count, 1)
+    }
+
+    func testConcurrentRefreshUsesTheTokenOnce() async throws {
+        let store = MemorySessionStore()
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(-5)),
+            refreshToken: "stored-refresh",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let transport = PausingTransport(status: 200, body: tokenJSON(access: jwt(exp: now.addingTimeInterval(3600))))
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        async let first = auth.prepareSession(now: now)
+        async let second = auth.prepareSession(now: now)
+        let firstSession = try await first
+        let secondSession = try await second
+        XCTAssertEqual(transport.calls, 1)
+        XCTAssertEqual(firstSession?.refreshToken, "rotated")
+        XCTAssertEqual(secondSession?.refreshToken, "rotated")
+        XCTAssertEqual(try store.load()?.refreshToken, "rotated")
+    }
+
+    func testACancelledWaiterDoesNotSendTheRefreshTokenAgain() async throws {
+        let store = MemorySessionStore()
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(-5)),
+            refreshToken: "stored-refresh",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let transport = PausingTransport(status: 200, body: tokenJSON(access: jwt(exp: now.addingTimeInterval(3600))))
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        let first = Task { try await auth.prepareSession(now: now) }
+        try await Task.sleep(nanoseconds: 20_000_000)
+        first.cancel()
+        let second = try await auth.prepareSession(now: now)
+        XCTAssertEqual(transport.calls, 1)
+        XCTAssertEqual(second?.refreshToken, "rotated")
+        XCTAssertEqual(try store.load()?.refreshToken, "rotated")
+    }
+
+    func testServerErrorDoesNotClearTheSession() async throws {
+        let store = MemorySessionStore()
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(-5)),
+            refreshToken: "stored-refresh",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let transport = ScriptedTransport(responses: [(500, Data("{}".utf8))])
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        do {
+            _ = try await auth.prepareSession(now: now)
+            XCTFail("Expected a reconnect")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .reconnecting)
+        }
+        XCTAssertEqual(try store.load()?.refreshToken, "stored-refresh")
+    }
+
+    func testAlreadyUsedRefreshKeepsTheRotatedSession() async throws {
+        let store = MemorySessionStore()
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(-5)),
+            refreshToken: "stored-refresh",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let winner = jwt(exp: now.addingTimeInterval(3600))
+        let transport = RotatingRejectionTransport(store: store, access: winner, user: user)
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        let session = try await auth.prepareSession(now: now)
+        XCTAssertEqual(session?.refreshToken, "winner")
+        XCTAssertEqual(try store.load()?.refreshToken, "winner")
+    }
+
+    func testRefreshBodyIsTheStoredToken() async throws {
+        let store = MemorySessionStore()
+        let refresh = "abcdefghijkl"
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(-5)),
+            refreshToken: refresh,
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let transport = ScriptedTransport(responses: [(200, tokenJSON(access: jwt(exp: now.addingTimeInterval(3600))))])
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        _ = try await auth.prepareSession(now: now)
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Content-Type"), "application/json")
+        XCTAssertTrue(request.url?.query?.contains("grant_type=refresh_token") == true)
+        XCTAssertTrue(request.url?.path.hasSuffix("/auth/v1/token") == true)
+        let body = try XCTUnwrap(request.httpBody)
+        XCTAssertEqual(body.count, 32)
+        XCTAssertEqual(String(data: body, encoding: .utf8), "{\"refresh_token\":\"\(refresh)\"}")
+    }
+
+    func testOtherRefreshFailureKeepsTheSession() async throws {
+        let store = MemorySessionStore()
+        try store.save(AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(-5)),
+            refreshToken: "stored-refresh",
+            userId: user,
+            email: "a@squad.test"
+        ))
+        let body = Data("{\"error\":\"invalid_request\",\"error_description\":\"bad json\"}".utf8)
+        let transport = ScriptedTransport(responses: [(400, body)])
+        let auth = SupabaseAuthService(config: config, store: store, transport: transport)
+        do {
+            _ = try await auth.prepareSession(now: now)
+            XCTFail("Expected the refresh to fail closed")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .reconnecting)
+        }
+        XCTAssertEqual(try store.load()?.refreshToken, "stored-refresh")
+        XCTAssertFalse(RefreshRejection.clearsSession(status: 400, body: body))
+        let definitive = Data("{\"error\":\"invalid_grant\",\"error_code\":\"refresh_token_already_used\"}".utf8)
+        XCTAssertTrue(RefreshRejection.clearsSession(status: 400, body: definitive))
+    }
+
+    func testRotatedTokenIsWhatTheNextLaunchReads() throws {
+        let suite = "squadsync.session.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        let service = "test.session.\(UUID().uuidString)"
+        let stale = AuthSession(
+            accessToken: jwt(exp: now.addingTimeInterval(3600)),
+            refreshToken: "stale-fallback",
+            userId: user,
+            email: "a@squad.test"
+        )
+        defaults.set(try JSONEncoder().encode(stale), forKey: "sq8.session.fallback.\(service).test")
+        let first = KeychainSessionStore(defaults: defaults, service: service, account: "test")
+        let saved = AuthSession(
+            accessToken: stale.accessToken,
+            refreshToken: "rotated-token",
+            userId: user,
+            email: stale.email
+        )
+        try first.save(saved)
+        let second = KeychainSessionStore(defaults: defaults, service: service, account: "test")
+        XCTAssertEqual(try second.load()?.refreshToken, "rotated-token")
+        let older = SessionEnvelope(session: saved, savedAt: now.addingTimeInterval(-100))
+        var rotated = saved
+        rotated.refreshToken = "newer-token"
+        let newer = SessionEnvelope(session: rotated, savedAt: now)
+        XCTAssertEqual(SessionEnvelope.newer(older, newer)?.session.refreshToken, "newer-token")
+    }
+
+    func testMarkReadUpsertNamesThePrimaryKey() async throws {
+        let transport = ScriptedTransport(responses: [(201, Data()), (201, Data())])
+        let chat = SupabaseChatService(
+            config: config,
+            accessToken: "access",
+            transport: transport
+        )
+        try await chat.markRead(
+            squadId: UUID(uuidString: "00000000-0000-0000-0000-00000000C001")!,
+            userId: user,
+            at: now,
+            messageId: nil
+        )
+        XCTAssertEqual(transport.requests.count, 2)
+        for request in transport.requests {
+            XCTAssertEqual(request.httpMethod, "POST")
+            XCTAssertTrue(request.url?.query?.contains("on_conflict=user_id") == true)
+            XCTAssertTrue(request.url?.path.hasSuffix("sq8_chat_read_state") == true
+                || request.url?.path.hasSuffix("sq8_message_reads") == true)
+            XCTAssertFalse(request.url?.path.contains("auth/v1/token") == true)
+        }
+    }
+
+    func testAuthFailureDoesNotMeanTheSquadIsMissing() {
+        XCTAssertEqual(SessionFailurePolicy.surface(.sessionEnded), .signIn(SessionFailurePolicy.ended))
+        XCTAssertEqual(SessionFailurePolicy.surface(.reconnecting), .reconnecting)
+        XCTAssertEqual(SessionFailurePolicy.surface(.rejected("JWT expired")), .signIn(SessionFailurePolicy.ended))
+        guard case .message = SessionFailurePolicy.surface(.rejected("Squad is full.")) else {
+            return XCTFail("A squad error was treated as an auth failure")
+        }
+    }
+}
+
+final class InviteFlowTests: XCTestCase {
+    private let squad = UUID(uuidString: "00000000-0000-0000-0000-000000000010")!
+    private let owner = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    private let member = UUID(uuidString: "00000000-0000-0000-0000-000000000011")!
+
+    private var config: BackendConfig {
+        BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
+    }
+
+    func testCreateInviteOutcomes() async throws {
+        let created = Data("{\"ok\":true,\"code\":\"ABCD2345\",\"squad_id\":\"\(squad.uuidString)\"}".utf8)
+        let transport = ScriptedTransport(responses: [(200, created)])
+        let invites = SupabaseInviteService(config: config, accessToken: "access", transport: transport)
+        let ticket = try await invites.createInvite()
+        XCTAssertEqual(ticket.code, "ABCD2345")
+        XCTAssertEqual(ticket.squadId, squad)
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertTrue(request.url?.path.hasSuffix("sq8_create_invite") == true)
+
+        try await expectInvite(create: true, body: "{\"ok\":false,\"error\":\"not_owner\"}", equals: .notOwner)
+        try await expectInvite(create: true, body: "{\"ok\":false,\"error\":\"full\"}", equals: .full)
+    }
+
+    func testJoinOutcomes() async throws {
+        let joined = Data("{\"ok\":true,\"squad_id\":\"\(squad.uuidString)\"}".utf8)
+        let transport = ScriptedTransport(responses: [(200, joined)])
+        let invites = SupabaseInviteService(config: config, accessToken: "access", transport: transport)
+        let id = try await invites.join(code: "abcd2345")
+        XCTAssertEqual(id, squad)
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertTrue(request.url?.path.hasSuffix("sq8_join_with_code") == true)
+        let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: String]
+        XCTAssertEqual(body?["code"], "abcd2345")
+
+        try await expectInvite(create: false, body: "{\"ok\":false,\"error\":\"expired\"}", equals: .expired)
+        try await expectInvite(create: false, body: "{\"ok\":false,\"error\":\"invalid\"}", equals: .revokedOrUnknown)
+        try await expectInvite(create: false, body: "{\"ok\":false,\"error\":\"full\"}", equals: .full)
+        try await expectInvite(create: false, body: "{\"ok\":false,\"error\":\"already_in_squad\"}", equals: .alreadyInASquad)
+        try await expectInvite(create: false, body: "{\"ok\":false,\"error\":\"owns_squad_with_members\"}", equals: .ownsSquadWithMembers)
+        XCTAssertEqual(
+            MembershipChange.note(beforeId: squad, beforeCount: 2, afterId: squad, afterCount: 2),
+            "You're already in this squad."
+        )
+        XCTAssertEqual(
+            MembershipChange.note(beforeId: squad, beforeCount: 2, afterId: squad, afterCount: 3),
+            "Joined."
+        )
+    }
+
+    func testRemoveMemberUsesTheOwnerDelete() async throws {
+        let row = Data("[{\"user_id\":\"\(member.uuidString)\"}]".utf8)
+        let transport = ScriptedTransport(responses: [(200, row)])
+        let squads = SupabaseSquadService(config: config, accessToken: "access", transport: transport)
+        try await squads.removeMember(squadId: squad, userId: member)
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(request.httpMethod, "DELETE")
+        XCTAssertTrue(request.url?.path.hasSuffix("sq8_squad_members") == true)
+        XCTAssertTrue(request.url?.query?.contains("user_id=eq.\(member.uuidString)") == true)
+        XCTAssertEqual(request.value(forHTTPHeaderField: "Prefer"), "return=representation")
+
+        let empty = ScriptedTransport(responses: [(200, Data("[]".utf8))])
+        let denied = SupabaseSquadService(config: config, accessToken: "access", transport: empty)
+        do {
+            try await denied.removeMember(squadId: squad, userId: member)
+            XCTFail("An empty delete should not look like a removal")
+        } catch let problem as InviteProblem {
+            XCTAssertEqual(problem, .other("You can't remove that person."))
+        }
+
+        let protected = Data("{\"message\":\"sq8_owner_protected\"}".utf8)
+        let blocked = ScriptedTransport(responses: [(400, protected)])
+        let owners = SupabaseSquadService(config: config, accessToken: "access", transport: blocked)
+        do {
+            try await owners.removeMember(squadId: squad, userId: owner)
+            XCTFail("The owner row should stay")
+        } catch let problem as InviteProblem {
+            XCTAssertEqual(problem, .other("The owner stays in the squad."))
+        }
+    }
+
+    func testSpotFullIsTheCapacityError() async throws {
+        let body = Data("{\"code\":\"P0001\",\"message\":\"spot_full\"}".utf8)
+        let transport = ScriptedTransport(responses: [(400, body)])
+        let spots = SupabaseSpotService(config: config, accessToken: "access", transport: transport)
+        do {
+            try await spots.rsvp(callId: squad, response: "in")
+            XCTFail("An eighth seat past the cap should fail")
+        } catch let problem as SpotProblem {
+            XCTAssertEqual(problem, .full)
+            XCTAssertEqual(problem.message, "That spot call is full (8).")
+        }
+    }
+
+    func testMockJoinFillsToEightThenRejectsTheNinth() async throws {
+        let squads = MockSquadService()
+        let owner = UUID()
+        let seeded = squads.seedAlmostFull(ownerId: owner)
+        XCTAssertEqual(SquadTitle.line(name: seeded.name, memberCount: seeded.members.count), "Friday · 7 of 8")
+        let invites = MockInviteService(squads: squads)
+        _ = try await invites.join(code: "JOIN2345")
+        let filled = try await squads.currentSquad(userId: owner)
+        XCTAssertEqual(filled?.members.count, 8)
+        XCTAssertEqual(SquadTitle.line(name: "Friday", memberCount: 8), "Friday · 8 of 8")
+        do {
+            _ = try await invites.join(code: "JOIN2345")
+            XCTFail("The ninth person should be rejected")
+        } catch let problem as InviteProblem {
+            XCTAssertEqual(problem, .full)
+        }
+        try await squads.removeMember(squadId: seeded.id, userId: MockSquadService.quinn)
+        let afterLeave = try await squads.currentSquad(userId: owner)
+        XCTAssertEqual(afterLeave?.members.count, 7)
+        _ = try await invites.join(code: "JOIN2345")
+        let filledAgain = try await squads.currentSquad(userId: owner)
+        XCTAssertEqual(filledAgain?.members.count, 8)
+        do {
+            try await squads.removeMember(squadId: seeded.id, userId: owner)
+            XCTFail("The owner row should stay")
+        } catch let problem as InviteProblem {
+            XCTAssertEqual(problem, .other("The owner stays in the squad."))
+        }
+    }
+
+    func testLeaveStaysHiddenUntilTheFunctionExists() async throws {
+        let missing = Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function public.sq8_leave_squad in the schema cache\"}".utf8)
+        let absent = ScriptedTransport(responses: [(404, missing)])
+        let hidden = SupabaseSquadService(config: config, accessToken: "access", transport: absent)
+        let available = await hidden.leaveAvailable()
+        XCTAssertFalse(available)
+        let probe = try XCTUnwrap(absent.requests.first)
+        XCTAssertEqual(probe.httpMethod, "GET")
+        XCTAssertNotEqual(probe.httpMethod, "POST")
+        XCTAssertTrue(probe.url?.path.hasSuffix("sq8_leave_squad") == true)
+        XCTAssertTrue(probe.url?.query?.contains("new_owner=null") == true)
+        XCTAssertFalse(LeaveProbe.available(status: 404, body: "{\"code\":\"PGRST202\"}"))
+        XCTAssertFalse(LeaveProbe.available(status: 400, body: "Could not find the function public.sq8_leave_squad(new_owner)"))
+        XCTAssertTrue(LeaveProbe.available(status: 405, body: "{\"message\":\"GET is not allowed\"}"))
+        XCTAssertTrue(LeaveProbe.available(status: 200, body: ""))
+
+        let present = ScriptedTransport(responses: [(405, Data("{\"message\":\"GET is not allowed\"}".utf8))])
+        let shown = SupabaseSquadService(config: config, accessToken: "access", transport: present)
+        let ready = await shown.leaveAvailable()
+        XCTAssertTrue(ready)
+        XCTAssertEqual(present.requests.first?.httpMethod, "GET")
+
+        let squadId = squad
+        let successor = member
+        let transport = ScriptedTransport(responses: [
+            (200, Data("{\"ok\":false,\"error\":\"owner_must_transfer\"}".utf8)),
+            (200, Data("{\"ok\":true,\"squad_id\":\"\(squadId.uuidString)\"}".utf8))
+        ])
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: transport)
+        do {
+            try await service.leaveSquad(newOwner: nil)
+            XCTFail("An owner with members has to name the next owner")
+        } catch let problem as InviteProblem {
+            XCTAssertEqual(problem, .ownerMustTransfer)
+            XCTAssertEqual(problem.message, "Choose the next owner before you leave.")
+        }
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertTrue(request.url?.path.hasSuffix("sq8_leave_squad") == true)
+        XCTAssertEqual(String(data: request.httpBody ?? Data(), encoding: .utf8), "{\"new_owner\":null}")
+        try await service.leaveSquad(newOwner: successor)
+        let second = try XCTUnwrap(transport.requests.last)
+        XCTAssertEqual(
+            String(data: second.httpBody ?? Data(), encoding: .utf8),
+            "{\"new_owner\":\"\(successor.uuidString)\"}"
+        )
+    }
+
+    func testEveryLeaveOutcome() async throws {
+        try await expectLeave("{\"ok\":false,\"error\":\"signed_out\"}", equals: .signedOut)
+        try await expectLeave("{\"ok\":false,\"error\":\"already_left\"}", equals: .alreadyLeft)
+        try await expectLeave("{\"ok\":false,\"error\":\"owner_must_transfer\"}", equals: .ownerMustTransfer)
+        try await expectLeave("{\"ok\":true,\"squad_id\":null}", equals: nil)
+        try await expectLeave("{\"ok\":true,\"squad_id\":\"\(squad.uuidString)\"}", equals: nil)
+        XCTAssertEqual(InviteProblem.alreadyLeft.message, "You already left this squad.")
+        XCTAssertEqual(InviteProblem.signedOut.message, "Sign in again before leaving.")
+    }
+
+    func testMockLeaveThenRejoinRestoresTheRoster() async throws {
+        let squads = MockSquadService()
+        let owner = UUID()
+        let seeded = squads.seed(ownerId: owner, name: "Friday")
+        squads.addMember(id: ChatSeed.otherId, name: "Riley")
+        let invites = MockInviteService(squads: squads)
+        do {
+            try await squads.leaveSquad(newOwner: nil)
+            XCTFail("The owner still has Riley")
+        } catch let problem as InviteProblem {
+            XCTAssertEqual(problem, .ownerMustTransfer)
+        }
+        try await squads.leaveSquad(newOwner: ChatSeed.otherId)
+        let afterLeaving = try await squads.currentSquad(userId: owner)
+        XCTAssertNil(afterLeaving)
+        do {
+            try await squads.leaveSquad(newOwner: ChatSeed.otherId)
+            XCTFail("A second leave should say they already left")
+        } catch let problem as InviteProblem {
+            XCTAssertEqual(problem, .alreadyLeft)
+        }
+        let rejoined = try await invites.join(code: "JOIN2345")
+        XCTAssertEqual(rejoined, seeded.id)
+        let back = try await squads.currentSquad(userId: owner)
+        XCTAssertEqual(back?.ownerId, ChatSeed.otherId)
+        XCTAssertEqual(back?.members.count, 2)
+        XCTAssertEqual(SquadTitle.line(name: back?.name ?? "", memberCount: back?.members.count ?? 0), "Friday · 2 of 8")
+    }
+
+    private func expectLeave(_ body: String, equals problem: InviteProblem?) async throws {
+        let transport = ScriptedTransport(responses: [(200, Data(body.utf8))])
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: transport)
+        do {
+            try await service.leaveSquad(newOwner: nil)
+            XCTAssertNil(problem)
+        } catch let caught as InviteProblem {
+            XCTAssertEqual(caught, problem)
+        }
+    }
+
+    func testSwitchingSquadsDropsTheOldThreadAndKeepsAnUnconfirmedSend() {
+        let me = UUID()
+        let them = UUID()
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        var log = ChatLog()
+        let old = UUID()
+        let pending = UUID()
+        log.ingest([ChatEntry(id: old, senderId: them, body: "old thread", sentAt: start, delivery: .sent)])
+        log.beginSend(id: pending, senderId: me, body: "not yet", now: start.addingTimeInterval(1))
+        log.markRead(at: start)
+        let incoming = ChatEntry(id: UUID(), senderId: them, body: "new thread", sentAt: start.addingTimeInterval(2), delivery: .sent)
+        log.adopt(replacingSquad: true, history: [incoming])
+        XCTAssertEqual(log.ordered.map(\.body), ["new thread"])
+        XCTAssertEqual(log.unreadCount(viewerId: me), 1)
+        log.markRead(at: start)
+        XCTAssertEqual(log.unreadCount(viewerId: me), 1)
+
+        log.beginSend(id: pending, senderId: me, body: "not yet", now: start.addingTimeInterval(3))
+        log.adopt(replacingSquad: false, history: [incoming])
+        XCTAssertEqual(log.entries.first { $0.id == pending }?.delivery, .sending)
+        XCTAssertFalse(log.ordered.contains { $0.body == "old thread" })
+    }
+
+    private func expectInvite(create: Bool, body: String, equals problem: InviteProblem) async throws {
+        let transport = ScriptedTransport(responses: [(200, Data(body.utf8))])
+        let invites = SupabaseInviteService(config: config, accessToken: "access", transport: transport)
+        do {
+            if create {
+                _ = try await invites.createInvite()
+            } else {
+                _ = try await invites.join(code: "ABCD2345")
+            }
+            XCTFail("Expected \(problem)")
+        } catch let caught as InviteProblem {
+            XCTAssertEqual(caught, problem)
+        }
+    }
+}

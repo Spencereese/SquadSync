@@ -53,6 +53,7 @@ final class LiveSessionModel {
     private var liveSpotToken: String?
     private var realtime: RealtimeClient?
     private var poll: Task<Void, Never>?
+    private var expiryRead: Task<Void, Never>?
     private var loadedSquad: UUID?
 
     enum Phase {
@@ -358,6 +359,7 @@ final class LiveSessionModel {
 
     func loadSpot(_ session: AuthSession) async {
         guard let squad else { return }
+        defer { scheduleExpiryRead(session) }
         let service = spotService(session)
         spotServer = await service.serverCapabilities()
         do {
@@ -430,13 +432,15 @@ final class LiveSessionModel {
             }
         } catch let problem as SpotProblem {
             spotNote = problem.message
+            await reloadSpotAfterFailure()
         } catch {
             report(error)
+            await reloadSpotAfterFailure()
         }
     }
 
     func lockSpot() async {
-        await changeSpot { session, call in
+        await changeSpot(reloadAfterFailure: true) { session, call in
             try await spotService(session).lock(callId: call.id)
             spotNote = "Locked. Open in another app is only a launcher."
         }
@@ -449,7 +453,10 @@ final class LiveSessionModel {
         }
     }
 
-    private func changeSpot(_ work: (AuthSession, SpotCall) async throws -> Void) async {
+    private func changeSpot(
+        reloadAfterFailure: Bool = false,
+        _ work: (AuthSession, SpotCall) async throws -> Void
+    ) async {
         guard let call = spot, spotGate.begin() else { return }
         defer { spotGate.finish() }
         do {
@@ -458,9 +465,16 @@ final class LiveSessionModel {
             await loadSpot(session)
         } catch let problem as SpotProblem {
             spotNote = problem.message
+            if reloadAfterFailure { await reloadSpotAfterFailure() }
         } catch {
             report(error)
+            if reloadAfterFailure { await reloadSpotAfterFailure() }
         }
+    }
+
+    private func reloadSpotAfterFailure() async {
+        guard let session = try? requiredSession() else { return }
+        await loadSpot(session)
     }
 
     func send() async {
@@ -702,6 +716,19 @@ final class LiveSessionModel {
             var book = ReceiptBook(reads: reads)
             book.apply(read)
             reads = book.reads
+        }
+    }
+
+    private func scheduleExpiryRead(_ session: AuthSession) {
+        expiryRead?.cancel()
+        expiryRead = nil
+        guard let spot, spot.status == .open, spot.closedAt == nil, spot.lockedAt == nil else { return }
+        guard let delay = SpotExpiryRead.delay(joinUntil: spot.joinUntil, now: Date()) else { return }
+        let nanos = UInt64(delay * 1_000_000_000)
+        expiryRead = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: nanos)
+            guard !Task.isCancelled else { return }
+            await self?.loadSpot(session)
         }
     }
 
@@ -1216,7 +1243,7 @@ struct LiveSessionView: View {
                         .disabled(model.spotGate.busy || viewer == nil || !SpotCallRules.canJoin(spot, userId: viewer!, now: now))
                         .accessibilityIdentifier("spot-join")
                         .accessibilityLabel("Join the spot call")
-                    if mine?.isIn == true {
+                    if mine?.isIn == true && now < spot.joinUntil {
                         Button(mine?.ready == true ? "Ready" : "Ready") { Task { await model.toggleReady() } }
                             .disabled(model.spotGate.busy || model.readyIsLocalOnly)
                             .accessibilityIdentifier("spot-ready")

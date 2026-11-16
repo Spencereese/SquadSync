@@ -24,6 +24,8 @@
 --   then raise exception 'spot_join_closed'
 -- A non-starter cannot join once the five-minute window has passed.
 -- A starter already on the call can still answer 'in' after that.
+-- That exemption is RSVP-only. Ready, lock, and expiry do not exempt a starter.
+-- A starter who is in and not Ready still blocks the lock.
 -- sq8.rsvp_spot is not replaced. Its conflict update sets response and
 -- updated_at and leaves ready alone. A before-update trigger clears ready
 -- when the stored response actually changes, so an out followed by in does
@@ -45,7 +47,14 @@
 --
 -- Triggers, re-checked: 0013 creates none on sq8_spot_calls or sq8_spot_rsvps.
 -- Later files do not add one. 0017 says it does not alter sq8_spot_calls.
--- This file adds one trigger, sq8_spot_rsvps_clear_ready, and no others.
+-- Member deletes already have sq8_squad_members_owner (before delete) and
+-- sq8_squad_members_clear_check_in (after delete). sq8_squad_members_cap is
+-- before insert. This file does not replace those. It adds
+-- sq8_spot_rsvps_clear_ready, and sq8_squad_members_clear_spot_rsvps after
+-- the check-in trigger in name order. The new member trigger locks the squad,
+-- then the unclosed call, then deletes that person's RSVPs on it.
+-- The lock count also ignores an RSVP whose user is no longer a member, so a
+-- leftover in-row cannot block lock or come back Ready on rejoin.
 -- Realtime already publishes both tables, so the new columns ride along.
 -- Lock order matches 0013: the squad row, then the call.
 --
@@ -266,8 +275,25 @@ begin
     raise exception 'spot_closed' using errcode = 'P0001';
   end if;
 
-  select count(*) filter (where rsvps.response = 'in'),
-         count(*) filter (where rsvps.response = 'in' and rsvps.ready)
+  select count(*) filter (
+           where rsvps.response = 'in'
+             and exists (
+               select 1
+               from public.sq8_squad_members as members
+               where members.squad_id = squad
+                 and members.user_id = rsvps.user_id
+             )
+         ),
+         count(*) filter (
+           where rsvps.response = 'in'
+             and rsvps.ready
+             and exists (
+               select 1
+               from public.sq8_squad_members as members
+               where members.squad_id = squad
+                 and members.user_id = rsvps.user_id
+             )
+         )
     into seated, ready_count
   from public.sq8_spot_rsvps as rsvps
   where rsvps.call_id = target_call;
@@ -401,6 +427,46 @@ create trigger sq8_spot_rsvps_clear_ready
   for each row
   execute function sq8.clear_spot_ready_on_response_change();
 
+-- Runs after sq8_squad_members_owner rejects an owner delete, and after
+-- sq8_squad_members_clear_check_in. Does not replace either of those, or the cap trigger.
+create or replace function sq8.clear_open_spot_rsvps_on_leave()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  perform 1
+  from public.sq8_squads
+  where id = old.squad_id
+  for update;
+
+  perform 1
+  from public.sq8_spot_calls as calls
+  where calls.squad_id = old.squad_id
+    and calls.closed_at is null
+  order by calls.id
+  for update;
+
+  delete from public.sq8_spot_rsvps as rsvps
+  using public.sq8_spot_calls as calls
+  where rsvps.call_id = calls.id
+    and calls.squad_id = old.squad_id
+    and calls.closed_at is null
+    and rsvps.user_id = old.user_id;
+
+  return old;
+end;
+$$;
+
+revoke all on function sq8.clear_open_spot_rsvps_on_leave() from public, anon, authenticated;
+
+drop trigger if exists sq8_squad_members_clear_spot_rsvps on public.sq8_squad_members;
+create trigger sq8_squad_members_clear_spot_rsvps
+  after delete on public.sq8_squad_members
+  for each row
+  execute function sq8.clear_open_spot_rsvps_on_leave();
+
 create or replace function public.sq8_set_spot_ready(call_id uuid, ready boolean)
 returns void
 language sql
@@ -441,8 +507,11 @@ grant execute on function public.sq8_read_open_spot(uuid) to authenticated;
 -- down
 -- Ready is cleared by sq8_spot_rsvps_clear_ready when response changes.
 -- sq8.rsvp_spot itself is still the 0013 function. Drop the trigger before the column.
+-- drop trigger if exists sq8_squad_members_clear_spot_rsvps on public.sq8_squad_members;
+-- drop function if exists sq8.clear_open_spot_rsvps_on_leave();
 -- drop trigger if exists sq8_spot_rsvps_clear_ready on public.sq8_spot_rsvps;
 -- drop function if exists sq8.clear_spot_ready_on_response_change();
+-- sq8_squad_members_cap, sq8_squad_members_owner, and sq8_squad_members_clear_check_in stay.
 -- update public.sq8_spot_calls
 -- set status = 'open'
 -- where status = 'expired'

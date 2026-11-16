@@ -215,6 +215,7 @@ enum SpotCallRules {
             return nil
         }
         if let seat = call.seat(for: viewerId), seat.isIn {
+            if now >= call.joinUntil || call.status == .expired { return nil }
             return seat.ready ? .leave : .ready
         }
         if canJoin(call, userId: viewerId, now: now) { return .join }
@@ -230,6 +231,18 @@ enum SpotCallRules {
 
 /// 0020 lock gate. Every in-joiner is Ready, and at least one person is in.
 /// A full table is not required. The seat target is not read here.
+enum SpotExpiryRead {
+    /// The phone asks the server to stamp expiry just after its own window ends.
+    static let margin: TimeInterval = 2
+
+    /// Nil once that moment has passed. The read already on screen is the one that stamps.
+    static func delay(joinUntil: Date, now: Date) -> TimeInterval? {
+        let delay = joinUntil.addingTimeInterval(margin).timeIntervalSince(now)
+        if delay <= 0 { return nil }
+        return delay
+    }
+}
+
 enum SpotLockRule {
     static func allows(_ call: SpotCall) -> Bool {
         let seated = call.rsvps.filter(\.isIn)

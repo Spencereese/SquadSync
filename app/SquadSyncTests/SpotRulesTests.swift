@@ -270,6 +270,35 @@ final class SpotCallRulesTests: XCTestCase {
         XCTAssertEqual(SpotProblem.from(serverMessage: "spot_expired"), .expired)
     }
 
+    func testReadyAndLeaveHideAfterThePhoneWindow() {
+        var card = call()
+        card.joinUntil = start
+        card.rsvps = [SpotRsvp(userId: member, name: "Sam", response: "in", starter: true, ready: false)]
+        let later = start.addingTimeInterval(1)
+        XCTAssertNil(SpotCallRules.barAction(card, viewerId: member, ownerId: owner, now: later))
+        card.rsvps[0].ready = true
+        XCTAssertNil(SpotCallRules.barAction(card, viewerId: member, ownerId: owner, now: later))
+        XCTAssertEqual(
+            SpotCallRules.barAction(card, viewerId: member, ownerId: owner, now: start.addingTimeInterval(-10)),
+            .leave
+        )
+        card.rsvps[0].ready = false
+        XCTAssertEqual(
+            SpotCallRules.barAction(card, viewerId: member, ownerId: owner, now: start.addingTimeInterval(-10)),
+            .ready
+        )
+    }
+
+    func testExpiryReadWaitsUntilJustAfterTheWindow() {
+        let until = start.addingTimeInterval(60)
+        let delay = SpotExpiryRead.delay(joinUntil: until, now: start)
+        XCTAssertEqual(delay, 62)
+        let almost = SpotExpiryRead.delay(joinUntil: until, now: until.addingTimeInterval(1))
+        XCTAssertEqual(almost, 1)
+        let due = SpotExpiryRead.delay(joinUntil: until, now: until.addingTimeInterval(2))
+        XCTAssertNil(due)
+    }
+
     func testDoubleTapSpotActionIsANoOp() {
         var gate = SpotActionGate()
         var ran = 0

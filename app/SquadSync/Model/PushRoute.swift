@@ -135,3 +135,62 @@ enum PushNotice {
     static let openedChat = "Opened this chat."
     static let openedSquad = "Opened this squad."
 }
+
+enum PushToast {
+    static let lifetime: TimeInterval = 8
+
+    static func text(notice: String, openedChat: Bool, openedSquad: Bool) -> String? {
+        if !notice.isEmpty { return notice }
+        if openedChat { return PushNotice.openedChat }
+        if openedSquad { return PushNotice.openedSquad }
+        return nil
+    }
+
+    static func identifier(notice: String, openedChat: Bool, openedSquad: Bool) -> String? {
+        if !notice.isEmpty { return "push-notice" }
+        if openedChat { return "push-opened-chat" }
+        if openedSquad { return "push-opened-squad" }
+        return nil
+    }
+
+    static func shouldDismiss(shownAt: Date, now: Date, lifetime: TimeInterval = lifetime) -> Bool {
+        now.timeIntervalSince(shownAt) >= lifetime
+    }
+}
+
+enum PushAuthState: Equatable {
+    case notDetermined
+    case denied
+    case authorized
+    case provisional
+    case ephemeral
+    case unknown
+
+    /// A later launch registers again only when the system will actually hand back a token.
+    var registersForRemoteNotifications: Bool {
+        self == .authorized || self == .provisional
+    }
+}
+
+enum PushStoreFailure {
+    static let missingRPC = "sq8_register_device_token is not set up."
+    static let signedOut = "Not signed in."
+
+    static func reason(_ error: Error) -> String {
+        if let failure = error as? BackendFailure {
+            switch SessionFailurePolicy.surface(failure) {
+            case .message(let text):
+                return text
+            case .signIn(let text):
+                return text
+            case .reconnecting:
+                return SessionFailurePolicy.reconnecting
+            }
+        }
+        return error.localizedDescription
+    }
+}
+
+enum LiveShellCopy {
+    static let footer = "Voice stays mock. Spots are live. Push is wired but not live until the server side ships."
+}

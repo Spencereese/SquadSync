@@ -1,4 +1,5 @@
 import Foundation
+import os
 import UIKit
 import UserNotifications
 
@@ -13,21 +14,32 @@ final class PushCoordinator {
     var focusMessage: UUID?
     private(set) var pending: PushPayload?
     var viewingSquad: UUID?
-    private var registeredToken: String?
+    /// Latest device token, including one whose store has not succeeded yet.
+    private(set) var seenToken: String?
+    /// Token the register RPC accepted.
+    private(set) var storedToken: String?
+    /// Empty when the last store succeeded. Debug-visible; not a user-facing alarm.
+    private(set) var storeFailure = ""
     private var asked = false
 
     private let tokenKey = "sq8.push.registered-token"
+    private let seenKey = "sq8.push.seen-token"
     private let askedKey = "sq8.push.permission-asked"
 
     init() {
-        registeredToken = UserDefaults.standard.string(forKey: tokenKey)
+        storedToken = UserDefaults.standard.string(forKey: tokenKey)
+        seenToken = UserDefaults.standard.string(forKey: seenKey)
         asked = UserDefaults.standard.bool(forKey: askedKey)
     }
 
     func consumeLaunchArguments(_ arguments: [String] = ProcessInfo.processInfo.arguments) {
-        guard let json = LaunchOptions.flag("-debug-push-open", in: arguments),
-              let payload = PushPayloadParser.parse(jsonText: json) else { return }
-        pending = payload
+        if let json = LaunchOptions.flag("-debug-push-open", in: arguments),
+           let payload = PushPayloadParser.parse(jsonText: json) {
+            pending = payload
+        }
+        if let token = LaunchOptions.flag("-debug-push-token", in: arguments) {
+            noteSeen(token)
+        }
     }
 
     func receive(_ userInfo: [AnyHashable: Any]) {
@@ -68,6 +80,18 @@ final class PushCoordinator {
         }
     }
 
+    func dismissToast() {
+        notice = ""
+        openedChat = false
+        openedSquad = false
+    }
+
+    /// Calls `register` when this launch should ask APNs for the current device token.
+    func performRegistration(status: PushAuthState, register: () -> Void) {
+        guard status.registersForRemoteNotifications else { return }
+        register()
+    }
+
     func askIfReady(signedIn: Bool, hasSquad: Bool, arguments: [String] = ProcessInfo.processInfo.arguments) {
         guard PushPermissionMoment.shouldAsk(
             signedIn: signedIn,
@@ -85,19 +109,42 @@ final class PushCoordinator {
         }
     }
 
+    func noteSeen(_ token: String) {
+        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        seenToken = trimmed
+        UserDefaults.standard.set(trimmed, forKey: seenKey)
+    }
+
     func plan(_ token: String) -> TokenRotation.Action {
-        TokenRotation.onToken(token, previous: registeredToken)
+        TokenRotation.onToken(token, previous: storedToken)
     }
 
     func remember(_ token: String) {
-        registeredToken = token
+        storedToken = token
+        seenToken = token
+        storeFailure = ""
         UserDefaults.standard.set(token, forKey: tokenKey)
+        UserDefaults.standard.set(token, forKey: seenKey)
+    }
+
+    func noteStoreFailure(_ reason: String) {
+        storeFailure = reason
+        SquadLog.http.info("push token store failed: \(reason, privacy: .public)")
+    }
+
+    func noteRegistrationFailure(_ reason: String) {
+        storeFailure = reason
+        SquadLog.http.info("push registration failed: \(reason, privacy: .public)")
     }
 
     func signOutAction() -> TokenRotation.Action {
-        let action = TokenRotation.onSignOut(previous: registeredToken)
-        registeredToken = nil
+        let action = TokenRotation.onSignOut(previous: storedToken)
+        storedToken = nil
+        seenToken = nil
+        storeFailure = ""
         UserDefaults.standard.removeObject(forKey: tokenKey)
+        UserDefaults.standard.removeObject(forKey: seenKey)
         viewingSquad = nil
         return action
     }
@@ -109,12 +156,68 @@ final class PushCoordinator {
         openedChat = false
         openedSquad = false
         focusMessage = nil
-        registeredToken = nil
+        storedToken = nil
+        seenToken = nil
+        storeFailure = ""
         asked = false
         UserDefaults.standard.removeObject(forKey: tokenKey)
+        UserDefaults.standard.removeObject(forKey: seenKey)
         UserDefaults.standard.removeObject(forKey: askedKey)
     }
     #endif
+}
+
+enum PushTokenSync {
+    /// Stores `token` when it is not already the one the RPC accepted. A missing RPC records a reason and returns.
+    @MainActor
+    static func apply(token: String, service: SquadService, coordinator: PushCoordinator) async {
+        coordinator.noteSeen(token)
+        let action = coordinator.plan(token)
+        let tokenToStore: String
+        let previous: String?
+        switch action {
+        case .none:
+            return
+        case .register(let value):
+            tokenToStore = value
+            previous = nil
+        case .replace(let old, let new):
+            tokenToStore = new
+            previous = old
+        case .unregister(let value):
+            guard await service.pushTokenRPCAvailable() else {
+                coordinator.noteStoreFailure(PushStoreFailure.missingRPC)
+                return
+            }
+            do {
+                try await service.unregisterPushToken(value)
+            } catch {
+                coordinator.noteStoreFailure(PushStoreFailure.reason(error))
+            }
+            return
+        }
+        guard await service.pushTokenRPCAvailable() else {
+            coordinator.noteStoreFailure(PushStoreFailure.missingRPC)
+            return
+        }
+        do {
+            try await service.registerPushToken(tokenToStore)
+        } catch {
+            coordinator.noteStoreFailure(PushStoreFailure.reason(error))
+            return
+        }
+        if let previous {
+            do {
+                try await service.unregisterPushToken(previous)
+            } catch {
+                coordinator.noteStoreFailure(PushStoreFailure.reason(error))
+            }
+        }
+        let kept = TokenPersistence.rememberAfter(action: action, registerSucceeded: true)
+        if let kept {
+            coordinator.remember(kept)
+        }
+    }
 }
 
 final class PushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotificationCenterDelegate {
@@ -134,6 +237,13 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
     func application(_ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
         Task { @MainActor in
             NotificationCenter.default.post(name: .sq8PushToken, object: DeviceTokenHex.string(from: deviceToken))
+        }
+    }
+
+    func application(_ application: UIApplication, didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        let reason = error.localizedDescription
+        Task { @MainActor in
+            PushCoordinator.shared.noteRegistrationFailure(reason)
         }
     }
 
@@ -158,4 +268,23 @@ final class PushAppDelegate: NSObject, UIApplicationDelegate, UNUserNotification
 extension Notification.Name {
     static let sq8PushToken = Notification.Name("sq8.push.token")
     static let sq8PushRoute = Notification.Name("sq8.push.route")
+}
+
+extension PushAuthState {
+    init(status: UNAuthorizationStatus) {
+        switch status {
+        case .notDetermined:
+            self = .notDetermined
+        case .denied:
+            self = .denied
+        case .authorized:
+            self = .authorized
+        case .provisional:
+            self = .provisional
+        case .ephemeral:
+            self = .ephemeral
+        @unknown default:
+            self = .unknown
+        }
+    }
 }

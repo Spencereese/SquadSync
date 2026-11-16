@@ -152,4 +152,126 @@ final class PushRouteTests: XCTestCase {
         XCTAssertTrue(posts[0].url?.path.hasSuffix("sq8_register_device_token") == true)
         XCTAssertTrue(posts[1].url?.path.hasSuffix("sq8_unregister_device_token") == true)
     }
+
+    func testToastSitsOnScreenAndThenDismisses() {
+        XCTAssertEqual(
+            PushToast.text(notice: PushNotice.notAMember, openedChat: false, openedSquad: false),
+            PushNotice.notAMember
+        )
+        XCTAssertEqual(
+            PushToast.identifier(notice: PushNotice.notAMember, openedChat: false, openedSquad: false),
+            "push-notice"
+        )
+        XCTAssertEqual(
+            PushToast.text(notice: "", openedChat: true, openedSquad: false),
+            PushNotice.openedChat
+        )
+        XCTAssertEqual(
+            PushToast.identifier(notice: "", openedChat: false, openedSquad: true),
+            "push-opened-squad"
+        )
+        let start = Date(timeIntervalSince1970: 1_700_000_000)
+        XCTAssertFalse(PushToast.shouldDismiss(shownAt: start, now: start.addingTimeInterval(7)))
+        XCTAssertTrue(PushToast.shouldDismiss(shownAt: start, now: start.addingTimeInterval(8)))
+        let coordinator = PushCoordinator.shared
+        coordinator.resetForTests()
+        coordinator.receive([
+            "type": "squad",
+            "squad_id": other.uuidString
+        ])
+        coordinator.settle(signedIn: true, squadId: squad, membershipKnown: true)
+        XCTAssertEqual(coordinator.notice, PushNotice.notAMember)
+        coordinator.dismissToast()
+        XCTAssertEqual(coordinator.notice, "")
+        XCTAssertFalse(coordinator.openedChat)
+        XCTAssertFalse(coordinator.openedSquad)
+        coordinator.resetForTests()
+    }
+
+    func testLaterLaunchesRegisterWhenAuthorizedOrProvisional() {
+        let coordinator = PushCoordinator.shared
+        var calls = 0
+        coordinator.performRegistration(status: .notDetermined) { calls += 1 }
+        coordinator.performRegistration(status: .denied) { calls += 1 }
+        coordinator.performRegistration(status: .ephemeral) { calls += 1 }
+        XCTAssertEqual(calls, 0)
+        coordinator.performRegistration(status: .authorized) { calls += 1 }
+        coordinator.performRegistration(status: .provisional) { calls += 1 }
+        XCTAssertEqual(calls, 2)
+        XCTAssertTrue(PushAuthState.authorized.registersForRemoteNotifications)
+        XCTAssertTrue(PushAuthState.provisional.registersForRemoteNotifications)
+    }
+
+    func testRegistrationFailureStaysVisibleForDebug() {
+        let coordinator = PushCoordinator.shared
+        coordinator.resetForTests()
+        coordinator.noteRegistrationFailure("no aps-environment")
+        XCTAssertEqual(coordinator.storeFailure, "no aps-environment")
+        coordinator.resetForTests()
+        XCTAssertEqual(coordinator.storeFailure, "")
+    }
+
+    func testInjectedTokenRegistersAndAMissingRPCFailsHonestly() async throws {
+        let coordinator = PushCoordinator.shared
+        coordinator.resetForTests()
+        coordinator.consumeLaunchArguments(["-debug-push-token", " aabbcc "])
+        XCTAssertEqual(coordinator.seenToken, "aabbcc")
+        XCTAssertNil(coordinator.storedToken)
+
+        let config = BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
+        let missingBody = Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function public.sq8_register_device_token in the schema cache\"}".utf8)
+        let missing = ScriptedTransport(responses: [(404, missingBody)])
+        let absent = SupabaseSquadService(config: config, accessToken: "access", transport: missing)
+        let injected = try XCTUnwrap(coordinator.seenToken)
+        await PushTokenSync.apply(token: injected, service: absent, coordinator: coordinator)
+        XCTAssertEqual(coordinator.storeFailure, PushStoreFailure.missingRPC)
+        XCTAssertNil(coordinator.storedToken)
+        XCTAssertEqual(coordinator.seenToken, "aabbcc")
+        XCTAssertFalse(missing.requests.contains { $0.httpMethod == "POST" })
+
+        let refused = Data("{\"message\":\"cannot execute INSERT in a read-only transaction\"}".utf8)
+        let failedStore = ScriptedTransport(responses: [
+            (405, refused),
+            (500, Data("{\"message\":\"not stored\"}".utf8))
+        ])
+        let failing = SupabaseSquadService(config: config, accessToken: "access", transport: failedStore)
+        await PushTokenSync.apply(token: "aabbcc", service: failing, coordinator: coordinator)
+        XCTAssertEqual(coordinator.storeFailure, "not stored")
+        XCTAssertNil(coordinator.storedToken)
+        XCTAssertEqual(coordinator.plan("aabbcc"), .register("aabbcc"))
+
+        let stored = ScriptedTransport(responses: [
+            (405, refused),
+            (204, Data())
+        ])
+        let ready = SupabaseSquadService(config: config, accessToken: "access", transport: stored)
+        await PushTokenSync.apply(token: "aabbcc", service: ready, coordinator: coordinator)
+        let posts = stored.requests.filter { $0.httpMethod == "POST" }
+        XCTAssertEqual(posts.count, 1)
+        let body = try JSONSerialization.jsonObject(with: posts[0].httpBody ?? Data()) as? [String: Any]
+        XCTAssertEqual(body?["device_token"] as? String, "aabbcc")
+        XCTAssertEqual(body?["device_platform"] as? String, "ios")
+        XCTAssertTrue(posts[0].url?.path.hasSuffix("sq8_register_device_token") == true)
+        XCTAssertEqual(coordinator.storedToken, "aabbcc")
+        XCTAssertEqual(coordinator.storeFailure, "")
+
+        let idle = ScriptedTransport(responses: [])
+        let done = SupabaseSquadService(config: config, accessToken: "access", transport: idle)
+        await PushTokenSync.apply(token: "aabbcc", service: done, coordinator: coordinator)
+        XCTAssertTrue(idle.requests.isEmpty)
+        coordinator.resetForTests()
+    }
+
+    func testLiveFooterNamesSpotsAndPushHonestly() {
+        let model = LiveSessionModel(
+            config: BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test"),
+            backend: .mock,
+            scenario: .noSquad
+        )
+        XCTAssertEqual(model.notes.first, LiveShellCopy.footer)
+        XCTAssertEqual(
+            LiveShellCopy.footer,
+            "Voice stays mock. Spots are live. Push is wired but not live until the server side ships."
+        )
+    }
 }

@@ -531,6 +531,8 @@ final class AccessibilityUITests: XCTestCase {
         let opened = app.descendants(matching: .any)["push-opened-chat"]
         XCTAssertTrue(opened.waitForExistence(timeout: 15), "The chat from the notification did not open")
         XCTAssertEqual(opened.label, "Opened this chat.")
+        XCTAssertTrue(opened.isHittable, "Opened this chat. was not on screen")
+        XCTAssertGreaterThan(opened.frame.height, 1)
         XCTAssertFalse(app.descendants(matching: .any)["push-notice"].exists)
     }
 
@@ -543,6 +545,8 @@ final class AccessibilityUITests: XCTestCase {
         let notice = app.descendants(matching: .any)["push-notice"]
         XCTAssertTrue(notice.waitForExistence(timeout: 15), "A squad you have not joined did not explain itself")
         XCTAssertEqual(notice.label, "You're not in that squad.")
+        XCTAssertTrue(notice.isHittable, "You're not in that squad. was not on screen")
+        XCTAssertGreaterThan(notice.frame.height, 1)
         XCTAssertFalse(app.descendants(matching: .any)["push-opened-chat"].exists)
     }
 
@@ -555,6 +559,8 @@ final class AccessibilityUITests: XCTestCase {
         let notice = app.descendants(matching: .any)["push-notice"]
         XCTAssertTrue(notice.waitForExistence(timeout: 15), "A former squad did not explain itself")
         XCTAssertEqual(notice.label, "You're not in that squad.")
+        XCTAssertTrue(notice.isHittable, "You're not in that squad. was not on screen")
+        XCTAssertGreaterThan(notice.frame.height, 1)
         XCTAssertFalse(app.descendants(matching: .any)["push-opened-squad"].exists)
     }
 

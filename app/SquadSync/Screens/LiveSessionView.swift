@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UserNotifications
 
 @MainActor
 @Observable
@@ -41,7 +42,7 @@ final class LiveSessionModel {
     var status = ""
     var reconnecting = false
     var notes: [String] = [
-        "Voice, spots, presence, and push stay mock. Leave off -backend live to use that shell."
+        LiveShellCopy.footer
     ]
     var busy = false
 
@@ -586,7 +587,11 @@ final class LiveSessionModel {
         do {
             if case .unregister(let token) = PushCoordinator.shared.signOutAction(),
                let session = try? requiredSession() {
-                try? await squadService(session).unregisterPushToken(token)
+                do {
+                    try await squadService(session).unregisterPushToken(token)
+                } catch {
+                    PushCoordinator.shared.noteStoreFailure(PushStoreFailure.reason(error))
+                }
             }
             try await auth.signOut()
             status = ""
@@ -702,44 +707,33 @@ final class LiveSessionModel {
         }
         guard signedIn else { return }
         PushCoordinator.shared.askIfReady(signedIn: true, hasSquad: squad != nil)
+        registerForPushTokensIfAllowed()
+    }
+
+    /// Every signed-in launch and foreground. Permission was already decided; this only refreshes the token.
+    func registerForPushTokensIfAllowed() {
+        if let seen = PushCoordinator.shared.seenToken,
+           PushCoordinator.shared.plan(seen) != .none {
+            let token = seen
+            Task { await syncPushToken(token) }
+        }
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            let state = PushAuthState(status: settings.authorizationStatus)
+            DispatchQueue.main.async {
+                PushCoordinator.shared.performRegistration(status: state) {
+                    UIApplication.shared.registerForRemoteNotifications()
+                }
+            }
+        }
     }
 
     func syncPushToken(_ token: String) async {
-        let action = PushCoordinator.shared.plan(token)
-        guard let session = try? requiredSession() else { return }
-        let service = squadService(session)
-        guard await service.pushTokenRPCAvailable() else { return }
-        switch action {
-        case .none:
-            return
-        case .register, .replace:
-            await storeToken(action, with: service)
-        case .unregister(let token):
-            try? await service.unregisterPushToken(token)
-        }
-    }
-
-    private func storeToken(_ action: TokenRotation.Action, with service: SquadService) async {
-        let token: String
-        switch action {
-        case .register(let value):
-            token = value
-        case .replace(_, let value):
-            token = value
-        case .none, .unregister:
+        guard let session = try? requiredSession() else {
+            PushCoordinator.shared.noteSeen(token)
+            PushCoordinator.shared.noteStoreFailure(PushStoreFailure.signedOut)
             return
         }
-        do {
-            try await service.registerPushToken(token)
-        } catch {
-            return
-        }
-        if case .replace(let old, _) = action {
-            try? await service.unregisterPushToken(old)
-        }
-        if let kept = TokenPersistence.rememberAfter(action: action, registerSucceeded: true) {
-            PushCoordinator.shared.remember(kept)
-        }
+        await PushTokenSync.apply(token: token, service: squadService(session), coordinator: .shared)
     }
 
     func settleIncomingPush() async {
@@ -1017,6 +1011,13 @@ struct LiveSessionView: View {
                 }
             }
             .padding(SQSpace.l)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if pushToastText != nil {
+                    pushToast
+                        .padding(.top, SQSpace.s)
+                        .padding(.bottom, SQSpace.xs)
+                }
+            }
             .navigationTitle(squadTitle ?? "SquadSync")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -1070,6 +1071,14 @@ struct LiveSessionView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .sq8PushRoute)) { _ in
             Task { await model.settleIncomingPush() }
+        }
+        .task(id: pushToastText) {
+            guard let message = pushToastText else { return }
+            UIAccessibility.post(notification: .announcement, argument: message)
+            try? await Task.sleep(nanoseconds: UInt64(PushToast.lifetime * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            guard pushToastText == message else { return }
+            PushCoordinator.shared.dismissToast()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { wentToBackground = true }
@@ -1132,32 +1141,44 @@ struct LiveSessionView: View {
         }
     }
 
-    private var showsPushRoute: Bool {
-        !PushCoordinator.shared.notice.isEmpty
-            || PushCoordinator.shared.openedChat
-            || PushCoordinator.shared.openedSquad
+    private var pushToastText: String? {
+        PushToast.text(
+            notice: PushCoordinator.shared.notice,
+            openedChat: PushCoordinator.shared.openedChat,
+            openedSquad: PushCoordinator.shared.openedSquad
+        )
     }
 
-    private var pushRouteStatus: some View {
-        VStack(alignment: .leading, spacing: SQSpace.xs) {
-            if !PushCoordinator.shared.notice.isEmpty {
-                Text(PushCoordinator.shared.notice)
-                    .font(.footnote)
-                    .foregroundStyle(SQColor.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("push-notice")
-            }
-            if PushCoordinator.shared.openedChat {
-                Text(PushNotice.openedChat)
-                    .font(.footnote)
-                    .foregroundStyle(SQColor.muted)
-                    .accessibilityIdentifier("push-opened-chat")
-            }
-            if PushCoordinator.shared.openedSquad {
-                Text(PushNotice.openedSquad)
-                    .font(.footnote)
-                    .foregroundStyle(SQColor.muted)
-                    .accessibilityIdentifier("push-opened-squad")
+    private var pushToast: some View {
+        Group {
+            if let message = pushToastText,
+               let identifier = PushToast.identifier(
+                notice: PushCoordinator.shared.notice,
+                openedChat: PushCoordinator.shared.openedChat,
+                openedSquad: PushCoordinator.shared.openedSquad
+               ) {
+                Button {
+                    PushCoordinator.shared.dismissToast()
+                } label: {
+                    Text(message)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(SQColor.ink)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, SQSpace.m)
+                        .padding(.vertical, SQSpace.s)
+                        .background(SQColor.card, in: RoundedRectangle(cornerRadius: 12))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12).stroke(SQColor.line, lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, SQSpace.s)
+                .contentShape(Rectangle())
+                .accessibilityIdentifier(identifier)
+                .accessibilityLabel(message)
+                .accessibilityAddTraits(.isStaticText)
             }
         }
     }
@@ -1179,9 +1200,6 @@ struct LiveSessionView: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: SQSpace.m) {
-                    if showsPushRoute {
-                        pushRouteStatus
-                    }
                     if model.profile != nil {
                         TextField("Display name", text: Binding(get: { model.displayName }, set: { model.displayName = $0 }))
                             .textFieldStyle(.roundedBorder)

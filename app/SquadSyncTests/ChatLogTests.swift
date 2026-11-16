@@ -522,10 +522,9 @@ final class SquadNameTests: XCTestCase {
         let post = try XCTUnwrap(present.requests.last)
         XCTAssertEqual(post.httpMethod, "POST")
         XCTAssertTrue(post.url?.path.hasSuffix("sq8_rename_squad") == true)
-        XCTAssertEqual(
-            String(data: post.httpBody ?? Data(), encoding: .utf8),
-            "{\"squad\":\"\(squad.uuidString)\",\"new_name\":null}"
-        )
+        let posted = try JSONSerialization.jsonObject(with: post.httpBody ?? Data()) as? [String: Any]
+        XCTAssertEqual(posted?["squad"] as? String, squad.uuidString)
+        XCTAssertTrue(posted?["new_name"] is NSNull)
         XCTAssertFalse(RenameAccess.showsControl(isOwner: false, available: true))
         XCTAssertTrue(RenameAccess.showsUnavailable(isOwner: true, available: false))
         XCTAssertNil(SquadName.renameError("  "))
@@ -865,7 +864,8 @@ final class SessionRefreshTests: XCTestCase {
         XCTAssertTrue(request.url?.path.hasSuffix("/auth/v1/token") == true)
         let body = try XCTUnwrap(request.httpBody)
         XCTAssertEqual(body.count, 32)
-        XCTAssertEqual(String(data: body, encoding: .utf8), "{\"refresh_token\":\"\(refresh)\"}")
+        let posted = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        XCTAssertEqual(posted?["refresh_token"] as? String, refresh)
     }
 
     func testOtherRefreshFailureKeepsTheSession() async throws {
@@ -1117,13 +1117,12 @@ final class InviteFlowTests: XCTestCase {
         let request = try XCTUnwrap(transport.requests.first)
         XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertTrue(request.url?.path.hasSuffix("sq8_leave_squad") == true)
-        XCTAssertEqual(String(data: request.httpBody ?? Data(), encoding: .utf8), "{\"new_owner\":null}")
+        let posted = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+        XCTAssertTrue(posted?["new_owner"] is NSNull)
         try await service.leaveSquad(newOwner: successor)
         let second = try XCTUnwrap(transport.requests.last)
-        XCTAssertEqual(
-            String(data: second.httpBody ?? Data(), encoding: .utf8),
-            "{\"new_owner\":\"\(successor.uuidString)\"}"
-        )
+        let transferred = try JSONSerialization.jsonObject(with: second.httpBody ?? Data()) as? [String: Any]
+        XCTAssertEqual(transferred?["new_owner"] as? String, successor.uuidString)
     }
 
     func testEveryLeaveOutcome() async throws {

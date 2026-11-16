@@ -122,7 +122,9 @@ final class SupabaseAuthService: AuthService, TokenRefreshing {
         request.setValue(config.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(RefreshBody(refreshToken: sentRefreshToken))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        request.httpBody = try encoder.encode(RefreshBody(refreshToken: sentRefreshToken))
         let data: Data
         let response: URLResponse
         do {
@@ -352,7 +354,9 @@ final class SupabaseSquadService: SquadService {
     }
 
     func renameSquad(squadId: UUID, name: String?) async throws {
-        let body = try JSONEncoder().encode(RenameBody(squad: squadId, newName: name))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let body = try encoder.encode(RenameBody(squad: squadId, newName: name))
         let data = try await http.send(
             path: "rest/v1/rpc/sq8_rename_squad",
             method: "POST",
@@ -388,7 +392,9 @@ final class SupabaseSquadService: SquadService {
     }
 
     func leaveSquad(newOwner: UUID?) async throws {
-        let body = try JSONEncoder().encode(LeaveBody(newOwner: newOwner))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let body = try encoder.encode(LeaveBody(newOwner: newOwner))
         let data = try await http.send(
             path: "rest/v1/rpc/sq8_leave_squad",
             method: "POST",
@@ -784,7 +790,9 @@ final class SupabaseInviteService: InviteServing {
     }
 
     func join(code: String) async throws -> UUID {
-        let body = try JSONEncoder().encode(JoinBody(code: code))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let body = try encoder.encode(JoinBody(code: code))
         let data = try await http.send(
             path: "rest/v1/rpc/sq8_join_with_code",
             method: "POST",

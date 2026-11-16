@@ -263,6 +263,8 @@ protocol SpotServing: AnyObject {
     func cancel(callId: UUID) async throws
     func end(callId: UUID) async throws
     func setReady(callId: UUID, userId: UUID, ready: Bool) async throws
+    /// Read-only. Missing 0020 functions and columns come back unavailable.
+    func serverCapabilities() async -> SpotServerCapabilities
 }
 
 protocol InviteServing: AnyObject {

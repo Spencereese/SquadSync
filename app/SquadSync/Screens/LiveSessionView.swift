@@ -33,6 +33,7 @@ final class LiveSessionModel {
     var leaveAvailable = false
     var transferTo: UUID?
     var spotNote = ""
+    var spotServer = SpotServerCapabilities.unavailable
     var status = ""
     var reconnecting = false
     var notes: [String] = [
@@ -48,6 +49,8 @@ final class LiveSessionModel {
     private let mockChat: ChatService?
     private let mockInvites: InviteServing?
     private let mockSpots: SpotServing?
+    private var liveSpotService: SupabaseSpotService?
+    private var liveSpotToken: String?
     private var realtime: RealtimeClient?
     private var poll: Task<Void, Never>?
     private var loadedSquad: UUID?
@@ -80,12 +83,17 @@ final class LiveSessionModel {
             self.phase = .ready
             self.email = session.email
             self.viewerId = session.userId
-            if scenario == .spotCall || scenario == .spotCallMine {
+            if scenario == .spotCall || scenario == .spotCallMine || scenario == .spotCallNearlyFull {
                 let seeded = squads.seedSpotSquad(ownerId: session.userId)
                 self.squad = seeded
-                let card = scenario == .spotCallMine
-                    ? SpotSeed.calledByViewer(ownerId: session.userId, squadId: seeded.id, now: Date())
-                    : SpotSeed.halfFilled(ownerId: session.userId, squadId: seeded.id, now: Date())
+                let card: SpotCall
+                if scenario == .spotCallMine {
+                    card = SpotSeed.calledByViewer(ownerId: session.userId, squadId: seeded.id, now: Date())
+                } else if scenario == .spotCallNearlyFull {
+                    card = SpotSeed.nearlyFull(ownerId: session.userId, squadId: seeded.id, now: Date())
+                } else {
+                    card = SpotSeed.halfFilled(ownerId: session.userId, squadId: seeded.id, now: Date())
+                }
                 self.spot = card
                 self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: card)
             } else {
@@ -136,7 +144,18 @@ final class LiveSessionModel {
     }
 
     private func spotService(_ session: AuthSession) -> SpotServing {
-        mockSpots ?? SupabaseSpotService(config: config, accessToken: session.accessToken, refresher: tokenRefresher)
+        if let mockSpots { return mockSpots }
+        if let liveSpotService, liveSpotToken == session.accessToken {
+            return liveSpotService
+        }
+        let created = SupabaseSpotService(
+            config: config,
+            accessToken: session.accessToken,
+            refresher: tokenRefresher
+        )
+        liveSpotService = created
+        liveSpotToken = session.accessToken
+        return created
     }
 
     func restore() async {
@@ -339,8 +358,10 @@ final class LiveSessionModel {
 
     func loadSpot(_ session: AuthSession) async {
         guard let squad else { return }
+        let service = spotService(session)
+        spotServer = await service.serverCapabilities()
         do {
-            let loaded = try await spotService(session).current(squadId: squad.id)
+            let loaded = try await service.current(squadId: squad.id)
             if var loaded {
                 loaded.rsvps = loaded.rsvps.map { seat in
                     var copy = seat
@@ -540,10 +561,12 @@ final class LiveSessionModel {
     }
 
     func becameActive() async {
+        resumedAt = Date()
+        liveSpotService = nil
+        liveSpotToken = nil
         guard usesLiveSocket else { return }
         poll?.cancel()
         poll = nil
-        resumedAt = Date()
         expireStoredTokenIfRequested()
         do {
             guard let session = try await auth.prepareSession(now: Date()) else { return }
@@ -628,7 +651,8 @@ final class LiveSessionModel {
     }
 
     var usesLiveSocket: Bool { mockChat == nil }
-    var readyIsLocalOnly: Bool { mockSpots == nil }
+    var showsLiveGaps: Bool { mockSpots == nil }
+    var readyIsLocalOnly: Bool { showsLiveGaps && !spotServer.ready }
 
     private var usesSocket: Bool { usesLiveSocket }
 
@@ -1124,7 +1148,9 @@ struct LiveSessionView: View {
                 .textFieldStyle(.roundedBorder)
             Button("Call spots") { Task { await model.callSpots() } }
                 .disabled(model.spotGate.busy)
-            Text("Seats are capped at 8. This server does not store a smaller target.")
+            Text(model.spotServer.seatTarget
+                ? "The server stores a seat target of 8."
+                : "Seats are capped at 8. This server does not store a smaller target.")
                 .font(.caption)
                 .foregroundStyle(SQColor.muted)
         }
@@ -1139,7 +1165,7 @@ struct LiveSessionView: View {
             let viewer = model.viewerId ?? model.profile?.id
             let mine = viewer.flatMap { spot.seat(for: $0) }
             VStack(alignment: .leading, spacing: SQSpace.s) {
-                Text("Calling spots: \(spot.game), \(spot.filled) of \(SpotCallRules.cap) seats")
+                Text("Calling spots: \(spot.game), \(spot.filled) of \(spot.seatTotal) seats")
                     .font(.headline)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1157,11 +1183,26 @@ struct LiveSessionView: View {
                     .font(.caption2)
                     .foregroundStyle(SQColor.muted)
                     .fixedSize(horizontal: false, vertical: true)
-                if model.readyIsLocalOnly {
-                    Text("Ready is not stored. 0013 only records in or out, and lock does not wait for it.")
+                if model.showsLiveGaps && !model.spotServer.ready {
+                    Text("Ready isn't stored on the server yet.")
                         .font(.caption2)
                         .foregroundStyle(SQColor.muted)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("spot-gap-ready")
+                }
+                if model.showsLiveGaps && !model.spotServer.gatedLock {
+                    Text("Lock doesn't wait for Ready yet.")
+                        .font(.caption2)
+                        .foregroundStyle(SQColor.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("spot-gap-lock")
+                }
+                if model.showsLiveGaps && !model.spotServer.expiry {
+                    Text("This phone decides when the window ends. The server doesn't mark the call expired yet.")
+                        .font(.caption2)
+                        .foregroundStyle(SQColor.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("spot-gap-expiry")
                 }
                 if !model.spotNote.isEmpty {
                     Text(model.spotNote)
@@ -1193,6 +1234,12 @@ struct LiveSessionView: View {
                         .disabled(model.spotGate.busy)
                         .accessibilityIdentifier("spot-cancel")
                         .accessibilityLabel("Cancel the spot call")
+                }
+                if expired, let viewer, SpotCallRules.canJoin(spot, userId: viewer, now: now) {
+                    Button("Join") { Task { await model.joinSpot() } }
+                        .disabled(model.spotGate.busy)
+                        .accessibilityIdentifier("spot-join")
+                        .accessibilityLabel("Join the spot call")
                 }
                 if spot.status == .locked {
                     Text("Open in")
@@ -1233,7 +1280,7 @@ struct LiveSessionView: View {
         if spot.status == .cancelled { return "Cancelled" }
         if spot.status == .ended { return "Ended" }
         if spot.status == .locked { return "Locked" }
-        if expired { return "Expired" }
+        if spot.status == .expired || expired { return "Expired" }
         if spot.filled >= SpotCallRules.cap { return "Full · \(SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now))" }
         return "\(SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now)) left"
     }
@@ -1277,7 +1324,7 @@ struct LiveSessionView: View {
                 .font(.headline)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("\(spot.filled) of \(SpotCallRules.cap)")
+            Text("\(spot.filled) of \(spot.seatTotal)")
                 .font(.subheadline)
                 .lineLimit(1)
             Text(SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now))

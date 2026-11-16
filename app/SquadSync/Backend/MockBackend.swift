@@ -306,6 +306,10 @@ final class MockSpotService: SpotServing {
 
     func lock(callId: UUID) async throws {
         guard var call, call.id == callId else { throw SpotProblem.missing }
+        let allowed = viewerId == call.callerId || viewerId == ownerId
+        if call.serverOwnsLock && allowed && !SpotLockRule.allows(call) {
+            throw SpotProblem.notReady
+        }
         guard SpotCallRules.canLock(call, actorId: viewerId, ownerId: ownerId, now: Date()) else {
             throw SpotProblem.notCaller
         }
@@ -339,6 +343,10 @@ final class MockSpotService: SpotServing {
         }
         call.rsvps[index].ready = ready
         self.call = call
+    }
+
+    func serverCapabilities() async -> SpotServerCapabilities {
+        return .unavailable
     }
 }
 

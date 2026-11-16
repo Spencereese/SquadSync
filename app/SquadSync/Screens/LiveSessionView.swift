@@ -283,7 +283,8 @@ final class LiveSessionModel {
     }
 
     func probeRename() async {
-        guard let session = try? requiredSession() else {
+        let me = profile?.id ?? viewerId
+        guard let session = try? requiredSession(), squad?.ownerId == me else {
             renameAvailable = false
             return
         }
@@ -1537,22 +1538,7 @@ struct LiveSessionView: View {
                 }
                 if let squad = model.squad {
                     ForEach(squad.members) { member in
-                        HStack {
-                            Text(member.isOwner ? "\(member.displayName) · Owner" : member.displayName)
-                                .lineLimit(2)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .layoutPriority(1)
-                                .accessibilityLabel(member.isOwner ? "\(member.displayName), owner" : member.displayName)
-                            Spacer()
-                            if isOwner && !member.isOwner {
-                                Button("Remove \(member.displayName)") {
-                                    Task { await model.removeMember(member) }
-                                }
-                                .disabled(model.busy)
-                                .accessibilityIdentifier("remove-\(member.displayName)")
-                                .accessibilityLabel("Remove \(member.displayName)")
-                            }
-                        }
+                        memberRow(member, isOwner: isOwner)
                     }
                     if model.leaveAvailable {
                         leaveControls(squad: squad, isOwner: isOwner)
@@ -1587,9 +1573,65 @@ struct LiveSessionView: View {
             model.renameDraft = model.squad?.name ?? ""
             Task {
                 await model.probeLeave()
-                await model.probeRename()
+                if isOwner {
+                    await model.probeRename()
+                }
             }
         }
+    }
+
+    @ViewBuilder
+    private func memberRow(_ member: SquadMemberRecord, isOwner: Bool) -> some View {
+        let title = member.isOwner ? "\(member.displayName) · Owner" : member.displayName
+        let nameLabel = member.isOwner ? "\(member.displayName), owner" : member.displayName
+        if isOwner && !member.isOwner {
+            ViewThatFits(in: .horizontal) {
+                memberLine(title: title, label: nameLabel, member: member, stacked: false)
+                memberLine(title: title, label: nameLabel, member: member, stacked: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Text(title)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel(nameLabel)
+        }
+    }
+
+    private func memberLine(title: String, label: String, member: SquadMemberRecord, stacked: Bool) -> some View {
+        let name = Text(title)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel(label)
+        let remove = removeButton(member)
+        return Group {
+            if stacked {
+                VStack(alignment: .leading, spacing: SQSpace.xs) {
+                    name
+                    remove.frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline) {
+                    name.layoutPriority(1)
+                    Spacer(minLength: SQSpace.s)
+                    remove.fixedSize(horizontal: true, vertical: false)
+                }
+            }
+        }
+    }
+
+    private func removeButton(_ member: SquadMemberRecord) -> some View {
+        Button {
+            Task { await model.removeMember(member) }
+        } label: {
+            Text("Remove \(member.displayName)")
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+        }
+        .disabled(model.busy)
+        .accessibilityIdentifier("remove-\(member.displayName)")
+        .accessibilityLabel("Remove \(member.displayName)")
     }
 
     private func leaveControls(squad: SquadRecord, isOwner: Bool) -> some View {

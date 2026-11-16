@@ -195,6 +195,33 @@ enum RenameAccess {
     static let unavailable = "Rename isn't available on this server yet."
 }
 
+/// The live insert body for `sq8_squads`. A blank name is stored as null.
+struct NewSquad: Encodable {
+    let ownerId: UUID
+    let name: String?
+
+    init(ownerId: UUID, name: String) {
+        self.ownerId = ownerId
+        let trimmed = SquadName.normalized(name)
+        self.name = trimmed.isEmpty ? nil : trimmed
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case ownerId = "owner_id"
+        case name
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(ownerId, forKey: .ownerId)
+        if let name {
+            try container.encode(name, forKey: .name)
+        } else {
+            try container.encodeNil(forKey: .name)
+        }
+    }
+}
+
 struct RemoteMessage: Equatable, Identifiable, Codable {
     let id: UUID
     let squadId: UUID

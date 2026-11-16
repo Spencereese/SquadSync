@@ -476,8 +476,19 @@ final class SquadNameTests: XCTestCase {
         XCTAssertEqual(SquadTitle.line(name: storedNull.name, memberCount: storedNull.members.count), "Your squad · 1 of 8")
     }
 
-    func testRenameProbeIsReadOnlyAndPostsTheNewName() async throws {
+    func testNewSquadInsertBodyKeepsATrimmedNameOrNull() throws {
         let owner = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let named = try BackendJSON.encoder.encode(NewSquad(ownerId: owner, name: "  Friday  "))
+        let object = try JSONSerialization.jsonObject(with: named) as? [String: Any]
+        XCTAssertEqual(object?["owner_id"] as? String, owner.uuidString)
+        XCTAssertEqual(object?["name"] as? String, "Friday")
+        let blank = try BackendJSON.encoder.encode(NewSquad(ownerId: owner, name: "   "))
+        let empty = try JSONSerialization.jsonObject(with: blank) as? [String: Any]
+        XCTAssertTrue(empty?["name"] is NSNull)
+        XCTAssertEqual(empty?["owner_id"] as? String, owner.uuidString)
+    }
+
+    func testRenameProbeIsReadOnlyAndPostsTheNewName() async throws {
         let squad = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
         let missing = Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function public.sq8_rename_squad in the schema cache\"}".utf8)
         let hidden = ScriptedTransport(responses: [(404, missing)])
@@ -519,6 +530,11 @@ final class SquadNameTests: XCTestCase {
         XCTAssertTrue(RenameAccess.showsUnavailable(isOwner: true, available: false))
         XCTAssertNil(SquadName.renameError("  "))
         XCTAssertEqual(SquadName.renameError(String(repeating: "a", count: 41)), "Use 40 characters or fewer.")
+        XCTAssertTrue(HTTPFailureLog.isExpectedProbeRefusal(
+            status: 405,
+            body: Data("{\"message\":\"cannot execute FOR UPDATE in a read-only transaction\"}".utf8)
+        ))
+        XCTAssertFalse(HTTPFailureLog.isExpectedProbeRefusal(status: 400, body: Data("{\"message\":\"spot_not_ready\"}".utf8)))
     }
 }
 

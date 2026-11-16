@@ -504,6 +504,24 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertEqual(count.label, "Friday · 8 of 8")
     }
 
+    func testOwnerRemoveStaysOneControlAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-uitest-largeText"]
+        app.launch()
+
+        let members = app.buttons["members"]
+        XCTAssertTrue(members.waitForExistence(timeout: 15), "Members button was not in the bar")
+        members.tap()
+        let remove = app.buttons["remove-Riley"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 5), "Remove was not in the members sheet")
+        XCTAssertEqual(app.buttons.matching(identifier: "remove-Riley").count, 1)
+        XCTAssertEqual(remove.label, "Remove Riley")
+        reveal(remove, in: app)
+        XCTAssertTrue(remove.isHittable, "Remove was not one hittable control at the largest text size")
+        XCTAssertLessThan(remove.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
+        XCTAssertGreaterThan(remove.frame.height, 1)
+    }
+
     func testOwnerRenamesTheSquad() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "invite"]

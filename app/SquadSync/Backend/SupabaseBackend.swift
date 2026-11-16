@@ -287,7 +287,7 @@ final class SupabaseSquadService: SquadService {
         if let error = SquadName.validationError(trimmed) {
             throw BackendFailure.rejected(error)
         }
-        let body = try BackendJSON.encoder.encode(NewSquad(ownerId: ownerId, name: trimmed.isEmpty ? nil : trimmed))
+        let body = try BackendJSON.encoder.encode(NewSquad(ownerId: ownerId, name: trimmed))
         let data = try await http.send(
             path: "rest/v1/sq8_squads",
             method: "POST",
@@ -483,25 +483,6 @@ final class SupabaseSquadService: SquadService {
     private struct MemberRow: Decodable {
         let userId: UUID
         enum CodingKeys: String, CodingKey { case userId = "user_id" }
-    }
-
-    private struct NewSquad: Encodable {
-        let ownerId: UUID
-        let name: String?
-        enum CodingKeys: String, CodingKey {
-            case ownerId = "owner_id"
-            case name
-        }
-
-        func encode(to encoder: Encoder) throws {
-            var container = encoder.container(keyedBy: CodingKeys.self)
-            try container.encode(ownerId, forKey: .ownerId)
-            if let name, !name.isEmpty {
-                try container.encode(name, forKey: .name)
-            } else {
-                try container.encodeNil(forKey: .name)
-            }
-        }
     }
 
     private struct RenameBody: Encodable {

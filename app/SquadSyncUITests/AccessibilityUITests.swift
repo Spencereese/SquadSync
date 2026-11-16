@@ -194,7 +194,7 @@ final class AccessibilityUITests: XCTestCase {
         reveal(end, in: app)
         end.tap()
 
-        let confirm = app.buttons["spot-end-confirm"]
+        let confirm = app.buttons["spot-end-confirm"].firstMatch
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), "End confirmation was not shown")
         confirm.tap()
 
@@ -203,6 +203,33 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertEqual(status.label, "Ended")
         XCTAssertFalse(app.buttons["spot-end"].exists)
         XCTAssertFalse(app.buttons["spot-lock"].exists)
+    }
+
+    func testCancelEndKeepsTheSpotLocked() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine"]
+        app.launch()
+
+        let lock = app.buttons["spot-lock"]
+        XCTAssertTrue(lock.waitForExistence(timeout: 15), "Lock was not on the caller's card")
+        reveal(lock, in: app)
+        lock.tap()
+
+        let end = app.buttons["spot-end"]
+        XCTAssertTrue(end.waitForExistence(timeout: 5), "End spot was not on the locked card")
+        reveal(end, in: app)
+        end.tap()
+
+        let cancel = app.buttons["spot-end-cancel"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5), "Cancel was not on the end confirmation")
+        XCTAssertEqual(cancel.label, "Cancel")
+        cancel.tap()
+
+        let status = app.descendants(matching: .any)["spot-countdown"]
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "Locked")
+        XCTAssertTrue(app.buttons["spot-end"].waitForExistence(timeout: 5), "End spot left after Cancel")
+        XCTAssertFalse(app.buttons["spot-end-confirm"].exists)
     }
 
     func testEndSpotStaysHittableAtLargeText() {

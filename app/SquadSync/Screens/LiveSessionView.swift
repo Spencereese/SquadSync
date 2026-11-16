@@ -1334,14 +1334,34 @@ struct LiveSessionView: View {
             )
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("spot-card")
-            .confirmationDialog("End this spot?", isPresented: $confirmEndSpot, titleVisibility: .visible) {
-                Button("End spot", role: .destructive) { Task { await model.endSpot() } }
-                    .accessibilityIdentifier("spot-end-confirm")
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("People can call a new spot after this one ends.")
+            .sheet(isPresented: $confirmEndSpot) {
+                endSpotConfirm
             }
         }
+    }
+
+    private var endSpotConfirm: some View {
+        VStack(alignment: .leading, spacing: SQSpace.l) {
+            Text("End this spot?")
+                .font(.title2.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+            Text("People can call a new spot after this one ends.")
+                .foregroundStyle(SQColor.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("End spot", role: .destructive) {
+                confirmEndSpot = false
+                Task { await model.endSpot() }
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("spot-end-confirm")
+            Button("Cancel", role: .cancel) { confirmEndSpot = false }
+                .accessibilityIdentifier("spot-end-cancel")
+        }
+        .padding(SQSpace.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+        .adoptingLaunchDynamicType()
     }
 
     private func statusLine(_ spot: SpotCall, expired: Bool, now: Date) -> String {

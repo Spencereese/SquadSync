@@ -379,6 +379,7 @@ final class AccessibilityUITests: XCTestCase {
             retry.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
         let sent = app.buttons.matching(NSPredicate(format: "label == %@", "once"))
+        XCTAssertTrue(sent.firstMatch.waitForExistence(timeout: 5), "Sent bubble did not appear")
         XCTAssertEqual(sent.count, 1)
         XCTAssertFalse(app.buttons["retry-send"].waitForExistence(timeout: 2))
     }

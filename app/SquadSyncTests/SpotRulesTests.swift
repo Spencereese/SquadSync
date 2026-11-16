@@ -328,7 +328,7 @@ final class SpotCallRulesTests: XCTestCase {
     func testReadyResetsWhenOutIsFollowedByIn() async throws {
         let squad = ChatSeed.squadId
         let card = SpotSeed.calledByViewer(ownerId: owner, squadId: squad, now: start)
-        let service = MockSpotService(viewerId: owner, ownerId: owner, call: card, now: { start })
+        let service = MockSpotService(viewerId: owner, ownerId: owner, call: card, now: { self.start })
         try await service.setReady(callId: card.id, userId: owner, ready: true)
         try await service.rsvp(callId: card.id, response: "in")
         let stillReady = try await service.current(squadId: squad)
@@ -368,7 +368,7 @@ final class SpotCallRulesTests: XCTestCase {
         XCTAssertEqual(loaded?.game, "Halo")
         XCTAssertFalse(SpotCallRules.showsCallForm(loaded, now: now))
         do {
-            try await service.call(squadId: squad, game: "Again", startsAt: now)
+            _ = try await service.call(squadId: squad, game: "Again", startsAt: now)
             XCTFail("A fresh call should stay up")
         } catch let problem as SpotProblem {
             XCTAssertEqual(problem, .alreadyOpen)
@@ -391,6 +391,34 @@ final class SpotCallRulesTests: XCTestCase {
         XCTAssertEqual(model.spotNote, SpotProblem.alreadyOpen.message)
         XCTAssertEqual(model.spotLoads, 1)
         XCTAssertEqual(model.spot?.id, open?.id)
+    }
+
+    func testOnlyTheCallerOrOwnerCanEndALockedSpot() async throws {
+        let locked = call(status: .locked)
+        XCTAssertTrue(SpotCallRules.canEnd(locked, actorId: caller, ownerId: owner))
+        XCTAssertTrue(SpotCallRules.canEnd(locked, actorId: owner, ownerId: owner))
+        XCTAssertFalse(SpotCallRules.canEnd(locked, actorId: member, ownerId: owner))
+        XCTAssertFalse(SpotCallRules.canEnd(call(), actorId: caller, ownerId: owner))
+        let squad = ChatSeed.squadId
+        let callerService = MockSpotService(viewerId: caller, ownerId: owner, call: locked)
+        try await callerService.end(callId: locked.id)
+        let ended = try await callerService.current(squadId: squad)
+        XCTAssertEqual(ended?.status, .ended)
+        XCTAssertNotNil(ended?.closedAt)
+        let memberService = MockSpotService(viewerId: member, ownerId: owner, call: locked)
+        do {
+            try await memberService.end(callId: locked.id)
+            XCTFail("A member should not end someone else's locked spot")
+        } catch let problem as SpotProblem {
+            XCTAssertEqual(problem, .notCaller)
+        }
+        let openService = MockSpotService(viewerId: caller, ownerId: owner, call: call())
+        do {
+            try await openService.end(callId: locked.id)
+            XCTFail("An open spot should not end")
+        } catch let problem as SpotProblem {
+            XCTAssertEqual(problem, .notLocked)
+        }
     }
 
     func testNearlyFullSpotLeavesOneSeat() {

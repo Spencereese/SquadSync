@@ -194,6 +194,12 @@ enum SpotCallRules {
         return true
     }
 
+    /// 0013 lets the caller or the owner end a locked call. That frees the squad for a new one.
+    static func canEnd(_ call: SpotCall, actorId: UUID, ownerId: UUID) -> Bool {
+        guard call.status == .locked, call.closedAt == nil else { return false }
+        return actorId == call.callerId || actorId == ownerId
+    }
+
     static func canCancel(_ call: SpotCall, actorId: UUID, now: Date) -> Bool {
         guard call.status == .open, call.lockedAt == nil, call.closedAt == nil else { return false }
         if now >= call.joinUntil { return false }

@@ -178,6 +178,53 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertFalse(app.buttons["spot-cancel"].exists)
     }
 
+    func testCallerEndsALockedSpot() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine"]
+        app.launch()
+
+        let lock = app.buttons["spot-lock"]
+        XCTAssertTrue(lock.waitForExistence(timeout: 15), "Lock was not on the caller's card")
+        reveal(lock, in: app)
+        lock.tap()
+
+        let end = app.buttons["spot-end"]
+        XCTAssertTrue(end.waitForExistence(timeout: 5), "End spot was not on the locked card")
+        XCTAssertEqual(end.label, "End the spot call")
+        reveal(end, in: app)
+        end.tap()
+
+        let confirm = app.buttons["spot-end-confirm"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "End confirmation was not shown")
+        confirm.tap()
+
+        let status = app.descendants(matching: .any)["spot-countdown"]
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "Ended")
+        XCTAssertFalse(app.buttons["spot-end"].exists)
+        XCTAssertFalse(app.buttons["spot-lock"].exists)
+    }
+
+    func testEndSpotStaysHittableAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine", "-uitest-largeText"]
+        app.launch()
+
+        let lock = app.buttons["spot-lock"]
+        XCTAssertTrue(lock.waitForExistence(timeout: 15), "Lock was not on the caller's card at large text")
+        reveal(lock, in: app)
+        lock.tap()
+
+        let end = app.buttons["spot-end"]
+        XCTAssertTrue(end.waitForExistence(timeout: 5), "End spot was not on the locked card at large text")
+        reveal(end, in: app)
+        XCTAssertTrue(end.isHittable, "End spot was not reachable at the largest text size")
+        let composer = app.descendants(matching: .any)["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5), "Composer was not on screen")
+        XCTAssertLessThanOrEqual(end.frame.maxY + 8, composer.frame.minY, "End spot is under the composer")
+        XCTAssertLessThan(end.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
+    }
+
     func testMockSpotCallStaysReadableAtLargeText() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "spotCall", "-uitest-largeText"]

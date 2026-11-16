@@ -455,6 +455,15 @@ final class LiveSessionModel {
         }
     }
 
+    func endSpot() async {
+        // sq8_end_spot updates the call row. The other client's sq8_spot_calls
+        // subscription turns that into .spots, which reloads their card.
+        await changeSpot(reloadAfterFailure: true) { session, call in
+            try await spotService(session).end(callId: call.id)
+            spotNote = "Ended."
+        }
+    }
+
     func cancelSpot() async {
         await changeSpot { session, call in
             try await spotService(session).cancel(callId: call.id)
@@ -871,6 +880,7 @@ struct LiveSessionView: View {
     @State private var showNewMessages = false
     @State private var wentToBackground = false
     @State private var confirmSignOut = false
+    @State private var confirmEndSpot = false
     @State private var showMembers = false
     @State private var confirmLeave = false
     @ScaledMetric(relativeTo: .body) private var composerLine: CGFloat = 22
@@ -1282,6 +1292,17 @@ struct LiveSessionView: View {
                         .accessibilityLabel("Join the spot call")
                 }
                 if spot.status == .locked {
+                    if let viewer, SpotCallRules.canEnd(spot, actorId: viewer, ownerId: model.squad?.ownerId ?? viewer) {
+                        Button { confirmEndSpot = true } label: {
+                            Text("End spot")
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .disabled(model.spotGate.busy)
+                        .accessibilityIdentifier("spot-end")
+                        .accessibilityLabel("End the spot call")
+                    }
                     Text("Open in")
                         .font(.caption.weight(.semibold))
                         .accessibilityAddTraits(.isHeader)
@@ -1313,6 +1334,13 @@ struct LiveSessionView: View {
             )
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("spot-card")
+            .confirmationDialog("End this spot?", isPresented: $confirmEndSpot, titleVisibility: .visible) {
+                Button("End spot", role: .destructive) { Task { await model.endSpot() } }
+                    .accessibilityIdentifier("spot-end-confirm")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("People can call a new spot after this one ends.")
+            }
         }
     }
 

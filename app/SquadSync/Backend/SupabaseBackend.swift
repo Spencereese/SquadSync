@@ -122,7 +122,9 @@ final class SupabaseAuthService: AuthService, TokenRefreshing {
         request.setValue(config.anonKey, forHTTPHeaderField: "apikey")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONEncoder().encode(RefreshBody(refreshToken: sentRefreshToken))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        request.httpBody = try encoder.encode(RefreshBody(refreshToken: sentRefreshToken))
         let data: Data
         let response: URLResponse
         do {
@@ -287,7 +289,7 @@ final class SupabaseSquadService: SquadService {
         if let error = SquadName.validationError(trimmed) {
             throw BackendFailure.rejected(error)
         }
-        let body = try BackendJSON.encoder.encode(NewSquad(ownerId: ownerId))
+        let body = try BackendJSON.encoder.encode(NewSquad(ownerId: ownerId, name: trimmed))
         let data = try await http.send(
             path: "rest/v1/sq8_squads",
             method: "POST",
@@ -297,9 +299,7 @@ final class SupabaseSquadService: SquadService {
         )
         let created = try BackendJSON.decoder.decode([SquadDetails].self, from: data)
         guard let row = created.first else { throw BackendFailure.rejected("Squad was not returned.") }
-        var record = try await load(squadId: row.id)
-        if record.name.isEmpty { record.name = trimmed }
-        return record
+        return try await load(squadId: row.id)
     }
 
     func removeMember(squadId: UUID, userId: UUID) async throws {
@@ -327,6 +327,48 @@ final class SupabaseSquadService: SquadService {
         }
     }
 
+    func renameAvailable() async -> Bool {
+        do {
+            // GET names both arguments so PostgREST resolves sq8_rename_squad(uuid, text).
+            // It runs in a read-only transaction and fails on the lock. Only a missing
+            // function (404 or PGRST202) means rename is unavailable.
+            _ = try await http.send(
+                path: "rest/v1/rpc/sq8_rename_squad",
+                method: "GET",
+                query: [
+                    URLQueryItem(name: "squad", value: "00000000-0000-0000-0000-000000000000"),
+                    URLQueryItem(name: "new_name", value: "null")
+                ],
+                feature: .squad
+            )
+            return true
+        } catch let failure as BackendFailure {
+            if case .notSetUp = failure { return false }
+            if case .rejected(let message) = failure {
+                return LeaveProbe.available(status: 400, body: message)
+            }
+            return false
+        } catch {
+            return false
+        }
+    }
+
+    func renameSquad(squadId: UUID, name: String?) async throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let body = try encoder.encode(RenameBody(squad: squadId, newName: name))
+        let data = try await http.send(
+            path: "rest/v1/rpc/sq8_rename_squad",
+            method: "POST",
+            body: body,
+            feature: .squad
+        )
+        let payload = try JSONDecoder().decode(RenamePayload.self, from: data)
+        guard payload.ok else {
+            throw BackendFailure.rejected(RenameFailure.message(payload.error ?? "missing"))
+        }
+    }
+
     func leaveAvailable() async -> Bool {
         do {
             // GET names new_owner so PostgREST resolves sq8_leave_squad(uuid).
@@ -350,7 +392,9 @@ final class SupabaseSquadService: SquadService {
     }
 
     func leaveSquad(newOwner: UUID?) async throws {
-        let body = try JSONEncoder().encode(LeaveBody(newOwner: newOwner))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let body = try encoder.encode(LeaveBody(newOwner: newOwner))
         let data = try await http.send(
             path: "rest/v1/rpc/sq8_leave_squad",
             method: "POST",
@@ -447,10 +491,39 @@ final class SupabaseSquadService: SquadService {
         enum CodingKeys: String, CodingKey { case userId = "user_id" }
     }
 
-    private struct NewSquad: Encodable {
-        let ownerId: UUID
+    private struct RenameBody: Encodable {
+        let squad: UUID
+        let newName: String?
         enum CodingKeys: String, CodingKey {
-            case ownerId = "owner_id"
+            case squad
+            case newName = "new_name"
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(squad, forKey: .squad)
+            if let newName {
+                try container.encode(newName, forKey: .newName)
+            } else {
+                try container.encodeNil(forKey: .newName)
+            }
+        }
+    }
+
+    private struct RenamePayload: Decodable {
+        let ok: Bool
+        let error: String?
+    }
+}
+
+enum RenameFailure {
+    static func message(_ code: String) -> String {
+        switch code {
+        case "signed_out": "Sign in again before renaming."
+        case "not_owner": "Only the owner can rename the squad."
+        case "name_length": "Use 40 characters or fewer."
+        case "missing": "That squad is gone."
+        default: code
         }
     }
 }
@@ -717,7 +790,9 @@ final class SupabaseInviteService: InviteServing {
     }
 
     func join(code: String) async throws -> UUID {
-        let body = try JSONEncoder().encode(JoinBody(code: code))
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        let body = try encoder.encode(JoinBody(code: code))
         let data = try await http.send(
             path: "rest/v1/rpc/sq8_join_with_code",
             method: "POST",
@@ -749,6 +824,9 @@ final class SupabaseInviteService: InviteServing {
 
 final class SupabaseSpotService: SpotServing {
     private let http: SupabaseHTTP
+    private var cachedCapabilities: SpotServerCapabilities?
+    /// A nil id. GET names the real arguments. PostgREST runs it read-only, so FOR UPDATE fails and nothing commits.
+    private static let probeId = "00000000-0000-0000-0000-000000000000"
 
     init(
         config: BackendConfig,
@@ -760,22 +838,16 @@ final class SupabaseSpotService: SpotServing {
     }
 
     func current(squadId: UUID) async throws -> SpotCall? {
-        let data = try await http.send(
-            path: "rest/v1/sq8_spot_calls",
-            method: "GET",
-            query: [
-                URLQueryItem(name: "squad_id", value: "eq.\(squadId.uuidString)"),
-                URLQueryItem(name: "closed_at", value: "is.null"),
-                URLQueryItem(name: "select", value: "id,squad_id,caller_id,game,called_at,join_until,locked_at,closed_at,status"),
-                URLQueryItem(name: "order", value: "called_at.desc"),
-                URLQueryItem(name: "limit", value: "1")
-            ],
-            feature: .squad
-        )
-        let rows = try BackendJSON.decoder.decode([CallRow].self, from: data)
-        guard let row = rows.first else { return nil }
-        let seats = try await rsvps(callId: row.id)
-        return row.call(rsvps: seats)
+        let caps = await serverCapabilities()
+        if caps.expiry {
+            do {
+                return try await readOpen(squadId: squadId, capabilities: caps)
+            } catch let failure as BackendFailure where isFunctionMissing(failure) {
+                cachedCapabilities?.expiry = false
+            }
+        }
+        let fresh = cachedCapabilities ?? caps
+        return try await readTable(squadId: squadId, capabilities: fresh)
     }
 
     func call(squadId: UUID, game: String, startsAt: Date) async throws -> UUID {
@@ -790,7 +862,12 @@ final class SupabaseSpotService: SpotServing {
     }
 
     func lock(callId: UUID) async throws {
-        _ = try await perform(path: "rest/v1/rpc/sq8_lock_spot", body: try BackendJSON.encoder.encode(CallIdBody(callId: callId)))
+        // 0020 redefines sq8_lock_spot with the Ready gate. The merged app calls
+        // this name, so this client does too. The when_ready probe only tells
+        // the UI whether that gate is on the server yet.
+        _ = await serverCapabilities()
+        let body = try BackendJSON.encoder.encode(CallIdBody(callId: callId))
+        _ = try await perform(path: "rest/v1/rpc/sq8_lock_spot", body: body)
     }
 
     func cancel(callId: UUID) async throws {
@@ -801,23 +878,142 @@ final class SupabaseSpotService: SpotServing {
         _ = try await perform(path: "rest/v1/rpc/sq8_end_spot", body: try BackendJSON.encoder.encode(CallIdBody(callId: callId)))
     }
 
-    func setReady(callId: UUID, userId: UUID, ready: Bool) async throws {
-        throw SpotProblem.badResponse
+    func setReady(callId: UUID, userId _: UUID, ready: Bool) async throws {
+        let caps = await serverCapabilities()
+        guard caps.ready else { throw SpotProblem.badResponse }
+        let body = try BackendJSON.encoder.encode(ReadyBody(callId: callId, ready: ready))
+        do {
+            _ = try await perform(path: "rest/v1/rpc/sq8_set_spot_ready", body: body)
+            return
+        } catch let failure as BackendFailure where isFunctionMissing(failure) {
+            cachedCapabilities?.ready = false
+            throw SpotProblem.badResponse
+        }
     }
 
-    private func rsvps(callId: UUID) async throws -> [SpotRsvp] {
+    func serverCapabilities() async -> SpotServerCapabilities {
+        if let cachedCapabilities { return cachedCapabilities }
+        let readyFunction = await functionExists(
+            path: "rest/v1/rpc/sq8_set_spot_ready",
+            query: [
+                URLQueryItem(name: "call_id", value: Self.probeId),
+                URLQueryItem(name: "ready", value: "false")
+            ]
+        )
+        let lockFunction = await functionExists(
+            path: "rest/v1/rpc/sq8_lock_spot_when_ready",
+            query: [URLQueryItem(name: "call_id", value: Self.probeId)]
+        )
+        let expiryFunction = await functionExists(
+            path: "rest/v1/rpc/sq8_read_open_spot",
+            query: [URLQueryItem(name: "squad", value: Self.probeId)]
+        )
+        let seatColumn = await columnExists(path: "rest/v1/sq8_spot_calls", column: "seat_target")
+        let readyColumn = await columnExists(path: "rest/v1/sq8_spot_rsvps", column: "ready")
+        let found = SpotServerCapabilities(
+            ready: readyFunction && readyColumn,
+            gatedLock: lockFunction,
+            expiry: expiryFunction,
+            seatTarget: seatColumn
+        )
+        cachedCapabilities = found
+        return found
+    }
+
+    private func readOpen(squadId: UUID, capabilities: SpotServerCapabilities) async throws -> SpotCall? {
+        let body = try BackendJSON.encoder.encode(SquadReadBody(squad: squadId))
+        let data = try await perform(path: "rest/v1/rpc/sq8_read_open_spot", body: body)
+        let payload = try BackendJSON.decoder.decode(OpenSpotPayload.self, from: data)
+        guard let row = payload.call else { return nil }
+        let seats = payload.rsvps.map {
+            SpotRsvp(userId: $0.userId, name: "Player", response: $0.response, starter: $0.starter, ready: $0.ready ?? false)
+        }
+        var reading = capabilities
+        if row.seatTarget != nil { reading.seatTarget = true }
+        return row.call(rsvps: seats, capabilities: reading)
+    }
+
+    private func readTable(squadId: UUID, capabilities: SpotServerCapabilities) async throws -> SpotCall? {
+        let callSelect = capabilities.seatTarget
+            ? "id,squad_id,caller_id,game,called_at,join_until,locked_at,closed_at,status,seat_target"
+            : "id,squad_id,caller_id,game,called_at,join_until,locked_at,closed_at,status"
+        let data = try await http.send(
+            path: "rest/v1/sq8_spot_calls",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "squad_id", value: "eq.\(squadId.uuidString)"),
+                URLQueryItem(name: "closed_at", value: "is.null"),
+                URLQueryItem(name: "select", value: callSelect),
+                URLQueryItem(name: "order", value: "called_at.desc"),
+                URLQueryItem(name: "limit", value: "1")
+            ],
+            feature: .squad
+        )
+        let rows = try BackendJSON.decoder.decode([CallRow].self, from: data)
+        guard let row = rows.first else { return nil }
+        let seats = try await rsvps(callId: row.id, includeReady: capabilities.ready)
+        return row.call(rsvps: seats, capabilities: capabilities)
+    }
+
+    private func rsvps(callId: UUID, includeReady: Bool) async throws -> [SpotRsvp] {
+        let select = includeReady ? "user_id,response,starter,ready" : "user_id,response,starter"
         let data = try await http.send(
             path: "rest/v1/sq8_spot_rsvps",
             method: "GET",
             query: [
                 URLQueryItem(name: "call_id", value: "eq.\(callId.uuidString)"),
-                URLQueryItem(name: "select", value: "user_id,response,starter")
+                URLQueryItem(name: "select", value: select)
             ],
             feature: .squad
         )
         return try BackendJSON.decoder.decode([RsvpRow].self, from: data).map {
-            SpotRsvp(userId: $0.userId, name: "Player", response: $0.response, starter: $0.starter, ready: false)
+            SpotRsvp(userId: $0.userId, name: "Player", response: $0.response, starter: $0.starter, ready: $0.ready ?? false)
         }
+    }
+
+    private func functionExists(path: String, query: [URLQueryItem]) async -> Bool {
+        do {
+            _ = try await http.send(path: path, method: "GET", query: query, feature: .squad)
+            return true
+        } catch let failure as BackendFailure {
+            if case .notSetUp = failure { return false }
+            if case .rejected(let message) = failure {
+                return SpotProbe.functionPresent(status: 400, body: message)
+            }
+            return false
+        } catch {
+            return false
+        }
+    }
+
+    private func columnExists(path: String, column: String) async -> Bool {
+        do {
+            _ = try await http.send(
+                path: path,
+                method: "GET",
+                query: [
+                    URLQueryItem(name: "select", value: column),
+                    URLQueryItem(name: "limit", value: "1")
+                ],
+                feature: .squad
+            )
+            return true
+        } catch let failure as BackendFailure {
+            if case .rejected(let message) = failure {
+                return SpotProbe.columnPresent(status: 400, body: message)
+            }
+            return false
+        } catch {
+            return false
+        }
+    }
+
+    private func isFunctionMissing(_ failure: BackendFailure) -> Bool {
+        if case .notSetUp = failure { return true }
+        if case .rejected(let message) = failure {
+            return !SpotProbe.functionPresent(status: 400, body: message)
+        }
+        return false
     }
 
     private func perform(path: String, body: Data) async throws -> Data {
@@ -839,6 +1035,7 @@ final class SupabaseSpotService: SpotServing {
         let lockedAt: Date?
         let closedAt: Date?
         let status: String
+        let seatTarget: Int?
 
         enum CodingKeys: String, CodingKey {
             case id, game, status
@@ -848,9 +1045,10 @@ final class SupabaseSpotService: SpotServing {
             case joinUntil = "join_until"
             case lockedAt = "locked_at"
             case closedAt = "closed_at"
+            case seatTarget = "seat_target"
         }
 
-        func call(rsvps: [SpotRsvp]) -> SpotCall {
+        func call(rsvps: [SpotRsvp], capabilities: SpotServerCapabilities) -> SpotCall {
             SpotCall(
                 id: id,
                 squadId: squadId,
@@ -861,7 +1059,10 @@ final class SupabaseSpotService: SpotServing {
                 lockedAt: lockedAt,
                 closedAt: closedAt,
                 status: SpotCallStatus(rawValue: status) ?? .open,
-                rsvps: rsvps
+                rsvps: rsvps,
+                seatTarget: capabilities.seatTarget ? seatTarget : nil,
+                serverOwnsLock: capabilities.gatedLock,
+                serverOwnsExpiry: capabilities.expiry
             )
         }
     }
@@ -870,9 +1071,28 @@ final class SupabaseSpotService: SpotServing {
         let userId: UUID
         let response: String
         let starter: Bool
+        let ready: Bool?
         enum CodingKeys: String, CodingKey {
-            case response, starter
+            case response, starter, ready
             case userId = "user_id"
+        }
+    }
+
+    private struct OpenSpotPayload: Decodable {
+        let call: CallRow?
+        let rsvps: [RsvpRow]
+    }
+
+    private struct SquadReadBody: Encodable {
+        let squad: UUID
+    }
+
+    private struct ReadyBody: Encodable {
+        let callId: UUID
+        let ready: Bool
+        enum CodingKeys: String, CodingKey {
+            case ready
+            case callId = "call_id"
         }
     }
 

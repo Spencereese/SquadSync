@@ -414,16 +414,17 @@ final class SquadNameTests: XCTestCase {
         let reloaded = try JSONDecoder().decode(SquadDetails.self, from: json)
         XCTAssertEqual(reloaded.name, "")
         XCTAssertEqual(reloaded.ownerId.uuidString, "00000000-0000-0000-0000-000000000001")
-        XCTAssertEqual(SquadSelect.columns, "id,owner_id")
-        XCTAssertFalse(SquadSelect.columns.split(separator: ",").contains("name"))
+        XCTAssertEqual(SquadSelect.columns, "id,owner_id,name")
+        XCTAssertTrue(SquadSelect.columns.split(separator: ",").contains("name"))
+        XCTAssertEqual(SquadTitle.line(name: reloaded.name, memberCount: 1), "Your squad · 1 of 8")
     }
 
-    func testLiveSquadSelectOmitsTheMissingNameColumn() async throws {
+    func testLiveSquadSelectReadsTheNameColumn() async throws {
         let owner = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         let squad = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
         let transport = ScriptedTransport(responses: [
             (200, Data("[{\"squad_id\":\"\(squad.uuidString)\"}]".utf8)),
-            (200, Data("[{\"id\":\"\(squad.uuidString)\",\"owner_id\":\"\(owner.uuidString)\"}]".utf8)),
+            (200, Data("[{\"id\":\"\(squad.uuidString)\",\"owner_id\":\"\(owner.uuidString)\",\"name\":null}]".utf8)),
             (200, Data("[{\"user_id\":\"\(owner.uuidString)\"}]".utf8)),
             (200, Data("[{\"id\":\"\(owner.uuidString)\",\"display_name\":\"A\",\"default_game\":\"Call of Duty\"}]".utf8))
         ])
@@ -437,17 +438,17 @@ final class SquadNameTests: XCTestCase {
             .queryItems?
             .first { $0.name == "select" }?
             .value
-        XCTAssertEqual(select, "id,owner_id")
+        XCTAssertEqual(select, "id,owner_id,name")
         XCTAssertEqual(squadGet.httpMethod, "GET")
     }
 
-    func testCreateSquadPostsOnlyTheLiveColumns() async throws {
+    func testCreateSquadSendsTheTrimmedNameAndTrustsTheStoredRow() async throws {
         let owner = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
         let squad = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
-        let row = Data("[{\"id\":\"\(squad.uuidString)\",\"owner_id\":\"\(owner.uuidString)\"}]".utf8)
+        let stored = Data("[{\"id\":\"\(squad.uuidString)\",\"owner_id\":\"\(owner.uuidString)\",\"name\":\"Friday\"}]".utf8)
         let transport = ScriptedTransport(responses: [
-            (201, row),
-            (200, row),
+            (201, stored),
+            (200, stored),
             (200, Data("[{\"user_id\":\"\(owner.uuidString)\"}]".utf8)),
             (200, Data("[{\"id\":\"\(owner.uuidString)\",\"display_name\":\"A\",\"default_game\":\"Call of Duty\"}]".utf8))
         ])
@@ -458,9 +459,81 @@ final class SquadNameTests: XCTestCase {
         let post = try XCTUnwrap(transport.requests.first)
         XCTAssertEqual(post.httpMethod, "POST")
         XCTAssertTrue(post.url?.path.hasSuffix("sq8_squads") == true)
-        let body = try JSONSerialization.jsonObject(with: post.httpBody ?? Data()) as? [String: String]
-        XCTAssertEqual(body?["owner_id"], owner.uuidString)
-        XCTAssertNil(body?["name"])
+        let body = try JSONSerialization.jsonObject(with: post.httpBody ?? Data()) as? [String: Any]
+        XCTAssertEqual(body?["owner_id"] as? String, owner.uuidString)
+        XCTAssertEqual(body?["name"] as? String, "Friday")
+
+        let cleared = Data("[{\"id\":\"\(squad.uuidString)\",\"owner_id\":\"\(owner.uuidString)\",\"name\":null}]".utf8)
+        let again = ScriptedTransport(responses: [
+            (201, cleared),
+            (200, cleared),
+            (200, Data("[{\"user_id\":\"\(owner.uuidString)\"}]".utf8)),
+            (200, Data("[{\"id\":\"\(owner.uuidString)\",\"display_name\":\"A\",\"default_game\":\"Call of Duty\"}]".utf8))
+        ])
+        let second = SupabaseSquadService(config: config, accessToken: "access", transport: again)
+        let storedNull = try await second.createSquad(ownerId: owner, name: "Friday")
+        XCTAssertEqual(storedNull.name, "")
+        XCTAssertEqual(SquadTitle.line(name: storedNull.name, memberCount: storedNull.members.count), "Your squad · 1 of 8")
+    }
+
+    func testNewSquadInsertBodyKeepsATrimmedNameOrNull() throws {
+        let owner = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        let named = try BackendJSON.encoder.encode(NewSquad(ownerId: owner, name: "  Friday  "))
+        let object = try JSONSerialization.jsonObject(with: named) as? [String: Any]
+        XCTAssertEqual(object?["owner_id"] as? String, owner.uuidString)
+        XCTAssertEqual(object?["name"] as? String, "Friday")
+        let blank = try BackendJSON.encoder.encode(NewSquad(ownerId: owner, name: "   "))
+        let empty = try JSONSerialization.jsonObject(with: blank) as? [String: Any]
+        XCTAssertTrue(empty?["name"] is NSNull)
+        XCTAssertEqual(empty?["owner_id"] as? String, owner.uuidString)
+    }
+
+    func testRenameProbeIsReadOnlyAndPostsTheNewName() async throws {
+        let squad = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let missing = Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function public.sq8_rename_squad in the schema cache\"}".utf8)
+        let hidden = ScriptedTransport(responses: [(404, missing)])
+        let config = BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
+        let absent = SupabaseSquadService(config: config, accessToken: "access", transport: hidden)
+        let unavailable = await absent.renameAvailable()
+        XCTAssertFalse(unavailable)
+        let probe = try XCTUnwrap(hidden.requests.first)
+        XCTAssertEqual(probe.httpMethod, "GET")
+        XCTAssertNil(probe.httpBody)
+        XCTAssertTrue(probe.url?.query?.contains("squad=00000000-0000-0000-0000-000000000000") == true)
+        XCTAssertTrue(probe.url?.query?.contains("new_name=null") == true)
+        XCTAssertFalse(LeaveProbe.available(status: 404, body: "{\"code\":\"PGRST202\"}"))
+        XCTAssertTrue(LeaveProbe.available(status: 405, body: "{\"message\":\"cannot execute FOR UPDATE in a read-only transaction\"}"))
+
+        let present = ScriptedTransport(responses: [
+            (405, Data("{\"message\":\"cannot execute FOR UPDATE in a read-only transaction\"}".utf8)),
+            (200, Data("{\"ok\":false,\"error\":\"not_owner\"}".utf8)),
+            (200, Data("{\"ok\":true,\"error\":null}".utf8))
+        ])
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: present)
+        let ready = await service.renameAvailable()
+        XCTAssertTrue(ready)
+        do {
+            try await service.renameSquad(squadId: squad, name: "Night")
+            XCTFail("A member should not rename")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .rejected("Only the owner can rename the squad."))
+        }
+        try await service.renameSquad(squadId: squad, name: nil)
+        let post = try XCTUnwrap(present.requests.last)
+        XCTAssertEqual(post.httpMethod, "POST")
+        XCTAssertTrue(post.url?.path.hasSuffix("sq8_rename_squad") == true)
+        let posted = try JSONSerialization.jsonObject(with: post.httpBody ?? Data()) as? [String: Any]
+        XCTAssertEqual(posted?["squad"] as? String, squad.uuidString)
+        XCTAssertTrue(posted?["new_name"] is NSNull)
+        XCTAssertFalse(RenameAccess.showsControl(isOwner: false, available: true))
+        XCTAssertTrue(RenameAccess.showsUnavailable(isOwner: true, available: false))
+        XCTAssertNil(SquadName.renameError("  "))
+        XCTAssertEqual(SquadName.renameError(String(repeating: "a", count: 41)), "Use 40 characters or fewer.")
+        XCTAssertTrue(HTTPFailureLog.isExpectedProbeRefusal(
+            status: 405,
+            body: Data("{\"message\":\"cannot execute FOR UPDATE in a read-only transaction\"}".utf8)
+        ))
+        XCTAssertFalse(HTTPFailureLog.isExpectedProbeRefusal(status: 400, body: Data("{\"message\":\"spot_not_ready\"}".utf8)))
     }
 }
 
@@ -791,7 +864,8 @@ final class SessionRefreshTests: XCTestCase {
         XCTAssertTrue(request.url?.path.hasSuffix("/auth/v1/token") == true)
         let body = try XCTUnwrap(request.httpBody)
         XCTAssertEqual(body.count, 32)
-        XCTAssertEqual(String(data: body, encoding: .utf8), "{\"refresh_token\":\"\(refresh)\"}")
+        let posted = try JSONSerialization.jsonObject(with: body) as? [String: Any]
+        XCTAssertEqual(posted?["refresh_token"] as? String, refresh)
     }
 
     func testOtherRefreshFailureKeepsTheSession() async throws {
@@ -1043,13 +1117,12 @@ final class InviteFlowTests: XCTestCase {
         let request = try XCTUnwrap(transport.requests.first)
         XCTAssertEqual(request.httpMethod, "POST")
         XCTAssertTrue(request.url?.path.hasSuffix("sq8_leave_squad") == true)
-        XCTAssertEqual(String(data: request.httpBody ?? Data(), encoding: .utf8), "{\"new_owner\":null}")
+        let posted = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
+        XCTAssertTrue(posted?["new_owner"] is NSNull)
         try await service.leaveSquad(newOwner: successor)
         let second = try XCTUnwrap(transport.requests.last)
-        XCTAssertEqual(
-            String(data: second.httpBody ?? Data(), encoding: .utf8),
-            "{\"new_owner\":\"\(successor.uuidString)\"}"
-        )
+        let transferred = try JSONSerialization.jsonObject(with: second.httpBody ?? Data()) as? [String: Any]
+        XCTAssertEqual(transferred?["new_owner"] as? String, successor.uuidString)
     }
 
     func testEveryLeaveOutcome() async throws {

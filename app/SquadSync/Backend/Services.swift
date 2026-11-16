@@ -124,8 +124,8 @@ struct SquadRecord: Equatable, Identifiable {
 }
 
 enum SquadSelect {
-    /// Live `sq8_squads` is `id`, `owner_id`, `created_at`. `name` is only in the unapplied 0018 file.
-    static let columns = "id,owner_id"
+    /// 0018 is live. `name` may be null; the title then says "Your squad".
+    static let columns = "id,owner_id,name"
 }
 
 struct SquadDetails: Decodable, Equatable {
@@ -178,6 +178,47 @@ enum SquadName {
         if name.isEmpty { return "Enter a squad name." }
         if name.count > maxLength { return "Use 40 characters or fewer." }
         return nil
+    }
+
+    /// Empty clears the stored name. A typed name still has to fit in 40 characters.
+    static func renameError(_ raw: String) -> String? {
+        let name = normalized(raw)
+        if name.isEmpty { return nil }
+        if name.count > maxLength { return "Use 40 characters or fewer." }
+        return nil
+    }
+}
+
+enum RenameAccess {
+    static func showsControl(isOwner: Bool, available: Bool) -> Bool { isOwner && available }
+    static func showsUnavailable(isOwner: Bool, available: Bool) -> Bool { isOwner && !available }
+    static let unavailable = "Rename isn't available on this server yet."
+}
+
+/// The live insert body for `sq8_squads`. A blank name is stored as null.
+struct NewSquad: Encodable {
+    let ownerId: UUID
+    let name: String?
+
+    init(ownerId: UUID, name: String) {
+        self.ownerId = ownerId
+        let trimmed = SquadName.normalized(name)
+        self.name = trimmed.isEmpty ? nil : trimmed
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case ownerId = "owner_id"
+        case name
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(ownerId, forKey: .ownerId)
+        if let name {
+            try container.encode(name, forKey: .name)
+        } else {
+            try container.encodeNil(forKey: .name)
+        }
     }
 }
 
@@ -243,6 +284,9 @@ protocol SquadService: AnyObject {
     /// False until `sq8_leave_squad` exists. A missing function keeps the honest line.
     func leaveAvailable() async -> Bool
     func leaveSquad(newOwner: UUID?) async throws
+    /// False until `sq8_rename_squad` exists. Only 404 and PGRST202 hide it.
+    func renameAvailable() async -> Bool
+    func renameSquad(squadId: UUID, name: String?) async throws
 }
 
 struct MemberRead: Equatable {
@@ -263,6 +307,8 @@ protocol SpotServing: AnyObject {
     func cancel(callId: UUID) async throws
     func end(callId: UUID) async throws
     func setReady(callId: UUID, userId: UUID, ready: Bool) async throws
+    /// Read-only. Missing 0020 functions and columns come back unavailable.
+    func serverCapabilities() async -> SpotServerCapabilities
 }
 
 protocol InviteServing: AnyObject {

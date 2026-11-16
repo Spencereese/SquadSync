@@ -31,8 +31,13 @@ final class LiveSessionModel {
     var spotGate = SpotActionGate()
     var resumedAt = Date.distantPast
     var leaveAvailable = false
+    var renameAvailable = false
+    var renameDraft = ""
     var transferTo: UUID?
     var spotNote = ""
+    /// How many times the spot card was read. A failed call increments it.
+    var spotLoads = 0
+    var spotServer = SpotServerCapabilities.unavailable
     var status = ""
     var reconnecting = false
     var notes: [String] = [
@@ -48,8 +53,11 @@ final class LiveSessionModel {
     private let mockChat: ChatService?
     private let mockInvites: InviteServing?
     private let mockSpots: SpotServing?
+    private var liveSpotService: SupabaseSpotService?
+    private var liveSpotToken: String?
     private var realtime: RealtimeClient?
     private var poll: Task<Void, Never>?
+    private var expiryRead: Task<Void, Never>?
     private var loadedSquad: UUID?
 
     enum Phase {
@@ -80,12 +88,19 @@ final class LiveSessionModel {
             self.phase = .ready
             self.email = session.email
             self.viewerId = session.userId
-            if scenario == .spotCall || scenario == .spotCallMine {
+            if scenario == .spotCall || scenario == .spotCallMine || scenario == .spotCallNearlyFull || scenario == .spotCallExpired {
                 let seeded = squads.seedSpotSquad(ownerId: session.userId)
                 self.squad = seeded
-                let card = scenario == .spotCallMine
-                    ? SpotSeed.calledByViewer(ownerId: session.userId, squadId: seeded.id, now: Date())
-                    : SpotSeed.halfFilled(ownerId: session.userId, squadId: seeded.id, now: Date())
+                let card: SpotCall
+                if scenario == .spotCallMine {
+                    card = SpotSeed.calledByViewer(ownerId: session.userId, squadId: seeded.id, now: Date())
+                } else if scenario == .spotCallNearlyFull {
+                    card = SpotSeed.nearlyFull(ownerId: session.userId, squadId: seeded.id, now: Date())
+                } else if scenario == .spotCallExpired {
+                    card = SpotSeed.staleExpired(ownerId: session.userId, squadId: seeded.id, now: Date())
+                } else {
+                    card = SpotSeed.halfFilled(ownerId: session.userId, squadId: seeded.id, now: Date())
+                }
                 self.spot = card
                 self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: card)
             } else {
@@ -136,7 +151,18 @@ final class LiveSessionModel {
     }
 
     private func spotService(_ session: AuthSession) -> SpotServing {
-        mockSpots ?? SupabaseSpotService(config: config, accessToken: session.accessToken, refresher: tokenRefresher)
+        if let mockSpots { return mockSpots }
+        if let liveSpotService, liveSpotToken == session.accessToken {
+            return liveSpotService
+        }
+        let created = SupabaseSpotService(
+            config: config,
+            accessToken: session.accessToken,
+            refresher: tokenRefresher
+        )
+        liveSpotService = created
+        liveSpotToken = session.accessToken
+        return created
     }
 
     func restore() async {
@@ -256,6 +282,47 @@ final class LiveSessionModel {
         }
     }
 
+    func probeRename() async {
+        let me = profile?.id ?? viewerId
+        guard let session = try? requiredSession(), squad?.ownerId == me else {
+            renameAvailable = false
+            return
+        }
+        renameAvailable = await squadService(session).renameAvailable()
+    }
+
+    func renameSquad() async {
+        let trimmed = SquadName.normalized(renameDraft)
+        if let error = SquadName.renameError(trimmed) {
+            membershipIsError = true
+            status = error
+            return
+        }
+        guard let session = try? requiredSession(), let current = squad else { return }
+        membershipIsError = false
+        busy = true
+        defer { busy = false }
+        do {
+            try await squadService(session).renameSquad(
+                squadId: current.id,
+                name: trimmed.isEmpty ? nil : trimmed
+            )
+            squad = try await squadService(session).currentSquad(userId: session.userId)
+            renameDraft = squad?.name ?? ""
+            status = "Renamed."
+        } catch let failure as BackendFailure {
+            membershipIsError = true
+            if case .rejected(let message) = failure {
+                status = message
+            } else {
+                status = "Could not rename the squad."
+            }
+        } catch {
+            membershipIsError = true
+            status = error.localizedDescription
+        }
+    }
+
     func probeLeave() async {
         guard let session = try? requiredSession() else {
             leaveAvailable = false
@@ -339,15 +406,19 @@ final class LiveSessionModel {
 
     func loadSpot(_ session: AuthSession) async {
         guard let squad else { return }
+        spotLoads += 1
+        defer { scheduleExpiryRead(session) }
+        let service = spotService(session)
+        spotServer = await service.serverCapabilities()
         do {
-            let loaded = try await spotService(session).current(squadId: squad.id)
+            let loaded = try await service.current(squadId: squad.id)
             if var loaded {
                 loaded.rsvps = loaded.rsvps.map { seat in
                     var copy = seat
                     if copy.name == "Player" {
                         copy.name = squad.members.first { $0.id == seat.userId }?.displayName ?? "Player"
                     }
-                    if let previous = spot?.seat(for: seat.userId), mockSpots != nil {
+                    if let previous = spot?.seat(for: seat.userId), mockSpots != nil, previous.response == copy.response {
                         copy.ready = previous.ready
                     }
                     return copy
@@ -375,8 +446,12 @@ final class LiveSessionModel {
             _ = try await spotService(session).call(squadId: squad.id, game: game, startsAt: Date())
             await loadSpot(session)
             spotNote = "Calling spots: \(game), 8 seats."
+        } catch let problem as SpotProblem {
+            spotNote = problem.message
+            await reloadSpotAfterFailure()
         } catch {
-            spotNote = (error as? SpotProblem)?.message ?? error.localizedDescription
+            report(error)
+            await reloadSpotAfterFailure()
         }
     }
 
@@ -409,15 +484,26 @@ final class LiveSessionModel {
             }
         } catch let problem as SpotProblem {
             spotNote = problem.message
+            await reloadSpotAfterFailure()
         } catch {
             report(error)
+            await reloadSpotAfterFailure()
         }
     }
 
     func lockSpot() async {
-        await changeSpot { session, call in
+        await changeSpot(reloadAfterFailure: true) { session, call in
             try await spotService(session).lock(callId: call.id)
             spotNote = "Locked. Open in another app is only a launcher."
+        }
+    }
+
+    func endSpot() async {
+        // sq8_end_spot updates the call row. The other client's sq8_spot_calls
+        // subscription turns that into .spots, which reloads their card.
+        await changeSpot(reloadAfterFailure: true) { session, call in
+            try await spotService(session).end(callId: call.id)
+            spotNote = "Ended."
         }
     }
 
@@ -428,7 +514,10 @@ final class LiveSessionModel {
         }
     }
 
-    private func changeSpot(_ work: (AuthSession, SpotCall) async throws -> Void) async {
+    private func changeSpot(
+        reloadAfterFailure: Bool = false,
+        _ work: (AuthSession, SpotCall) async throws -> Void
+    ) async {
         guard let call = spot, spotGate.begin() else { return }
         defer { spotGate.finish() }
         do {
@@ -437,9 +526,16 @@ final class LiveSessionModel {
             await loadSpot(session)
         } catch let problem as SpotProblem {
             spotNote = problem.message
+            if reloadAfterFailure { await reloadSpotAfterFailure() }
         } catch {
             report(error)
+            if reloadAfterFailure { await reloadSpotAfterFailure() }
         }
+    }
+
+    private func reloadSpotAfterFailure() async {
+        guard let session = try? requiredSession() else { return }
+        await loadSpot(session)
     }
 
     func send() async {
@@ -540,10 +636,12 @@ final class LiveSessionModel {
     }
 
     func becameActive() async {
+        resumedAt = Date()
+        liveSpotService = nil
+        liveSpotToken = nil
         guard usesLiveSocket else { return }
         poll?.cancel()
         poll = nil
-        resumedAt = Date()
         expireStoredTokenIfRequested()
         do {
             guard let session = try await auth.prepareSession(now: Date()) else { return }
@@ -628,7 +726,8 @@ final class LiveSessionModel {
     }
 
     var usesLiveSocket: Bool { mockChat == nil }
-    var readyIsLocalOnly: Bool { mockSpots == nil }
+    var showsLiveGaps: Bool { mockSpots == nil }
+    var readyIsLocalOnly: Bool { showsLiveGaps && !spotServer.ready }
 
     private var usesSocket: Bool { usesLiveSocket }
 
@@ -678,6 +777,19 @@ final class LiveSessionModel {
             var book = ReceiptBook(reads: reads)
             book.apply(read)
             reads = book.reads
+        }
+    }
+
+    private func scheduleExpiryRead(_ session: AuthSession) {
+        expiryRead?.cancel()
+        expiryRead = nil
+        guard let spot, spot.status == .open, spot.closedAt == nil, spot.lockedAt == nil else { return }
+        guard let delay = SpotExpiryRead.delay(joinUntil: spot.joinUntil, now: Date()) else { return }
+        let nanos = UInt64(delay * 1_000_000_000)
+        expiryRead = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: nanos)
+            guard !Task.isCancelled else { return }
+            await self?.loadSpot(session)
         }
     }
 
@@ -811,6 +923,7 @@ struct LiveSessionView: View {
     @State private var showNewMessages = false
     @State private var wentToBackground = false
     @State private var confirmSignOut = false
+    @State private var confirmEndSpot = false
     @State private var showMembers = false
     @State private var confirmLeave = false
     @ScaledMetric(relativeTo: .body) private var composerLine: CGFloat = 22
@@ -1019,8 +1132,11 @@ struct LiveSessionView: View {
             VStack(spacing: 0) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
-                        if model.spot == nil {
-                            callSpotForm
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
+                            if SpotCallRules.showsCallForm(model.spot, now: now) {
+                                callSpotForm
+                            }
                         }
                         if let spot = model.spot {
                             spotCard(spot)
@@ -1124,7 +1240,10 @@ struct LiveSessionView: View {
                 .textFieldStyle(.roundedBorder)
             Button("Call spots") { Task { await model.callSpots() } }
                 .disabled(model.spotGate.busy)
-            Text("Seats are capped at 8. This server does not store a smaller target.")
+                .accessibilityIdentifier("call-spots")
+            Text(model.spotServer.seatTarget
+                ? "The server stores a seat target of 8."
+                : "Seats are capped at 8. This server does not store a smaller target.")
                 .font(.caption)
                 .foregroundStyle(SQColor.muted)
         }
@@ -1139,7 +1258,7 @@ struct LiveSessionView: View {
             let viewer = model.viewerId ?? model.profile?.id
             let mine = viewer.flatMap { spot.seat(for: $0) }
             VStack(alignment: .leading, spacing: SQSpace.s) {
-                Text("Calling spots: \(spot.game), \(spot.filled) of \(SpotCallRules.cap) seats")
+                Text("Calling spots: \(spot.game), \(spot.filled) of \(spot.seatTotal) seats")
                     .font(.headline)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1157,11 +1276,26 @@ struct LiveSessionView: View {
                     .font(.caption2)
                     .foregroundStyle(SQColor.muted)
                     .fixedSize(horizontal: false, vertical: true)
-                if model.readyIsLocalOnly {
-                    Text("Ready is not stored. 0013 only records in or out, and lock does not wait for it.")
+                if model.showsLiveGaps && !model.spotServer.ready {
+                    Text("Ready isn't stored on the server yet.")
                         .font(.caption2)
                         .foregroundStyle(SQColor.muted)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("spot-gap-ready")
+                }
+                if model.showsLiveGaps && !model.spotServer.gatedLock {
+                    Text("Lock doesn't wait for Ready yet.")
+                        .font(.caption2)
+                        .foregroundStyle(SQColor.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("spot-gap-lock")
+                }
+                if model.showsLiveGaps && !model.spotServer.expiry {
+                    Text("This phone decides when the window ends. The server doesn't mark the call expired yet.")
+                        .font(.caption2)
+                        .foregroundStyle(SQColor.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("spot-gap-expiry")
                 }
                 if !model.spotNote.isEmpty {
                     Text(model.spotNote)
@@ -1175,7 +1309,7 @@ struct LiveSessionView: View {
                         .disabled(model.spotGate.busy || viewer == nil || !SpotCallRules.canJoin(spot, userId: viewer!, now: now))
                         .accessibilityIdentifier("spot-join")
                         .accessibilityLabel("Join the spot call")
-                    if mine?.isIn == true {
+                    if mine?.isIn == true && now < spot.joinUntil {
                         Button(mine?.ready == true ? "Ready" : "Ready") { Task { await model.toggleReady() } }
                             .disabled(model.spotGate.busy || model.readyIsLocalOnly)
                             .accessibilityIdentifier("spot-ready")
@@ -1194,7 +1328,24 @@ struct LiveSessionView: View {
                         .accessibilityIdentifier("spot-cancel")
                         .accessibilityLabel("Cancel the spot call")
                 }
+                if expired, let viewer, SpotCallRules.canJoin(spot, userId: viewer, now: now) {
+                    Button("Join") { Task { await model.joinSpot() } }
+                        .disabled(model.spotGate.busy)
+                        .accessibilityIdentifier("spot-join")
+                        .accessibilityLabel("Join the spot call")
+                }
                 if spot.status == .locked {
+                    if let viewer, SpotCallRules.canEnd(spot, actorId: viewer, ownerId: model.squad?.ownerId ?? viewer) {
+                        Button { confirmEndSpot = true } label: {
+                            Text("End spot")
+                                .lineLimit(2)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .disabled(model.spotGate.busy)
+                        .accessibilityIdentifier("spot-end")
+                        .accessibilityLabel("End the spot call")
+                    }
                     Text("Open in")
                         .font(.caption.weight(.semibold))
                         .accessibilityAddTraits(.isHeader)
@@ -1226,14 +1377,41 @@ struct LiveSessionView: View {
             )
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("spot-card")
+            .sheet(isPresented: $confirmEndSpot) {
+                endSpotConfirm
+            }
         }
+    }
+
+    private var endSpotConfirm: some View {
+        VStack(alignment: .leading, spacing: SQSpace.l) {
+            Text("End this spot?")
+                .font(.title2.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+            Text("People can call a new spot after this one ends.")
+                .foregroundStyle(SQColor.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("End spot", role: .destructive) {
+                confirmEndSpot = false
+                Task { await model.endSpot() }
+            }
+            .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("spot-end-confirm")
+            Button("Cancel", role: .cancel) { confirmEndSpot = false }
+                .accessibilityIdentifier("spot-end-cancel")
+        }
+        .padding(SQSpace.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .presentationDetents([.medium])
+        .presentationDragIndicator(.visible)
+        .adoptingLaunchDynamicType()
     }
 
     private func statusLine(_ spot: SpotCall, expired: Bool, now: Date) -> String {
         if spot.status == .cancelled { return "Cancelled" }
         if spot.status == .ended { return "Ended" }
         if spot.status == .locked { return "Locked" }
-        if expired { return "Expired" }
+        if spot.status == .expired || expired { return "Expired" }
         if spot.filled >= SpotCallRules.cap { return "Full · \(SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now))" }
         return "\(SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now)) left"
     }
@@ -1277,7 +1455,7 @@ struct LiveSessionView: View {
                 .font(.headline)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("\(spot.filled) of \(SpotCallRules.cap)")
+            Text("\(spot.filled) of \(spot.seatTotal)")
                 .font(.subheadline)
                 .lineLimit(1)
             Text(SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now))
@@ -1360,22 +1538,7 @@ struct LiveSessionView: View {
                 }
                 if let squad = model.squad {
                     ForEach(squad.members) { member in
-                        HStack {
-                            Text(member.isOwner ? "\(member.displayName) · Owner" : member.displayName)
-                                .lineLimit(2)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .layoutPriority(1)
-                                .accessibilityLabel(member.isOwner ? "\(member.displayName), owner" : member.displayName)
-                            Spacer()
-                            if isOwner && !member.isOwner {
-                                Button("Remove \(member.displayName)") {
-                                    Task { await model.removeMember(member) }
-                                }
-                                .disabled(model.busy)
-                                .accessibilityIdentifier("remove-\(member.displayName)")
-                                .accessibilityLabel("Remove \(member.displayName)")
-                            }
-                        }
+                        memberRow(member, isOwner: isOwner)
                     }
                     if model.leaveAvailable {
                         leaveControls(squad: squad, isOwner: isOwner)
@@ -1389,6 +1552,7 @@ struct LiveSessionView: View {
                     }
                 }
                 if isOwner {
+                    renameControls
                     inviteControls
                     if model.inviteCode.isEmpty {
                         Text("No invite yet.")
@@ -1405,7 +1569,69 @@ struct LiveSessionView: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .adoptingLaunchDynamicType()
-        .onAppear { Task { await model.probeLeave() } }
+        .onAppear {
+            model.renameDraft = model.squad?.name ?? ""
+            Task {
+                await model.probeLeave()
+                if isOwner {
+                    await model.probeRename()
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func memberRow(_ member: SquadMemberRecord, isOwner: Bool) -> some View {
+        let title = member.isOwner ? "\(member.displayName) · Owner" : member.displayName
+        let nameLabel = member.isOwner ? "\(member.displayName), owner" : member.displayName
+        if isOwner && !member.isOwner {
+            ViewThatFits(in: .horizontal) {
+                memberLine(title: title, label: nameLabel, member: member, stacked: false)
+                memberLine(title: title, label: nameLabel, member: member, stacked: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            Text(title)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityLabel(nameLabel)
+        }
+    }
+
+    private func memberLine(title: String, label: String, member: SquadMemberRecord, stacked: Bool) -> some View {
+        let name = Text(title)
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel(label)
+        let remove = removeButton(member)
+        return Group {
+            if stacked {
+                VStack(alignment: .leading, spacing: SQSpace.xs) {
+                    name
+                    remove.frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline) {
+                    name.layoutPriority(1)
+                    Spacer(minLength: SQSpace.s)
+                    remove.fixedSize(horizontal: true, vertical: false)
+                }
+            }
+        }
+    }
+
+    private func removeButton(_ member: SquadMemberRecord) -> some View {
+        Button {
+            Task { await model.removeMember(member) }
+        } label: {
+            Text("Remove \(member.displayName)")
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+        }
+        .disabled(model.busy)
+        .accessibilityIdentifier("remove-\(member.displayName)")
+        .accessibilityLabel("Remove \(member.displayName)")
     }
 
     private func leaveControls(squad: SquadRecord, isOwner: Bool) -> some View {
@@ -1459,6 +1685,27 @@ struct LiveSessionView: View {
                         .disabled(model.busy)
                         .accessibilityIdentifier("cancel-leave")
                 }
+            }
+        }
+    }
+
+    private var renameControls: some View {
+        VStack(alignment: .leading, spacing: SQSpace.s) {
+            if RenameAccess.showsControl(isOwner: true, available: model.renameAvailable) {
+                TextField("Squad name", text: Binding(get: { model.renameDraft }, set: { model.renameDraft = $0 }))
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("rename-field")
+                Button("Rename") { Task { await model.renameSquad() } }
+                    .disabled(model.busy)
+                    .accessibilityIdentifier("rename-squad")
+                    .accessibilityLabel("Rename the squad")
+            }
+            if RenameAccess.showsUnavailable(isOwner: true, available: model.renameAvailable) {
+                Text(RenameAccess.unavailable)
+                    .font(.footnote)
+                    .foregroundStyle(SQColor.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("rename-unavailable")
             }
         }
     }

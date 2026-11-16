@@ -139,6 +139,25 @@ final class AccessibilityUITests: XCTestCase {
         assertListClearsComposer(app)
     }
 
+    func testExpiredSpotStillOffersCallSpots() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallExpired"]
+        app.launch()
+
+        let status = app.descendants(matching: .any)["spot-countdown"]
+        XCTAssertTrue(status.waitForExistence(timeout: 15), "The stale spot was not on screen")
+        XCTAssertEqual(status.label, "Expired")
+        let call = app.buttons["call-spots"]
+        XCTAssertTrue(call.waitForExistence(timeout: 5), "Call spots was hidden by the expired card")
+        XCTAssertEqual(call.label, "Call spots")
+        reveal(call, in: app)
+        call.tap()
+        let replacement = app.descendants(matching: .any)["spot-countdown"]
+        XCTAssertTrue(replacement.waitForExistence(timeout: 5))
+        XCTAssertTrue(replacement.label.contains("left"), "The new call did not replace the stale one, label \(replacement.label)")
+        XCTAssertFalse(app.buttons["call-spots"].exists)
+    }
+
     func testMockSpotCallCallerCanCancel() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine"]
@@ -157,6 +176,80 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertFalse(app.buttons["spot-join"].exists)
         XCTAssertFalse(app.buttons["spot-lock"].exists)
         XCTAssertFalse(app.buttons["spot-cancel"].exists)
+    }
+
+    func testCallerEndsALockedSpot() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine"]
+        app.launch()
+
+        let lock = app.buttons["spot-lock"]
+        XCTAssertTrue(lock.waitForExistence(timeout: 15), "Lock was not on the caller's card")
+        reveal(lock, in: app)
+        lock.tap()
+
+        let end = app.buttons["spot-end"]
+        XCTAssertTrue(end.waitForExistence(timeout: 5), "End spot was not on the locked card")
+        XCTAssertEqual(end.label, "End the spot call")
+        reveal(end, in: app)
+        end.tap()
+
+        let confirm = app.buttons["spot-end-confirm"].firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "End confirmation was not shown")
+        confirm.tap()
+
+        let status = app.descendants(matching: .any)["spot-countdown"]
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "Ended")
+        XCTAssertFalse(app.buttons["spot-end"].exists)
+        XCTAssertFalse(app.buttons["spot-lock"].exists)
+    }
+
+    func testCancelEndKeepsTheSpotLocked() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine"]
+        app.launch()
+
+        let lock = app.buttons["spot-lock"]
+        XCTAssertTrue(lock.waitForExistence(timeout: 15), "Lock was not on the caller's card")
+        reveal(lock, in: app)
+        lock.tap()
+
+        let end = app.buttons["spot-end"]
+        XCTAssertTrue(end.waitForExistence(timeout: 5), "End spot was not on the locked card")
+        reveal(end, in: app)
+        end.tap()
+
+        let cancel = app.buttons["spot-end-cancel"].firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5), "Cancel was not on the end confirmation")
+        XCTAssertEqual(cancel.label, "Cancel")
+        cancel.tap()
+
+        let status = app.descendants(matching: .any)["spot-countdown"]
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "Locked")
+        XCTAssertTrue(app.buttons["spot-end"].waitForExistence(timeout: 5), "End spot left after Cancel")
+        XCTAssertFalse(app.buttons["spot-end-confirm"].exists)
+    }
+
+    func testEndSpotStaysHittableAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine", "-uitest-largeText"]
+        app.launch()
+
+        let lock = app.buttons["spot-lock"]
+        XCTAssertTrue(lock.waitForExistence(timeout: 15), "Lock was not on the caller's card at large text")
+        reveal(lock, in: app)
+        lock.tap()
+
+        let end = app.buttons["spot-end"]
+        XCTAssertTrue(end.waitForExistence(timeout: 5), "End spot was not on the locked card at large text")
+        reveal(end, in: app)
+        XCTAssertTrue(end.isHittable, "End spot was not reachable at the largest text size")
+        let composer = app.descendants(matching: .any)["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5), "Composer was not on screen")
+        XCTAssertLessThanOrEqual(end.frame.maxY + 8, composer.frame.minY, "End spot is under the composer")
+        XCTAssertLessThan(end.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
     }
 
     func testMockSpotCallStaysReadableAtLargeText() {
@@ -409,6 +502,65 @@ final class AccessibilityUITests: XCTestCase {
         tapJoin(in: app)
         XCTAssertEqual(status.label, "That squad is full (8).")
         XCTAssertEqual(count.label, "Friday · 8 of 8")
+    }
+
+    func testOwnerRemoveStaysOneControlAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-uitest-largeText"]
+        app.launch()
+
+        let members = app.buttons["members"]
+        XCTAssertTrue(members.waitForExistence(timeout: 15), "Members button was not in the bar")
+        members.tap()
+        let remove = app.buttons["remove-Riley"]
+        XCTAssertTrue(remove.waitForExistence(timeout: 5), "Remove was not in the members sheet")
+        XCTAssertEqual(app.buttons.matching(identifier: "remove-Riley").count, 1)
+        XCTAssertEqual(remove.label, "Remove Riley")
+        reveal(remove, in: app)
+        XCTAssertTrue(remove.isHittable, "Remove was not one hittable control at the largest text size")
+        XCTAssertLessThan(remove.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
+        XCTAssertGreaterThan(remove.frame.height, 1)
+    }
+
+    func testOwnerRenamesTheSquad() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
+        app.launch()
+
+        let members = app.buttons["members"]
+        XCTAssertTrue(members.waitForExistence(timeout: 15), "Members button was not in the bar")
+        members.tap()
+        let field = app.textFields["rename-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "Rename was not in the members sheet")
+        field.tap()
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 12))
+        field.typeText("Night")
+        app.buttons["rename-squad"].tap()
+        let count = app.descendants(matching: .any)["squad-count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 5))
+        XCTAssertEqual(count.label, "Night · 2 of 8")
+        let title = app.descendants(matching: .any)["squad-title"]
+        XCTAssertEqual(title.label, "Night · 2 of 8")
+    }
+
+    func testRenameStaysHittableAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-uitest-largeText"]
+        app.launch()
+
+        let members = app.buttons["members"]
+        XCTAssertTrue(members.waitForExistence(timeout: 15), "Members button was not in the bar")
+        members.tap()
+        let field = app.textFields["rename-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "Rename was not in the members sheet at large text")
+        reveal(field, in: app)
+        XCTAssertTrue(field.isHittable, "Rename was not reachable at the largest text size")
+        XCTAssertLessThan(field.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
+        let button = app.buttons["rename-squad"]
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        reveal(button, in: app)
+        XCTAssertTrue(button.isHittable, "Rename button was not reachable at the largest text size")
+        XCTAssertLessThan(button.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
     }
 
     func testMockInviteSendShowsTheRow() {

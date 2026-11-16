@@ -131,8 +131,18 @@ final class MockSquadService: SquadService {
 
     func leaveAvailable() async -> Bool { true }
 
+    func renameAvailable() async -> Bool { true }
+
+    func renameSquad(squadId: UUID, name: String?) async throws {
+        guard var squad, squad.id == squadId else { throw BackendFailure.rejected(RenameFailure.message("missing")) }
+        let trimmed = SquadName.normalized(name ?? "")
+        if let error = SquadName.renameError(trimmed) { throw BackendFailure.rejected(error) }
+        squad.name = trimmed
+        self.squad = squad
+    }
+
     func leaveSquad(newOwner: UUID?) async throws {
-        guard viewerJoined, var squad else { throw InviteProblem.alreadyLeft }
+        guard viewerJoined, let squad else { throw InviteProblem.alreadyLeft }
         guard let owner = squad.members.first(where: { $0.isOwner }) else { throw InviteProblem.alreadyLeft }
         if squad.members.count > 1 {
             guard let newOwner,
@@ -250,11 +260,13 @@ final class MockSpotService: SpotServing {
     private var call: SpotCall?
     private let viewerId: UUID
     private let ownerId: UUID
+    private let now: () -> Date
 
-    init(viewerId: UUID, ownerId: UUID, call: SpotCall?) {
+    init(viewerId: UUID, ownerId: UUID, call: SpotCall?, now: @escaping () -> Date = { Date() }) {
         self.viewerId = viewerId
         self.ownerId = ownerId
         self.call = call
+        self.now = now
     }
 
     func current(squadId: UUID) async throws -> SpotCall? {
@@ -265,7 +277,7 @@ final class MockSpotService: SpotServing {
     func call(squadId: UUID, game: String, startsAt: Date) async throws -> UUID {
         let label = game.trimmingCharacters(in: .whitespacesAndNewlines)
         if label.isEmpty { throw SpotProblem.gameBlank }
-        if let existing = call, existing.closedAt == nil, existing.status == .open || existing.status == .locked {
+        if let existing = call, blocksAnotherCall(existing) {
             throw SpotProblem.alreadyOpen
         }
         let created = SpotCall(
@@ -273,8 +285,8 @@ final class MockSpotService: SpotServing {
             squadId: squadId,
             callerId: viewerId,
             game: label,
-            calledAt: Date(),
-            joinUntil: Date().addingTimeInterval(SpotCallRules.window),
+            calledAt: now(),
+            joinUntil: now().addingTimeInterval(SpotCallRules.window),
             lockedAt: nil,
             closedAt: nil,
             status: .open,
@@ -291,13 +303,15 @@ final class MockSpotService: SpotServing {
         if call.status != .open || call.closedAt != nil { throw SpotProblem.closed }
         if call.lockedAt != nil { throw SpotProblem.locked }
         let starter = call.seat(for: viewerId)?.starter == true
-        if answer == "in" && Date() >= call.joinUntil && !starter { throw SpotProblem.joinClosed }
+        if answer == "in" && now() >= call.joinUntil && !starter { throw SpotProblem.joinClosed }
         if answer == "in" && call.seat(for: viewerId)?.isIn != true && call.filled >= SpotCallRules.cap {
             throw SpotProblem.full
         }
         if let index = call.rsvps.firstIndex(where: { $0.userId == viewerId }) {
+            if call.rsvps[index].response != answer {
+                call.rsvps[index].ready = false
+            }
             call.rsvps[index].response = answer
-            if answer == "out" { call.rsvps[index].ready = false }
         } else {
             call.rsvps.append(SpotRsvp(userId: viewerId, name: "You", response: answer, starter: false, ready: false))
         }
@@ -306,19 +320,34 @@ final class MockSpotService: SpotServing {
 
     func lock(callId: UUID) async throws {
         guard var call, call.id == callId else { throw SpotProblem.missing }
-        guard SpotCallRules.canLock(call, actorId: viewerId, ownerId: ownerId, now: Date()) else {
+        let allowed = viewerId == call.callerId || viewerId == ownerId
+        if call.serverOwnsLock && allowed && !SpotLockRule.allows(call) {
+            throw SpotProblem.notReady
+        }
+        guard SpotCallRules.canLock(call, actorId: viewerId, ownerId: ownerId, now: now()) else {
             throw SpotProblem.notCaller
         }
         call.status = .locked
-        call.lockedAt = Date()
+        call.lockedAt = now()
         self.call = call
+    }
+
+    /// 0013 closes an unlocked call once `join_until` has passed, and a lock older than six hours.
+    private func blocksAnotherCall(_ existing: SpotCall) -> Bool {
+        guard existing.closedAt == nil else { return false }
+        if existing.lockedAt != nil || existing.status == .locked {
+            guard let lockedAt = existing.lockedAt else { return true }
+            return now().timeIntervalSince(lockedAt) < 6 * 60 * 60
+        }
+        if existing.status == .expired { return false }
+        return now() < existing.joinUntil
     }
 
     func cancel(callId: UUID) async throws {
         guard var call, call.id == callId else { throw SpotProblem.missing }
-        guard SpotCallRules.canCancel(call, actorId: viewerId, now: Date()) else { throw SpotProblem.notCaller }
+        guard SpotCallRules.canCancel(call, actorId: viewerId, now: now()) else { throw SpotProblem.notCaller }
         call.status = .cancelled
-        call.closedAt = Date()
+        call.closedAt = now()
         self.call = call
     }
 
@@ -327,7 +356,7 @@ final class MockSpotService: SpotServing {
         guard call.status == .locked else { throw SpotProblem.notLocked }
         guard viewerId == call.callerId || viewerId == ownerId else { throw SpotProblem.notCaller }
         call.status = .ended
-        call.closedAt = Date()
+        call.closedAt = now()
         self.call = call
     }
 
@@ -339,6 +368,10 @@ final class MockSpotService: SpotServing {
         }
         call.rsvps[index].ready = ready
         self.call = call
+    }
+
+    func serverCapabilities() async -> SpotServerCapabilities {
+        return .unavailable
     }
 }
 

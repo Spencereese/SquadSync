@@ -92,6 +92,7 @@ final class RealtimeClient {
         let changes: [[String: Any]] = [
             change("sq8_messages", filter: "squad_id=eq.\(squad)"),
             change("sq8_squad_members", filter: "squad_id=eq.\(squad)"),
+            change("sq8_squads", filter: "id=eq.\(squad)"),
             change("sq8_message_reads", filter: "squad_id=eq.\(squad)"),
             change("sq8_message_reactions", filter: nil),
             change("sq8_spot_calls", filter: "squad_id=eq.\(squad)"),
@@ -216,6 +217,10 @@ final class RealtimeClient {
         case "sq8_squad_members":
             let squad = uuid(record["squad_id"] ?? previous["squad_id"])
             if squad == nil || squad == squadId { onEvent(.roster) }
+        case "sq8_squads":
+            // 0021 publishes this table. A rename arrives here; the roster reload reads name.
+            let id = uuid(record["id"] ?? previous["id"])
+            if id == nil || id == squadId { onEvent(.roster) }
         case "sq8_message_reads":
             guard let user = uuid(record["user_id"]),
                   let stamp = record["last_read_at"] as? String,

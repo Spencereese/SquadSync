@@ -158,6 +158,13 @@ enum RefreshRejection {
 }
 
 enum HTTPFailureLog {
+    /// A capability GET is supposed to fail this way. The function is there; the read-only transaction stopped the write.
+    static func isExpectedProbeRefusal(status: Int, body: Data) -> Bool {
+        guard status == 405 else { return false }
+        let text = String(data: body, encoding: .utf8)?.lowercased() ?? ""
+        return text.contains("read-only transaction") || text.contains("read only transaction")
+    }
+
     static func record(method: String, path: String, status: Int, body: Data) {
         #if DEBUG
         let fields = (try? JSONSerialization.jsonObject(with: body) as? [String: Any]) ?? [:]
@@ -169,7 +176,12 @@ enum HTTPFailureLog {
             ?? (fields["error_description"] as? String)
             ?? (fields["message"] as? String)
             ?? "-"
-        SquadLog.http.error("HTTP \(method, privacy: .public) \(path, privacy: .public) \(status, privacy: .public) \(code, privacy: .public) \(message, privacy: .public)")
+        let text = "HTTP \(method) \(path) \(status) \(code) \(message)"
+        if isExpectedProbeRefusal(status: status, body: body) {
+            SquadLog.http.info("\(text, privacy: .public)")
+        } else {
+            SquadLog.http.error("\(text, privacy: .public)")
+        }
         #endif
     }
 }
@@ -308,6 +320,7 @@ enum BackendJSON {
     static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = .sortedKeys
         return encoder
     }()
 

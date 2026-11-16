@@ -287,7 +287,7 @@ final class SupabaseSquadService: SquadService {
         if let error = SquadName.validationError(trimmed) {
             throw BackendFailure.rejected(error)
         }
-        let body = try BackendJSON.encoder.encode(NewSquad(ownerId: ownerId))
+        let body = try BackendJSON.encoder.encode(NewSquad(ownerId: ownerId, name: trimmed.isEmpty ? nil : trimmed))
         let data = try await http.send(
             path: "rest/v1/sq8_squads",
             method: "POST",
@@ -297,9 +297,7 @@ final class SupabaseSquadService: SquadService {
         )
         let created = try BackendJSON.decoder.decode([SquadDetails].self, from: data)
         guard let row = created.first else { throw BackendFailure.rejected("Squad was not returned.") }
-        var record = try await load(squadId: row.id)
-        if record.name.isEmpty { record.name = trimmed }
-        return record
+        return try await load(squadId: row.id)
     }
 
     func removeMember(squadId: UUID, userId: UUID) async throws {
@@ -324,6 +322,46 @@ final class SupabaseSquadService: SquadService {
         let rows = try BackendJSON.decoder.decode([MemberRow].self, from: data)
         guard rows.contains(where: { $0.userId == userId }) else {
             throw InviteProblem.other("You can't remove that person.")
+        }
+    }
+
+    func renameAvailable() async -> Bool {
+        do {
+            // GET names both arguments so PostgREST resolves sq8_rename_squad(uuid, text).
+            // It runs in a read-only transaction and fails on the lock. Only a missing
+            // function (404 or PGRST202) means rename is unavailable.
+            _ = try await http.send(
+                path: "rest/v1/rpc/sq8_rename_squad",
+                method: "GET",
+                query: [
+                    URLQueryItem(name: "squad", value: "00000000-0000-0000-0000-000000000000"),
+                    URLQueryItem(name: "new_name", value: "null")
+                ],
+                feature: .squad
+            )
+            return true
+        } catch let failure as BackendFailure {
+            if case .notSetUp = failure { return false }
+            if case .rejected(let message) = failure {
+                return LeaveProbe.available(status: 400, body: message)
+            }
+            return false
+        } catch {
+            return false
+        }
+    }
+
+    func renameSquad(squadId: UUID, name: String?) async throws {
+        let body = try JSONEncoder().encode(RenameBody(squad: squadId, newName: name))
+        let data = try await http.send(
+            path: "rest/v1/rpc/sq8_rename_squad",
+            method: "POST",
+            body: body,
+            feature: .squad
+        )
+        let payload = try JSONDecoder().decode(RenamePayload.self, from: data)
+        guard payload.ok else {
+            throw BackendFailure.rejected(RenameFailure.message(payload.error ?? "missing"))
         }
     }
 
@@ -449,8 +487,56 @@ final class SupabaseSquadService: SquadService {
 
     private struct NewSquad: Encodable {
         let ownerId: UUID
+        let name: String?
         enum CodingKeys: String, CodingKey {
             case ownerId = "owner_id"
+            case name
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(ownerId, forKey: .ownerId)
+            if let name, !name.isEmpty {
+                try container.encode(name, forKey: .name)
+            } else {
+                try container.encodeNil(forKey: .name)
+            }
+        }
+    }
+
+    private struct RenameBody: Encodable {
+        let squad: UUID
+        let newName: String?
+        enum CodingKeys: String, CodingKey {
+            case squad
+            case newName = "new_name"
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(squad, forKey: .squad)
+            if let newName {
+                try container.encode(newName, forKey: .newName)
+            } else {
+                try container.encodeNil(forKey: .newName)
+            }
+        }
+    }
+
+    private struct RenamePayload: Decodable {
+        let ok: Bool
+        let error: String?
+    }
+}
+
+enum RenameFailure {
+    static func message(_ code: String) -> String {
+        switch code {
+        case "signed_out": "Sign in again before renaming."
+        case "not_owner": "Only the owner can rename the squad."
+        case "name_length": "Use 40 characters or fewer."
+        case "missing": "That squad is gone."
+        default: code
         }
     }
 }

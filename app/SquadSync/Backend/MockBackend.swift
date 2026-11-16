@@ -131,6 +131,16 @@ final class MockSquadService: SquadService {
 
     func leaveAvailable() async -> Bool { true }
 
+    func renameAvailable() async -> Bool { true }
+
+    func renameSquad(squadId: UUID, name: String?) async throws {
+        guard var squad, squad.id == squadId else { throw BackendFailure.rejected(RenameFailure.message("missing")) }
+        let trimmed = SquadName.normalized(name ?? "")
+        if let error = SquadName.renameError(trimmed) { throw BackendFailure.rejected(error) }
+        squad.name = trimmed
+        self.squad = squad
+    }
+
     func leaveSquad(newOwner: UUID?) async throws {
         guard viewerJoined, let squad else { throw InviteProblem.alreadyLeft }
         guard let owner = squad.members.first(where: { $0.isOwner }) else { throw InviteProblem.alreadyLeft }

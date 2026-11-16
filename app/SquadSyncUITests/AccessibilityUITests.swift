@@ -504,6 +504,47 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertEqual(count.label, "Friday · 8 of 8")
     }
 
+    func testOwnerRenamesTheSquad() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
+        app.launch()
+
+        let members = app.buttons["members"]
+        XCTAssertTrue(members.waitForExistence(timeout: 15), "Members button was not in the bar")
+        members.tap()
+        let field = app.textFields["rename-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "Rename was not in the members sheet")
+        field.tap()
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 12))
+        field.typeText("Night")
+        app.buttons["rename-squad"].tap()
+        let count = app.descendants(matching: .any)["squad-count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 5))
+        XCTAssertEqual(count.label, "Night · 2 of 8")
+        let title = app.descendants(matching: .any)["squad-title"]
+        XCTAssertEqual(title.label, "Night · 2 of 8")
+    }
+
+    func testRenameStaysHittableAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-uitest-largeText"]
+        app.launch()
+
+        let members = app.buttons["members"]
+        XCTAssertTrue(members.waitForExistence(timeout: 15), "Members button was not in the bar")
+        members.tap()
+        let field = app.textFields["rename-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5), "Rename was not in the members sheet at large text")
+        reveal(field, in: app)
+        XCTAssertTrue(field.isHittable, "Rename was not reachable at the largest text size")
+        XCTAssertLessThan(field.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
+        let button = app.buttons["rename-squad"]
+        XCTAssertTrue(button.waitForExistence(timeout: 5))
+        reveal(button, in: app)
+        XCTAssertTrue(button.isHittable, "Rename button was not reachable at the largest text size")
+        XCTAssertLessThan(button.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
+    }
+
     func testMockInviteSendShowsTheRow() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "invite"]

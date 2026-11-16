@@ -124,8 +124,8 @@ struct SquadRecord: Equatable, Identifiable {
 }
 
 enum SquadSelect {
-    /// Live `sq8_squads` is `id`, `owner_id`, `created_at`. `name` is only in the unapplied 0018 file.
-    static let columns = "id,owner_id"
+    /// 0018 is live. `name` may be null; the title then says "Your squad".
+    static let columns = "id,owner_id,name"
 }
 
 struct SquadDetails: Decodable, Equatable {
@@ -179,6 +179,20 @@ enum SquadName {
         if name.count > maxLength { return "Use 40 characters or fewer." }
         return nil
     }
+
+    /// Empty clears the stored name. A typed name still has to fit in 40 characters.
+    static func renameError(_ raw: String) -> String? {
+        let name = normalized(raw)
+        if name.isEmpty { return nil }
+        if name.count > maxLength { return "Use 40 characters or fewer." }
+        return nil
+    }
+}
+
+enum RenameAccess {
+    static func showsControl(isOwner: Bool, available: Bool) -> Bool { isOwner && available }
+    static func showsUnavailable(isOwner: Bool, available: Bool) -> Bool { isOwner && !available }
+    static let unavailable = "Rename isn't available on this server yet."
 }
 
 struct RemoteMessage: Equatable, Identifiable, Codable {
@@ -243,6 +257,9 @@ protocol SquadService: AnyObject {
     /// False until `sq8_leave_squad` exists. A missing function keeps the honest line.
     func leaveAvailable() async -> Bool
     func leaveSquad(newOwner: UUID?) async throws
+    /// False until `sq8_rename_squad` exists. Only 404 and PGRST202 hide it.
+    func renameAvailable() async -> Bool
+    func renameSquad(squadId: UUID, name: String?) async throws
 }
 
 struct MemberRead: Equatable {

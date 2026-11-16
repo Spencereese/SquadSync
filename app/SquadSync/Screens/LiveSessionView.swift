@@ -31,6 +31,8 @@ final class LiveSessionModel {
     var spotGate = SpotActionGate()
     var resumedAt = Date.distantPast
     var leaveAvailable = false
+    var renameAvailable = false
+    var renameDraft = ""
     var transferTo: UUID?
     var spotNote = ""
     /// How many times the spot card was read. A failed call increments it.
@@ -277,6 +279,46 @@ final class LiveSessionModel {
                 membershipIsError = true
                 status = problem.message
             }
+        }
+    }
+
+    func probeRename() async {
+        guard let session = try? requiredSession() else {
+            renameAvailable = false
+            return
+        }
+        renameAvailable = await squadService(session).renameAvailable()
+    }
+
+    func renameSquad() async {
+        let trimmed = SquadName.normalized(renameDraft)
+        if let error = SquadName.renameError(trimmed) {
+            membershipIsError = true
+            status = error
+            return
+        }
+        guard let session = try? requiredSession(), let current = squad else { return }
+        membershipIsError = false
+        busy = true
+        defer { busy = false }
+        do {
+            try await squadService(session).renameSquad(
+                squadId: current.id,
+                name: trimmed.isEmpty ? nil : trimmed
+            )
+            squad = try await squadService(session).currentSquad(userId: session.userId)
+            renameDraft = squad?.name ?? ""
+            status = "Renamed."
+        } catch let failure as BackendFailure {
+            membershipIsError = true
+            if case .rejected(let message) = failure {
+                status = message
+            } else {
+                status = "Could not rename the squad."
+            }
+        } catch {
+            membershipIsError = true
+            status = error.localizedDescription
         }
     }
 
@@ -1524,6 +1566,7 @@ struct LiveSessionView: View {
                     }
                 }
                 if isOwner {
+                    renameControls
                     inviteControls
                     if model.inviteCode.isEmpty {
                         Text("No invite yet.")
@@ -1540,7 +1583,13 @@ struct LiveSessionView: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .adoptingLaunchDynamicType()
-        .onAppear { Task { await model.probeLeave() } }
+        .onAppear {
+            model.renameDraft = model.squad?.name ?? ""
+            Task {
+                await model.probeLeave()
+                await model.probeRename()
+            }
+        }
     }
 
     private func leaveControls(squad: SquadRecord, isOwner: Bool) -> some View {
@@ -1594,6 +1643,27 @@ struct LiveSessionView: View {
                         .disabled(model.busy)
                         .accessibilityIdentifier("cancel-leave")
                 }
+            }
+        }
+    }
+
+    private var renameControls: some View {
+        VStack(alignment: .leading, spacing: SQSpace.s) {
+            if RenameAccess.showsControl(isOwner: true, available: model.renameAvailable) {
+                TextField("Squad name", text: Binding(get: { model.renameDraft }, set: { model.renameDraft = $0 }))
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("rename-field")
+                Button("Rename") { Task { await model.renameSquad() } }
+                    .disabled(model.busy)
+                    .accessibilityIdentifier("rename-squad")
+                    .accessibilityLabel("Rename the squad")
+            }
+            if RenameAccess.showsUnavailable(isOwner: true, available: model.renameAvailable) {
+                Text(RenameAccess.unavailable)
+                    .font(.footnote)
+                    .foregroundStyle(SQColor.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("rename-unavailable")
             }
         }
     }

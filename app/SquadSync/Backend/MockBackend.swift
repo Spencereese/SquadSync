@@ -296,8 +296,10 @@ final class MockSpotService: SpotServing {
             throw SpotProblem.full
         }
         if let index = call.rsvps.firstIndex(where: { $0.userId == viewerId }) {
+            if call.rsvps[index].response != answer {
+                call.rsvps[index].ready = false
+            }
             call.rsvps[index].response = answer
-            if answer == "out" { call.rsvps[index].ready = false }
         } else {
             call.rsvps.append(SpotRsvp(userId: viewerId, name: "You", response: answer, starter: false, ready: false))
         }

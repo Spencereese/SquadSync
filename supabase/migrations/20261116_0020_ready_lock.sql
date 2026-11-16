@@ -3,11 +3,14 @@
 -- Existing rows stay: ready defaults to false, seat_target defaults to 8,
 -- and status values already stored (open, locked, ended, cancelled) stay valid.
 --
--- Lock rule (one rule): sq8.lock_spot_when_ready succeeds only when at least
--- one joiner has response = 'in' and every such joiner has ready = true.
--- The seat target is stored and shown. It is not the lock predicate.
--- Zero joiners, or any in-joiner who is not Ready, raises spot_not_ready.
--- A second lock of a call that is already locked returns without writing again.
+-- Lock rule (one rule): a lock succeeds only when at least one joiner has
+-- response = 'in' and every such joiner has ready = true. The seat target is
+-- stored and shown. It is not the lock predicate. Zero joiners, or any
+-- in-joiner who is not Ready, raises spot_not_ready. A second lock of a call
+-- that is already locked returns without writing again.
+-- sq8.lock_spot(uuid) is replaced with that rule, and public.sq8_lock_spot(uuid)
+-- still calls it, so the already-shipped client cannot skip the gate.
+-- sq8.lock_spot_when_ready(uuid) is the same rule under a second name.
 --
 -- Expiry uses the database clock. sq8.expire_open_spot sets status = 'expired'
 -- when the call is still open, unlocked, unclosed, and now() >= join_until.
@@ -20,9 +23,15 @@
 --   if answer = 'in' and now() >= join_until and not coalesce(is_starter, false)
 --   then raise exception 'spot_join_closed'
 -- A non-starter cannot join once the five-minute window has passed.
--- A starter already on the call can still answer 'in' after that. This file
--- does not replace sq8.rsvp_spot, sq8.call_spot, sq8.lock_spot, sq8.end_spot,
--- or sq8.cancel_spot.
+-- A starter already on the call can still answer 'in' after that.
+-- sq8.rsvp_spot is not replaced. Its conflict update sets response and
+-- updated_at and leaves ready alone. A before-update trigger clears ready
+-- when the stored response actually changes, so an out followed by in does
+-- not keep the old ready = true. Setting Ready does not touch response, so
+-- the trigger does not fire for that update.
+-- This file does not replace sq8.call_spot, sq8.end_spot, or sq8.cancel_spot.
+-- It does replace sq8.lock_spot. The commented down section restores the
+-- 0013 body of that function exactly.
 --
 -- Policies, re-checked against 0013. Both are table-level SELECT for
 -- authenticated members. Neither lists columns, so seat_target and ready
@@ -36,11 +45,14 @@
 --
 -- Triggers, re-checked: 0013 creates none on sq8_spot_calls or sq8_spot_rsvps.
 -- Later files do not add one. 0017 says it does not alter sq8_spot_calls.
--- This file creates none. Realtime already publishes both tables, so the new
--- columns ride along. Lock order matches 0013: the squad row, then the call.
+-- This file adds one trigger, sq8_spot_rsvps_clear_ready, and no others.
+-- Realtime already publishes both tables, so the new columns ride along.
+-- Lock order matches 0013: the squad row, then the call.
 --
--- The new functions are volatile on purpose. A GET probe is refused and does
--- not run them. Do not mark them stable.
+-- PostgREST runs a GET in a read-only transaction. It does not refuse a
+-- volatile function. A GET probe of these functions names the real arguments
+-- and then fails on FOR UPDATE or the write, so the function does not commit.
+-- That failure is the "present" signal. Do not POST a probe.
 
 alter table public.sq8_spot_calls
   add column if not exists seat_target integer not null default 8;
@@ -273,6 +285,20 @@ begin
 end;
 $$;
 
+-- Same signature as 0013. public.sq8_lock_spot already calls this.
+create or replace function sq8.lock_spot(target_call uuid)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+begin
+  perform sq8.lock_spot_when_ready(target_call);
+  return;
+end;
+$$;
+
 create or replace function sq8.read_open_spot(squad uuid)
 returns jsonb
 language plpgsql
@@ -350,7 +376,30 @@ $$;
 revoke all on function sq8.expire_open_spot(uuid) from public, anon, authenticated;
 revoke all on function sq8.set_spot_ready(uuid, boolean) from public, anon, authenticated;
 revoke all on function sq8.lock_spot_when_ready(uuid) from public, anon, authenticated;
+revoke all on function sq8.lock_spot(uuid) from public, anon, authenticated;
 revoke all on function sq8.read_open_spot(uuid) from public, anon, authenticated;
+
+create or replace function sq8.clear_spot_ready_on_response_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.response is distinct from old.response then
+    new.ready := false;
+  end if;
+  return new;
+end;
+$$;
+
+revoke all on function sq8.clear_spot_ready_on_response_change() from public, anon, authenticated;
+
+drop trigger if exists sq8_spot_rsvps_clear_ready on public.sq8_spot_rsvps;
+create trigger sq8_spot_rsvps_clear_ready
+  before update of response on public.sq8_spot_rsvps
+  for each row
+  execute function sq8.clear_spot_ready_on_response_change();
 
 create or replace function public.sq8_set_spot_ready(call_id uuid, ready boolean)
 returns void
@@ -390,6 +439,10 @@ grant execute on function public.sq8_lock_spot_when_ready(uuid) to authenticated
 grant execute on function public.sq8_read_open_spot(uuid) to authenticated;
 
 -- down
+-- Ready is cleared by sq8_spot_rsvps_clear_ready when response changes.
+-- sq8.rsvp_spot itself is still the 0013 function. Drop the trigger before the column.
+-- drop trigger if exists sq8_spot_rsvps_clear_ready on public.sq8_spot_rsvps;
+-- drop function if exists sq8.clear_spot_ready_on_response_change();
 -- update public.sq8_spot_calls
 -- set status = 'open'
 -- where status = 'expired'
@@ -409,4 +462,56 @@ grant execute on function public.sq8_read_open_spot(uuid) to authenticated;
 -- drop function if exists sq8.lock_spot_when_ready(uuid);
 -- drop function if exists sq8.set_spot_ready(uuid, boolean);
 -- drop function if exists sq8.expire_open_spot(uuid);
--- 0013 sq8.lock_spot, sq8.rsvp_spot, and both select policies were not replaced.
+-- Restore sq8.lock_spot from 0013, copied exactly:
+-- create or replace function sq8.lock_spot(target_call uuid)
+-- returns void
+-- language plpgsql
+-- security definer
+-- set search_path = ''
+-- as $$
+-- declare
+--   me uuid := (select auth.uid());
+--   squad uuid;
+--   caller uuid;
+--   owner uuid;
+--   closed timestamptz;
+-- begin
+--   if me is null then
+--     raise exception 'spot_signed_out' using errcode = '42501';
+--   end if;
+--
+--   select calls.squad_id, calls.caller_id
+--     into squad, caller
+--   from public.sq8_spot_calls as calls
+--   where calls.id = target_call;
+--   if squad is null then
+--     raise exception 'spot_missing' using errcode = 'P0001';
+--   end if;
+--
+--   perform 1
+--   from public.sq8_squads
+--   where id = squad
+--   for update;
+--
+--   select calls.closed_at, calls.caller_id, squads.owner_id
+--     into closed, caller, owner
+--   from public.sq8_spot_calls as calls
+--   join public.sq8_squads as squads
+--     on squads.id = calls.squad_id
+--   where calls.id = target_call
+--   for update;
+--
+--   if me is distinct from caller and me is distinct from owner then
+--     raise exception 'spot_not_caller' using errcode = '42501';
+--   end if;
+--   if closed is not null then
+--     raise exception 'spot_closed' using errcode = 'P0001';
+--   end if;
+--
+--   update public.sq8_spot_calls
+--   set locked_at = coalesce(sq8_spot_calls.locked_at, now()),
+--       locked_by = coalesce(sq8_spot_calls.locked_by, me),
+--       status = 'locked'
+--   where id = target_call;
+-- end;
+-- $$;

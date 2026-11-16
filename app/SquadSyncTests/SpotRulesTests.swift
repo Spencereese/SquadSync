@@ -296,6 +296,24 @@ final class SpotCallRulesTests: XCTestCase {
         XCTAssertEqual(again, false)
     }
 
+    func testReadyResetsWhenOutIsFollowedByIn() async throws {
+        let squad = ChatSeed.squadId
+        let card = SpotSeed.calledByViewer(ownerId: owner, squadId: squad, now: start)
+        let service = MockSpotService(viewerId: owner, ownerId: owner, call: card)
+        try await service.setReady(callId: card.id, userId: owner, ready: true)
+        try await service.rsvp(callId: card.id, response: "in")
+        let stillReady = try await service.current(squadId: squad)
+        let kept = stillReady?.seat(for: owner)?.ready
+        XCTAssertEqual(kept, true)
+        try await service.rsvp(callId: card.id, response: "out")
+        try await service.rsvp(callId: card.id, response: "in")
+        let stored = try await service.current(squadId: squad)
+        let ready = stored?.seat(for: owner)?.ready
+        let response = stored?.seat(for: owner)?.response
+        XCTAssertEqual(response, "in")
+        XCTAssertEqual(ready, false)
+    }
+
     func testNearlyFullSpotLeavesOneSeat() {
         let card = SpotSeed.nearlyFull(ownerId: owner, squadId: ChatSeed.squadId, now: start)
         XCTAssertEqual(card.filled, 7)
@@ -382,7 +400,7 @@ final class SpotServerTests: XCTestCase {
         XCTAssertTrue(probes.allSatisfy { $0.httpBody == nil })
     }
 
-    func testLockIsRejectedByTheServerWhenJoinersAreNotReady() async throws {
+    func testOldLockPathRejectsWhenNotReady() async throws {
         let transport = ScriptedTransport(responses: [
             (405, Data("{\"message\":\"GET is not allowed\"}".utf8)),
             (405, Data("{\"message\":\"GET is not allowed\"}".utf8)),
@@ -401,7 +419,9 @@ final class SpotServerTests: XCTestCase {
         }
         let post = try XCTUnwrap(transport.requests.last)
         XCTAssertEqual(post.httpMethod, "POST")
-        XCTAssertTrue(post.url?.path.hasSuffix("sq8_lock_spot_when_ready") == true)
+        let path = post.url?.path ?? ""
+        XCTAssertTrue(path.hasSuffix("rpc/sq8_lock_spot"))
+        XCTAssertFalse(path.contains("when_ready"))
         XCTAssertEqual(transport.requests.filter { $0.httpMethod == "POST" }.count, 1)
     }
 

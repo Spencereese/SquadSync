@@ -368,7 +368,7 @@ final class LiveSessionModel {
                     if copy.name == "Player" {
                         copy.name = squad.members.first { $0.id == seat.userId }?.displayName ?? "Player"
                     }
-                    if let previous = spot?.seat(for: seat.userId), mockSpots != nil {
+                    if let previous = spot?.seat(for: seat.userId), mockSpots != nil, previous.response == copy.response {
                         copy.ready = previous.ready
                     }
                     return copy

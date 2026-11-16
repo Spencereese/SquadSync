@@ -750,7 +750,7 @@ final class SupabaseInviteService: InviteServing {
 final class SupabaseSpotService: SpotServing {
     private let http: SupabaseHTTP
     private var cachedCapabilities: SpotServerCapabilities?
-    /// A nil id. GET probes name the real arguments and do not run the volatile functions.
+    /// A nil id. GET names the real arguments. PostgREST runs it read-only, so FOR UPDATE fails and nothing commits.
     private static let probeId = "00000000-0000-0000-0000-000000000000"
 
     init(
@@ -787,16 +787,11 @@ final class SupabaseSpotService: SpotServing {
     }
 
     func lock(callId: UUID) async throws {
-        let caps = await serverCapabilities()
+        // 0020 redefines sq8_lock_spot with the Ready gate. The merged app calls
+        // this name, so this client does too. The when_ready probe only tells
+        // the UI whether that gate is on the server yet.
+        _ = await serverCapabilities()
         let body = try BackendJSON.encoder.encode(CallIdBody(callId: callId))
-        if caps.gatedLock {
-            do {
-                _ = try await perform(path: "rest/v1/rpc/sq8_lock_spot_when_ready", body: body)
-                return
-            } catch let failure as BackendFailure where isFunctionMissing(failure) {
-                cachedCapabilities?.gatedLock = false
-            }
-        }
         _ = try await perform(path: "rest/v1/rpc/sq8_lock_spot", body: body)
     }
 

@@ -247,7 +247,7 @@ struct SpotServerCapabilities: Equatable {
 }
 
 enum SpotProbe {
-    /// Only a missing function is absent. 405 means it is there and the GET did not run it.
+    /// Only a missing function is absent. A GET runs read-only and fails on FOR UPDATE; that failure means it is there.
     static func functionPresent(status: Int, body: String) -> Bool {
         if status == 404 { return false }
         let text = body.lowercased()

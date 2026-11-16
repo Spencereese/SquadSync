@@ -329,20 +329,19 @@ final class SupabaseSquadService: SquadService {
 
     func leaveAvailable() async -> Bool {
         do {
+            // GET names new_owner so PostgREST resolves sq8_leave_squad(uuid).
+            // The function is volatile, so GET is refused and does not run it.
             _ = try await http.send(
                 path: "rest/v1/rpc/sq8_leave_squad",
                 method: "GET",
+                query: [URLQueryItem(name: "new_owner", value: "null")],
                 feature: .squad
             )
             return true
         } catch let failure as BackendFailure {
             if case .notSetUp = failure { return false }
             if case .rejected(let message) = failure {
-                let text = message.lowercased()
-                if text.contains("pgrst202") || text.contains("could not find the function") {
-                    return false
-                }
-                return true
+                return LeaveProbe.available(status: 400, body: message)
             }
             return false
         } catch {

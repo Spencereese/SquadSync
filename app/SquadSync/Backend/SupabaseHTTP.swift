@@ -19,7 +19,7 @@ struct URLSessionTransport: HTTPTransport {
         if DebugSendFailures.failIfNeeded(request) {
             throw URLError(.networkConnectionLost)
         }
-        try await session.data(for: request)
+        return try await session.data(for: request)
     }
 }
 

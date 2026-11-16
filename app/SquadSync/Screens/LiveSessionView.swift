@@ -1053,6 +1053,9 @@ struct LiveSessionView: View {
                 }
             }
             .onChange(of: pinnedToBottom) { wasPinned, isPinned in
+                if ChatCatchUp.hidesNewMessages(pinned: isPinned) {
+                    showNewMessages = false
+                }
                 if ChatCatchUp.requests(becamePinned: isPinned && !wasPinned, tappedNewMessages: false) {
                     Task { await model.catchUp(pinned: true) }
                 }
@@ -1343,6 +1346,14 @@ struct LiveSessionView: View {
                     .font(.title2.weight(.semibold))
                 Text(model.squad.map { SquadTitle.line(name: $0.name, memberCount: $0.members.count) } ?? "You're not in a squad yet.")
                     .accessibilityIdentifier("squad-count")
+                if !model.status.isEmpty {
+                    Text(model.status)
+                        .font(.footnote)
+                        .foregroundStyle(model.membershipIsError ? SQColor.danger : SQColor.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("membership-status")
+                }
+                joinControls
                 if model.squad?.members.isEmpty != false && model.squad != nil {
                     Text("No members yet.")
                         .accessibilityIdentifier("members-empty")
@@ -1391,21 +1402,6 @@ struct LiveSessionView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollDismissesKeyboard(.interactively)
-        .safeAreaInset(edge: .bottom) {
-            VStack(alignment: .leading, spacing: SQSpace.s) {
-                if !model.status.isEmpty {
-                    Text(model.status)
-                        .font(.footnote)
-                        .foregroundStyle(model.membershipIsError ? SQColor.danger : SQColor.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("membership-status")
-                }
-                joinControls
-            }
-            .padding(SQSpace.l)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(SQColor.canvas)
-        }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .adoptingLaunchDynamicType()

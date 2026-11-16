@@ -369,6 +369,8 @@ final class SquadNameTests: XCTestCase {
         XCTAssertTrue(ChatCatchUp.requests(becamePinned: true, tappedNewMessages: false))
         XCTAssertTrue(ChatCatchUp.requests(becamePinned: false, tappedNewMessages: true))
         XCTAssertFalse(ChatCatchUp.requests(becamePinned: false, tappedNewMessages: false))
+        XCTAssertTrue(ChatCatchUp.hidesNewMessages(pinned: true))
+        XCTAssertFalse(ChatCatchUp.hidesNewMessages(pinned: false))
         let start = Date(timeIntervalSince1970: 1_700_000_000)
         let them = UUID()
         var book = ReceiptBook(reads: [MemberRead(userId: them, lastReadAt: start.addingTimeInterval(10))])
@@ -1008,11 +1010,21 @@ final class InviteFlowTests: XCTestCase {
         let hidden = SupabaseSquadService(config: config, accessToken: "access", transport: absent)
         let available = await hidden.leaveAvailable()
         XCTAssertFalse(available)
+        let probe = try XCTUnwrap(absent.requests.first)
+        XCTAssertEqual(probe.httpMethod, "GET")
+        XCTAssertNotEqual(probe.httpMethod, "POST")
+        XCTAssertTrue(probe.url?.path.hasSuffix("sq8_leave_squad") == true)
+        XCTAssertTrue(probe.url?.query?.contains("new_owner=null") == true)
+        XCTAssertFalse(LeaveProbe.available(status: 404, body: "{\"code\":\"PGRST202\"}"))
+        XCTAssertFalse(LeaveProbe.available(status: 400, body: "Could not find the function public.sq8_leave_squad(new_owner)"))
+        XCTAssertTrue(LeaveProbe.available(status: 405, body: "{\"message\":\"GET is not allowed\"}"))
+        XCTAssertTrue(LeaveProbe.available(status: 200, body: ""))
 
         let present = ScriptedTransport(responses: [(405, Data("{\"message\":\"GET is not allowed\"}".utf8))])
         let shown = SupabaseSquadService(config: config, accessToken: "access", transport: present)
         let ready = await shown.leaveAvailable()
         XCTAssertTrue(ready)
+        XCTAssertEqual(present.requests.first?.httpMethod, "GET")
 
         let squadId = squad
         let successor = member

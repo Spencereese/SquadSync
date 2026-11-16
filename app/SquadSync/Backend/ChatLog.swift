@@ -247,6 +247,19 @@ enum ChatCatchUp {
     static func requests(becamePinned: Bool, tappedNewMessages: Bool) -> Bool {
         becamePinned || tappedNewMessages
     }
+
+    /// The New messages pill is only for a reader who is still scrolled up.
+    static func hidesNewMessages(pinned: Bool) -> Bool { pinned }
+}
+
+enum LeaveProbe {
+    /// Only a missing function hides Leave. Any other response means the RPC is there.
+    static func available(status: Int, body: String) -> Bool {
+        if status == 404 { return false }
+        let text = body.lowercased()
+        if text.contains("pgrst202") || text.contains("could not find the function") { return false }
+        return true
+    }
 }
 
 enum ReadAdvance {

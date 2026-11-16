@@ -133,6 +133,12 @@ final class MockSquadService: SquadService {
 
     func renameAvailable() async -> Bool { true }
 
+    func pushTokenRPCAvailable() async -> Bool { false }
+
+    func registerPushToken(_ token: String) async throws {}
+
+    func unregisterPushToken(_ token: String) async throws {}
+
     func renameSquad(squadId: UUID, name: String?) async throws {
         guard var squad, squad.id == squadId else { throw BackendFailure.rejected(RenameFailure.message("missing")) }
         let trimmed = SquadName.normalized(name ?? "")

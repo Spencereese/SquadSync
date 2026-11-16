@@ -522,6 +522,42 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertGreaterThan(remove.frame.height, 1)
     }
 
+    func testPushOpensTheSignedInSquadChat() {
+        let app = XCUIApplication()
+        let payload = #"{"type":"squad_message","squad_id":"00000000-0000-0000-0000-000000000010","message_id":"00000000-0000-0000-0000-00000000A001"}"#
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-debug-push-open", payload]
+        app.launch()
+
+        let opened = app.descendants(matching: .any)["push-opened-chat"]
+        XCTAssertTrue(opened.waitForExistence(timeout: 15), "The chat from the notification did not open")
+        XCTAssertEqual(opened.label, "Opened this chat.")
+        XCTAssertFalse(app.descendants(matching: .any)["push-notice"].exists)
+    }
+
+    func testPushBeforeASquadSaysYouAreNotInIt() {
+        let app = XCUIApplication()
+        let payload = #"{"type":"squad_message","squad_id":"00000000-0000-0000-0000-000000000010","message_id":"00000000-0000-0000-0000-00000000A001"}"#
+        app.launchArguments = ["-backend", "mock", "-scenario", "noSquad", "-debug-push-open", payload]
+        app.launch()
+
+        let notice = app.descendants(matching: .any)["push-notice"]
+        XCTAssertTrue(notice.waitForExistence(timeout: 15), "A squad you have not joined did not explain itself")
+        XCTAssertEqual(notice.label, "You're not in that squad.")
+        XCTAssertFalse(app.descendants(matching: .any)["push-opened-chat"].exists)
+    }
+
+    func testPushForALeftSquadSaysSo() {
+        let app = XCUIApplication()
+        let payload = #"{"type":"squad","squad_id":"00000000-0000-0000-0000-000000000099"}"#
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-debug-push-open", payload]
+        app.launch()
+
+        let notice = app.descendants(matching: .any)["push-notice"]
+        XCTAssertTrue(notice.waitForExistence(timeout: 15), "A former squad did not explain itself")
+        XCTAssertEqual(notice.label, "You're not in that squad.")
+        XCTAssertFalse(app.descendants(matching: .any)["push-opened-squad"].exists)
+    }
+
     func testOwnerRenamesTheSquad() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "invite"]

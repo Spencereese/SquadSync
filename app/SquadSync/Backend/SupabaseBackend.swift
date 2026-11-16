@@ -369,6 +369,49 @@ final class SupabaseSquadService: SquadService {
         }
     }
 
+    func pushTokenRPCAvailable() async -> Bool {
+        do {
+            _ = try await http.send(
+                path: "rest/v1/rpc/sq8_register_device_token",
+                method: "GET",
+                query: [
+                    URLQueryItem(name: "device_token", value: "probe"),
+                    URLQueryItem(name: "device_platform", value: "ios")
+                ],
+                feature: .squad
+            )
+            return true
+        } catch let failure as BackendFailure {
+            if case .notSetUp = failure { return false }
+            if case .rejected(let message) = failure {
+                return LeaveProbe.available(status: 400, body: message)
+            }
+            return false
+        } catch {
+            return false
+        }
+    }
+
+    func registerPushToken(_ token: String) async throws {
+        let body = try BackendJSON.encoder.encode(DeviceTokenBody(deviceToken: token, devicePlatform: "ios"))
+        _ = try await http.send(
+            path: "rest/v1/rpc/sq8_register_device_token",
+            method: "POST",
+            body: body,
+            feature: .squad
+        )
+    }
+
+    func unregisterPushToken(_ token: String) async throws {
+        let body = try BackendJSON.encoder.encode(DeviceTokenOnly(deviceToken: token))
+        _ = try await http.send(
+            path: "rest/v1/rpc/sq8_unregister_device_token",
+            method: "POST",
+            body: body,
+            feature: .squad
+        )
+    }
+
     func leaveAvailable() async -> Bool {
         do {
             // GET names new_owner so PostgREST resolves sq8_leave_squad(uuid).
@@ -513,6 +556,20 @@ final class SupabaseSquadService: SquadService {
     private struct RenamePayload: Decodable {
         let ok: Bool
         let error: String?
+    }
+
+    private struct DeviceTokenBody: Encodable {
+        let deviceToken: String
+        let devicePlatform: String
+        enum CodingKeys: String, CodingKey {
+            case deviceToken = "device_token"
+            case devicePlatform = "device_platform"
+        }
+    }
+
+    private struct DeviceTokenOnly: Encodable {
+        let deviceToken: String
+        enum CodingKeys: String, CodingKey { case deviceToken = "device_token" }
     }
 }
 

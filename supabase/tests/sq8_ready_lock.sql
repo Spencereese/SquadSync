@@ -102,6 +102,25 @@ from public.sq8_spot_calls as calls
 where calls.squad_id = 'd7100000-0000-4000-8000-000000000001'
   and calls.closed_at is null;
 
+select sq8.clear_leftover_open_spot_rsvps();
+select sq8.clear_leftover_open_spot_rsvps();
+
+do $$
+declare
+  leftover integer;
+begin
+  select count(*) into leftover
+  from public.sq8_spot_rsvps as rsvps
+  join public.sq8_spot_calls as calls
+    on calls.id = rsvps.call_id
+  where calls.squad_id = 'd7100000-0000-4000-8000-000000000001'
+    and calls.closed_at is null
+    and rsvps.user_id = 'd7000000-0000-4000-8000-000000000003';
+  if leftover <> 0 then
+    raise exception 'leftover RSVP for a non-member survived cleanup';
+  end if;
+end $$;
+
 do $$
 declare
   call_id uuid;

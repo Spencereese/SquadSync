@@ -33,6 +33,8 @@ final class LiveSessionModel {
     var leaveAvailable = false
     var transferTo: UUID?
     var spotNote = ""
+    /// How many times the spot card was read. A failed call increments it.
+    var spotLoads = 0
     var spotServer = SpotServerCapabilities.unavailable
     var status = ""
     var reconnecting = false
@@ -361,6 +363,7 @@ final class LiveSessionModel {
 
     func loadSpot(_ session: AuthSession) async {
         guard let squad else { return }
+        spotLoads += 1
         defer { scheduleExpiryRead(session) }
         let service = spotService(session)
         spotServer = await service.serverCapabilities()
@@ -400,8 +403,12 @@ final class LiveSessionModel {
             _ = try await spotService(session).call(squadId: squad.id, game: game, startsAt: Date())
             await loadSpot(session)
             spotNote = "Calling spots: \(game), 8 seats."
+        } catch let problem as SpotProblem {
+            spotNote = problem.message
+            await reloadSpotAfterFailure()
         } catch {
-            spotNote = (error as? SpotProblem)?.message ?? error.localizedDescription
+            report(error)
+            await reloadSpotAfterFailure()
         }
     }
 

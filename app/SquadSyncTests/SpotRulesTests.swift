@@ -375,6 +375,24 @@ final class SpotCallRulesTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testFailedCallSpotsReloadsTheCard() async {
+        let model = LiveSessionModel(
+            config: BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test"),
+            backend: .mock,
+            scenario: .spotCall
+        )
+        model.spotGame = "  "
+        await model.callSpots()
+        XCTAssertEqual(model.spotLoads, 0)
+        let open = model.spot
+        model.spotGame = "Halo"
+        await model.callSpots()
+        XCTAssertEqual(model.spotNote, SpotProblem.alreadyOpen.message)
+        XCTAssertEqual(model.spotLoads, 1)
+        XCTAssertEqual(model.spot?.id, open?.id)
+    }
+
     func testNearlyFullSpotLeavesOneSeat() {
         let card = SpotSeed.nearlyFull(ownerId: owner, squadId: ChatSeed.squadId, now: start)
         XCTAssertEqual(card.filled, 7)

@@ -55,6 +55,9 @@
 -- then the unclosed call, then deletes that person's RSVPs on it.
 -- The lock count also ignores an RSVP whose user is no longer a member, so a
 -- leftover in-row cannot block lock or come back Ready on rejoin.
+-- sq8.clear_leftover_open_spot_rsvps() deletes those rows once, for calls that
+-- already have them. Running it again deletes nothing. Down does not put the
+-- deleted rows back.
 -- Realtime already publishes both tables, so the new columns ride along.
 -- Lock order matches 0013: the squad row, then the call.
 --
@@ -467,6 +470,49 @@ create trigger sq8_squad_members_clear_spot_rsvps
   for each row
   execute function sq8.clear_open_spot_rsvps_on_leave();
 
+-- One-time, and safe to run again. Lock order is the squad, then its unclosed calls.
+create or replace function sq8.clear_leftover_open_spot_rsvps()
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  squad uuid;
+begin
+  for squad in
+    select squads.id
+    from public.sq8_squads as squads
+    order by squads.id
+    for update
+  loop
+    perform 1
+    from public.sq8_spot_calls as calls
+    where calls.squad_id = squad
+      and calls.closed_at is null
+    order by calls.id
+    for update;
+
+    delete from public.sq8_spot_rsvps as rsvps
+    using public.sq8_spot_calls as calls
+    where rsvps.call_id = calls.id
+      and calls.squad_id = squad
+      and calls.closed_at is null
+      and not exists (
+        select 1
+        from public.sq8_squad_members as members
+        where members.squad_id = calls.squad_id
+          and members.user_id = rsvps.user_id
+      );
+  end loop;
+  return;
+end;
+$$;
+
+revoke all on function sq8.clear_leftover_open_spot_rsvps() from public, anon, authenticated;
+
+select sq8.clear_leftover_open_spot_rsvps();
+
 create or replace function public.sq8_set_spot_ready(call_id uuid, ready boolean)
 returns void
 language sql
@@ -509,6 +555,9 @@ grant execute on function public.sq8_read_open_spot(uuid) to authenticated;
 -- sq8.rsvp_spot itself is still the 0013 function. Drop the trigger before the column.
 -- drop trigger if exists sq8_squad_members_clear_spot_rsvps on public.sq8_squad_members;
 -- drop function if exists sq8.clear_open_spot_rsvps_on_leave();
+-- drop function if exists sq8.clear_leftover_open_spot_rsvps();
+-- The one-time delete already removed leftover RSVPs on unclosed calls.
+-- Down does not restore those rows.
 -- drop trigger if exists sq8_spot_rsvps_clear_ready on public.sq8_spot_rsvps;
 -- drop function if exists sq8.clear_spot_ready_on_response_change();
 -- sq8_squad_members_cap, sq8_squad_members_owner, and sq8_squad_members_clear_check_in stay.

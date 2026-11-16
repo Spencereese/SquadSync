@@ -139,6 +139,25 @@ final class AccessibilityUITests: XCTestCase {
         assertListClearsComposer(app)
     }
 
+    func testExpiredSpotStillOffersCallSpots() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallExpired"]
+        app.launch()
+
+        let status = app.descendants(matching: .any)["spot-countdown"]
+        XCTAssertTrue(status.waitForExistence(timeout: 15), "The stale spot was not on screen")
+        XCTAssertEqual(status.label, "Expired")
+        let call = app.buttons["call-spots"]
+        XCTAssertTrue(call.waitForExistence(timeout: 5), "Call spots was hidden by the expired card")
+        XCTAssertEqual(call.label, "Call spots")
+        reveal(call, in: app)
+        call.tap()
+        let replacement = app.descendants(matching: .any)["spot-countdown"]
+        XCTAssertTrue(replacement.waitForExistence(timeout: 5))
+        XCTAssertTrue(replacement.label.contains("left"), "The new call did not replace the stale one, label \(replacement.label)")
+        XCTAssertFalse(app.buttons["call-spots"].exists)
+    }
+
     func testMockSpotCallCallerCanCancel() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine"]

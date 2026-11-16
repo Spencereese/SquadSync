@@ -299,6 +299,8 @@ enum LaunchScenario: String {
     case spotCallMine
     /// Seven of eight seats are taken. Lock waits until every joiner is Ready.
     case spotCallNearlyFull
+    /// The last call is still open, unlocked, and days past its join window.
+    case spotCallExpired
     /// Seven members, so one join fills the squad and the next is rejected.
     case almostFull
 }
@@ -344,7 +346,7 @@ enum Seed {
                 Seat(userId: "jordan", status: .ready),
                 Seat(userId: "quinn", status: .ready)
             ]
-        case .noSquad, .invite, .spotCall, .spotCallMine, .spotCallNearlyFull, .almostFull:
+        case .noSquad, .invite, .spotCall, .spotCallMine, .spotCallNearlyFull, .spotCallExpired, .almostFull:
             seats = []
         }
         return Party(

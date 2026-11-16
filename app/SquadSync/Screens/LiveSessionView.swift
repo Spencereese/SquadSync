@@ -84,7 +84,7 @@ final class LiveSessionModel {
             self.phase = .ready
             self.email = session.email
             self.viewerId = session.userId
-            if scenario == .spotCall || scenario == .spotCallMine || scenario == .spotCallNearlyFull {
+            if scenario == .spotCall || scenario == .spotCallMine || scenario == .spotCallNearlyFull || scenario == .spotCallExpired {
                 let seeded = squads.seedSpotSquad(ownerId: session.userId)
                 self.squad = seeded
                 let card: SpotCall
@@ -92,6 +92,8 @@ final class LiveSessionModel {
                     card = SpotSeed.calledByViewer(ownerId: session.userId, squadId: seeded.id, now: Date())
                 } else if scenario == .spotCallNearlyFull {
                     card = SpotSeed.nearlyFull(ownerId: session.userId, squadId: seeded.id, now: Date())
+                } else if scenario == .spotCallExpired {
+                    card = SpotSeed.staleExpired(ownerId: session.userId, squadId: seeded.id, now: Date())
                 } else {
                     card = SpotSeed.halfFilled(ownerId: session.userId, squadId: seeded.id, now: Date())
                 }
@@ -1070,8 +1072,11 @@ struct LiveSessionView: View {
             VStack(spacing: 0) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
-                        if model.spot == nil {
-                            callSpotForm
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
+                            if SpotCallRules.showsCallForm(model.spot, now: now) {
+                                callSpotForm
+                            }
                         }
                         if let spot = model.spot {
                             spotCard(spot)
@@ -1175,6 +1180,7 @@ struct LiveSessionView: View {
                 .textFieldStyle(.roundedBorder)
             Button("Call spots") { Task { await model.callSpots() } }
                 .disabled(model.spotGate.busy)
+                .accessibilityIdentifier("call-spots")
             Text(model.spotServer.seatTarget
                 ? "The server stores a seat target of 8."
                 : "Seats are capped at 8. This server does not store a smaller target.")

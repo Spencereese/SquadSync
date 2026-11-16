@@ -328,7 +328,7 @@ final class SpotCallRulesTests: XCTestCase {
     func testReadyResetsWhenOutIsFollowedByIn() async throws {
         let squad = ChatSeed.squadId
         let card = SpotSeed.calledByViewer(ownerId: owner, squadId: squad, now: start)
-        let service = MockSpotService(viewerId: owner, ownerId: owner, call: card)
+        let service = MockSpotService(viewerId: owner, ownerId: owner, call: card, now: { start })
         try await service.setReady(callId: card.id, userId: owner, ready: true)
         try await service.rsvp(callId: card.id, response: "in")
         let stillReady = try await service.current(squadId: squad)
@@ -341,6 +341,38 @@ final class SpotCallRulesTests: XCTestCase {
         let response = stored?.seat(for: owner)?.response
         XCTAssertEqual(response, "in")
         XCTAssertEqual(ready, false)
+    }
+
+    func testAnExpiredUnlockedSpotStillOffersAnotherCall() async throws {
+        let now = start
+        let squad = ChatSeed.squadId
+        let stale = SpotSeed.staleExpired(ownerId: owner, squadId: squad, now: now)
+        XCTAssertEqual(stale.status, .open)
+        XCTAssertNil(stale.lockedAt)
+        XCTAssertTrue(SpotCallRules.showsCallForm(stale, now: now))
+        XCTAssertTrue(SpotCallRules.showsCallForm(nil, now: now))
+        XCTAssertFalse(SpotCallRules.showsCallForm(call(), now: now))
+        var stamped = call()
+        stamped.status = .expired
+        stamped.joinUntil = now.addingTimeInterval(60)
+        XCTAssertTrue(SpotCallRules.showsCallForm(stamped, now: now))
+        var locked = call()
+        locked.status = .locked
+        locked.lockedAt = now.addingTimeInterval(-60)
+        locked.joinUntil = now.addingTimeInterval(-120)
+        XCTAssertFalse(SpotCallRules.showsCallForm(locked, now: now))
+        let service = MockSpotService(viewerId: owner, ownerId: owner, call: stale, now: { now })
+        let created = try await service.call(squadId: squad, game: "Halo", startsAt: now)
+        let loaded = try await service.current(squadId: squad)
+        XCTAssertEqual(loaded?.id, created)
+        XCTAssertEqual(loaded?.game, "Halo")
+        XCTAssertFalse(SpotCallRules.showsCallForm(loaded, now: now))
+        do {
+            try await service.call(squadId: squad, game: "Again", startsAt: now)
+            XCTFail("A fresh call should stay up")
+        } catch let problem as SpotProblem {
+            XCTAssertEqual(problem, .alreadyOpen)
+        }
     }
 
     func testNearlyFullSpotLeavesOneSeat() {

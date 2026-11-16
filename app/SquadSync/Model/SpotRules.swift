@@ -200,6 +200,15 @@ enum SpotCallRules {
         return actorId == call.callerId
     }
 
+    /// No card, a server `expired` row, or an unlocked card past `join_until`, can take a new call.
+    /// A lock still blocks it. 0013 ends the old unlocked row when the next call starts.
+    static func showsCallForm(_ call: SpotCall?, now: Date) -> Bool {
+        guard let call else { return true }
+        if call.lockedAt != nil || call.status == .locked { return false }
+        if call.status == .expired { return true }
+        return now >= call.joinUntil
+    }
+
     /// The pinned bar is only for a call people can still act on.
     static func showsPinnedBar(_ call: SpotCall, now: Date) -> Bool {
         call.status == .open && call.closedAt == nil && !showsExpired(call, now: now)
@@ -438,6 +447,24 @@ enum SpotSeed {
             seatTarget: 8,
             serverOwnsLock: true,
             serverOwnsExpiry: false
+        )
+    }
+
+    /// Still `open` on the server, unlocked, and days past `join_until`. The next call replaces it.
+    static func staleExpired(ownerId: UUID, squadId: UUID, now: Date) -> SpotCall {
+        SpotCall(
+            id: callId,
+            squadId: squadId,
+            callerId: alex,
+            game: "Warzone",
+            calledAt: now.addingTimeInterval(-4 * 24 * 60 * 60),
+            joinUntil: now.addingTimeInterval(-4 * 24 * 60 * 60 + 5 * 60),
+            lockedAt: nil,
+            closedAt: nil,
+            status: .open,
+            rsvps: [
+                SpotRsvp(userId: alex, name: "Alex", response: "in", starter: true, ready: false)
+            ]
         )
     }
 

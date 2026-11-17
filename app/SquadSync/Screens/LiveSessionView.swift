@@ -1036,6 +1036,8 @@ struct LiveSessionView: View {
     @State private var confirmSignOut = false
     @State private var confirmEndSpot = false
     @State private var showMembers = false
+    /// Large-text presence roster, floated over the chat instead of pushing it down.
+    @State private var rosterOpen = false
     @State private var confirmLeave = false
     @ScaledMetric(relativeTo: .body) private var composerLine: CGFloat = 22
     @Environment(\.scenePhase) private var scenePhase
@@ -1211,8 +1213,26 @@ struct LiveSessionView: View {
     /// Chat-first home: header, pinned spot bar, then the chat fills the rest.
     /// Profile, members, rename, invite, and leave live in the squad panel.
     private var ready: some View {
-        VStack(alignment: .leading, spacing: SQSpace.s) {
+        VStack(alignment: .leading, spacing: rowGap) {
             homeHeader
+            readyBody
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .overlay(alignment: .top) {
+                    if showsRoster {
+                        presenceRoster
+                    }
+                }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Accessibility sizes trim the gaps between header, status, bar, and chat.
+    private var rowGap: CGFloat {
+        typeSize.isAccessibilitySize ? SQSpace.xs : SQSpace.s
+    }
+
+    private var readyBody: some View {
+        VStack(alignment: .leading, spacing: rowGap) {
             if model.squad != nil, !model.status.isEmpty {
                 Text(model.status)
                     .font(SQType.caption)
@@ -1278,9 +1298,32 @@ struct LiveSessionView: View {
                 linkNote: model.squad == nil ? nil : liveNotice,
                 onOpenPanel: { showMembers = true },
                 onAccount: { confirmSignOut = true },
+                onVoice: { Task { await model.toggleVoice() } },
+                rosterOpen: $rosterOpen
+            )
+        }
+    }
+
+    private var showsRoster: Bool {
+        rosterOpen && typeSize.isAccessibilitySize && !composerFocused && model.squad != nil
+    }
+
+    /// Floats under the header over the chat. The chat keeps its full height, and
+    /// the roster never takes more than about 40% of an AX5 screen.
+    private var presenceRoster: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
+            SquadPresenceRoster(
+                entries: model.presenceEntries(now: now),
+                voice: model.voicePill,
+                onOpenPanel: {
+                    rosterOpen = false
+                    showMembers = true
+                },
                 onVoice: { Task { await model.toggleVoice() } }
             )
         }
+        .frame(maxHeight: 360, alignment: .top)
     }
 
     private var notes: some View {
@@ -1401,8 +1444,8 @@ struct LiveSessionView: View {
                 }
                 composer
             }
-            .padding(.top, SQSpace.m)
-            .padding(.bottom, SQSpace.s)
+            .padding(.top, typeSize.isAccessibilitySize ? SQSpace.s : SQSpace.m)
+            .padding(.bottom, typeSize.isAccessibilitySize ? SQSpace.xs : SQSpace.s)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(SQColor.surface0)
@@ -1625,7 +1668,7 @@ struct LiveSessionView: View {
 
     /// Pinned spot bar. One row when it fits: game, countdown, and seats beside the
     /// action. At large text it drops the game (the card and VoiceOver still name it)
-    /// and then stacks the action under one countdown line, so the chat keeps the screen.
+    /// and caps its text at AX1, so it stays one thin row and the chat keeps the screen.
     private func activeCallBar(_ spot: SpotCall, now: Date) -> some View {
         let viewer = model.viewerId ?? model.profile?.id
         let action = viewer.flatMap {
@@ -1662,8 +1705,13 @@ struct LiveSessionView: View {
                 if let action { barButton(action) }
             }
         }
+        // The bar is a thin pinned strip: its text stops growing at AX1 so the
+        // countdown, seats, and action stay on one row at AX5 and the chat keeps
+        // its room. The card in the chat shows the same call at full size, and
+        // the bar's VoiceOver label still reads the whole call.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
         .padding(.horizontal, SQSpace.m)
-        .padding(.vertical, SQSpace.s)
+        .padding(.vertical, typeSize.isAccessibilitySize ? SQSpace.xs : SQSpace.s)
         .frame(maxWidth: .infinity, alignment: .leading)
         .sqSurface(.card, radius: SQRadius.m)
         .accessibilityElement(children: .contain)

@@ -7,12 +7,12 @@ import SwiftUI
 ///
 /// Default sizes: two rows, name and actions over a horizontal presence strip.
 /// Accessibility sizes: always one row (name plus capped icon buttons). Presence
-/// folds behind `presence-toggle` and opens as a vertical roster, so the chat
-/// keeps most of the screen.
+/// folds behind `presence-toggle`; the session screen floats `SquadPresenceRoster`
+/// over the top of the chat, so opening it never pushes the chat down.
 struct SquadHomeHeader: View {
     let squad: SquadRecord?
     let entries: [SquadPresenceEntry]
-    /// True while the composer is focused. The large-text roster closes so the
+    /// True while the composer is focused at large text. The strip hides so the
     /// pinned spot bar and the composer keep their room above the keyboard.
     let compact: Bool
     let voice: VoicePillState
@@ -20,9 +20,10 @@ struct SquadHomeHeader: View {
     let onOpenPanel: () -> Void
     let onAccount: () -> Void
     let onVoice: () -> Void
+    /// Large-text roster state. The roster itself is drawn by the session screen.
+    @Binding var rosterOpen: Bool
 
     @Environment(\.dynamicTypeSize) private var typeSize
-    @State private var rosterOpen = false
 
     private var large: Bool { typeSize.isAccessibilitySize }
 
@@ -32,14 +33,8 @@ struct SquadHomeHeader: View {
         } actions: {
             actionButtons
         } accessory: {
-            if squad != nil {
-                if large {
-                    if rosterOpen && !compact {
-                        largeRoster
-                    }
-                } else if !compact {
-                    presenceStrip
-                }
+            if squad != nil && !large && !compact {
+                presenceStrip
             }
         }
     }
@@ -147,20 +142,7 @@ struct SquadHomeHeader: View {
     }
 
     private var voicePill: some View {
-        Button {
-            SQHaptics.play(.tap)
-            onVoice()
-        } label: {
-            PresencePill(
-                text: voice.title,
-                systemImage: voice.joined ? "waveform" : "mic.slash",
-                tint: voice.joined ? SQColor.signal : SQColor.subtle,
-                filled: voice.joined
-            )
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(voice.spoken)
-        .accessibilityIdentifier("voice-room-pill")
+        VoiceRoomPillButton(voice: voice, onVoice: onVoice)
     }
 
     // MARK: Default-size strip
@@ -207,11 +189,11 @@ struct SquadHomeHeader: View {
                     .foregroundStyle(SQColor.ink)
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
-                if typeSize <= .xLarge, let caption = caption(entry) {
+                if typeSize <= .xLarge, let caption = presenceCaption(entry) {
                     Text(caption)
                         .font(SQType.micro)
                         .italic(entry.status == .unknown || entry.status == .you)
-                        .foregroundStyle(captionColor(entry))
+                        .foregroundStyle(presenceCaptionColor(entry))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
                 }
@@ -224,13 +206,82 @@ struct SquadHomeHeader: View {
         .accessibilityHint("Opens the squad panel")
         .accessibilityIdentifier("presence-\(entry.name)")
     }
+}
 
-    // MARK: Large-text roster
+// MARK: Captions
+
+/// Seated status wins; otherwise the game; nothing at all beats a guess.
+private func presenceCaption(_ entry: SquadPresenceEntry) -> String? {
+    switch entry.status {
+    case .locked, .ready, .inSpot:
+        return entry.status.shortLabel
+    case .you, .unknown:
+        return entry.gameCaption
+    }
+}
+
+private func presenceCaptionColor(_ entry: SquadPresenceEntry) -> Color {
+    switch entry.status {
+    case .locked, .ready, .inSpot: SQColor.signal
+    case .you, .unknown: SQColor.subtle
+    }
+}
+
+/// Voice-room pill. Stays a mock: tapping only flips local state.
+struct VoiceRoomPillButton: View {
+    let voice: VoicePillState
+    let onVoice: () -> Void
+
+    var body: some View {
+        Button {
+            SQHaptics.play(.tap)
+            onVoice()
+        } label: {
+            PresencePill(
+                text: voice.title,
+                systemImage: voice.joined ? "waveform" : "mic.slash",
+                tint: voice.joined ? SQColor.signal : SQColor.subtle,
+                filled: voice.joined
+            )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(voice.spoken)
+        .accessibilityIdentifier("voice-room-pill")
+    }
+}
+
+/// Large-text presence roster. The session screen floats it over the top of the
+/// chat (an overlay, not a row in the stack), so the chat keeps its height while
+/// it is open. Short squads show every row; long ones scroll inside the panel.
+struct SquadPresenceRoster: View {
+    let entries: [SquadPresenceEntry]
+    let voice: VoicePillState
+    let onOpenPanel: () -> Void
+    let onVoice: () -> Void
+
+    var body: some View {
+        ViewThatFits(in: .vertical) {
+            rows
+            ScrollView {
+                rows
+            }
+            .scrollIndicators(.visible)
+        }
+        .background(SQColor.surface1, in: RoundedRectangle(cornerRadius: SQRadius.l, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: SQRadius.l, style: .continuous)
+                .stroke(SQColor.hairline, lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.5), radius: 16, y: 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Squad presence")
+        .accessibilityIdentifier("presence-strip")
+    }
 
     /// One row per member: avatar, name, and status or game wrapping under it.
-    private var largeRoster: some View {
+    private var rows: some View {
         VStack(alignment: .leading, spacing: SQSpace.s) {
-            voicePill
+            VoiceRoomPillButton(voice: voice, onVoice: onVoice)
             ForEach(entries) { entry in
                 Button {
                     SQHaptics.play(.tap)
@@ -243,10 +294,10 @@ struct SquadHomeHeader: View {
                                 .font(SQType.detail.weight(.semibold))
                                 .foregroundStyle(SQColor.ink)
                                 .fixedSize(horizontal: false, vertical: true)
-                            if let caption = caption(entry) {
+                            if let caption = presenceCaption(entry) {
                                 Text(caption)
                                     .font(SQType.caption)
-                                    .foregroundStyle(captionColor(entry))
+                                    .foregroundStyle(presenceCaptionColor(entry))
                                     .fixedSize(horizontal: false, vertical: true)
                             }
                         }
@@ -268,27 +319,6 @@ struct SquadHomeHeader: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Squad presence")
-        .accessibilityIdentifier("presence-strip")
-    }
-
-    // MARK: Captions
-
-    /// Seated status wins; otherwise the game; nothing at all beats a guess.
-    private func caption(_ entry: SquadPresenceEntry) -> String? {
-        switch entry.status {
-        case .locked, .ready, .inSpot:
-            return entry.status.shortLabel
-        case .you, .unknown:
-            return entry.gameCaption
-        }
-    }
-
-    private func captionColor(_ entry: SquadPresenceEntry) -> Color {
-        switch entry.status {
-        case .locked, .ready, .inSpot: SQColor.signal
-        case .you, .unknown: SQColor.subtle
-        }
+        .padding(SQSpace.m)
     }
 }

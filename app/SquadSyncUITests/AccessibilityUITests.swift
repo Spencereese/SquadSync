@@ -787,6 +787,47 @@ final class AccessibilityUITests: XCTestCase {
         let list = app.scrollViews["message-list"]
         XCTAssertTrue(list.exists)
         XCTAssertGreaterThan(list.frame.height, window.height * 0.4, "The chat keeps less than 40% of the screen at large text, list \(list.frame)")
+        let closedHeight = list.frame.height
+
+        let toggle = app.buttons["presence-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5), "Presence toggle was not in the large-text header")
+        toggle.tap()
+        let alex = app.buttons["presence-Alex"]
+        XCTAssertTrue(alex.waitForExistence(timeout: 5), "Alex was not in the presence roster during the spot")
+        XCTAssertTrue(alex.isHittable, "The roster row was covered during the spot, frame \(alex.frame)")
+        XCTAssertGreaterThan(list.frame.height, window.height * 0.4, "Opening presence during a spot squeezed the chat, list \(list.frame)")
+        XCTAssertEqual(list.frame.height, closedHeight, accuracy: 1, "The roster pushed the chat down instead of floating over it")
+        XCTAssertTrue(app.buttons["active-call-cancel"].exists || app.buttons["active-call-join"].exists, "The pinned bar's action went missing with the roster open")
+        XCTAssertTrue(app.textFields["Message"].isHittable, "The roster covered the composer")
+        toggle.tap()
+        XCTAssertTrue(alex.waitForNonExistence(timeout: 5), "The roster did not fold again")
+    }
+
+    func testCardCancelSitsInsideTheChatAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine", "-uitest-largeText"]
+        app.launch()
+
+        let cancel = app.buttons["spot-cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 15), "The card's Cancel was not on the caller's card at large text")
+        let list = app.scrollViews["message-list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let window = app.windows.firstMatch.frame
+        XCTAssertGreaterThan(list.frame.height, window.height * 0.4, "The chat keeps less than 40% of the screen with the spot open, list \(list.frame)")
+        reveal(cancel, in: app)
+        XCTAssertTrue(cancel.isHittable, "The card's Cancel was not reachable at the largest text size")
+        let frame = cancel.frame
+        let visible = list.frame
+        XCTAssertGreaterThanOrEqual(frame.minY, visible.minY - 1, "The card's Cancel runs above the chat list. cancel \(frame) list \(visible)")
+        XCTAssertLessThanOrEqual(frame.maxY, visible.maxY + 1, "The card's Cancel runs below the chat list. cancel \(frame) list \(visible)")
+        let composer = app.descendants(matching: .any)["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        XCTAssertLessThanOrEqual(frame.maxY + 8, composer.frame.minY, "The card's Cancel is under the composer")
+        XCTAssertLessThanOrEqual(frame.maxX, window.maxX + 1)
+        cancel.tap()
+        let status = app.descendants(matching: .any)["spot-countdown"]
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "Cancelled", "Cancelling from the card did not cancel the call")
     }
 
     func testPresenceDecorationsAreNotReadAloud() {

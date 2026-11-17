@@ -1,8 +1,17 @@
 # Migrations
 
+## Status on project `sfckxrnoiwetmzdycqaa` (updated Nov 17, 2026)
+
+This is the current list as reported to this repo. This checkout did not query the project to confirm it.
+
+- **Live:** 0001–0011, 0013, 0014, 0018–0021.
+- **Not applied (proposed files only):** 0012 (device tokens), 0015 (Steam links), 0016 (scheduled sessions), 0017 (side threads), 0022 (check-in game and console), 0023 (profile games list).
+
+Nothing here is applied by the app or by CI. Every not-applied file needs Spencer's yes before it runs. Older notes below that say "not applied" for files now on the live list are kept for history and are out of date.
+
 Files 1–4 are the slice 2 schema. Spencer reported on Nov 8 that they are already applied on project `sfckxrnoiwetmzdycqaa`, with forced row level security, and that the old app tables were left in place. This checkout did not connect to that project and did not re-apply them. Running them again would fail on objects that already exist.
 
-File 5 is proposed only. It is not applied. Do not run it until the check below is empty, because the unique index will fail if two squads already share an owner:
+File 5 is now live (see the status above). It originally said not to run it until the check below is empty, because the unique index will fail if two squads already share an owner:
 
 ```sql
 select owner_id
@@ -23,18 +32,25 @@ Run these in order, in one project, as the migration role:
 2. `20261103_0002_squad_members.sql`
 3. `20261103_0003_messages.sql`
 4. `20261103_0004_read_state.sql`
-5. `20261108_0005_own_profile_and_squad_guard.sql` — **not applied**. Spencer has to approve this one before it runs. It adds an insert of only your own profile, one squad per owner, and a lock so two overlapping joins cannot pass eight members.
-6. `20261108_0006_check_ins.sql` — **not applied**. This is the availability board. It can be applied after files 1 and 2 whether or not file 5 is applied. It adds `sq8_check_ins` only.
+5. `20261108_0005_own_profile_and_squad_guard.sql` — **live** (was "not applied" when written). Spencer has to approve this one before it runs. It adds an insert of only your own profile, one squad per owner, and a lock so two overlapping joins cannot pass eight members.
+6. `20261108_0006_check_ins.sql` — **live** (was "not applied" when written). This is the availability board. It can be applied after files 1 and 2 whether or not file 5 is applied. It adds `sq8_check_ins` only.
 7. `20261109_0007_squad_owner_select.sql` — idempotent owner select on `sq8_squads`. A reported live copy already exists; this checkout did not query that project. Running the file again does not replace an existing policy of the same name.
-8. `20261109_0008_invites.sql` — **not applied**. Invite codes and the join function. Apply only after 1, 2, 5, and 7. Before applying, `select public.sq8_join_with_code('x');` should fail because the function is absent, and `select owner_id from public.sq8_squads group by owner_id having count(*) > 1;` should return no rows.
-9. `20261109_0009_realtime_roster.sql` — **not applied**. Adds `sq8_squad_members` and `sq8_check_ins` to `supabase_realtime`. `sq8_messages` is already there from file 3. Realtime still uses the select policies, so a non-member does not receive the rows. The app reloads on resume and pull-to-refresh even when this publication is missing.
-10. `20261109_0010_revoke_anon_invite_rpcs.sql` — **not applied**. Needs Spencer's approval. Revokes `EXECUTE` from `anon` and `public` on `public.sq8_join_with_code`, `public.sq8_create_invite`, and the `sq8` implementations. `authenticated` keeps the two public wrappers. Running it again is safe.
+8. `20261109_0008_invites.sql` — **live** (was "not applied" when written). Invite codes and the join function. Apply only after 1, 2, 5, and 7. Before applying, `select public.sq8_join_with_code('x');` should fail because the function is absent, and `select owner_id from public.sq8_squads group by owner_id having count(*) > 1;` should return no rows.
+9. `20261109_0009_realtime_roster.sql` — **live** (was "not applied" when written). Adds `sq8_squad_members` and `sq8_check_ins` to `supabase_realtime`. `sq8_messages` is already there from file 3. Realtime still uses the select policies, so a non-member does not receive the rows. The app reloads on resume and pull-to-refresh even when this publication is missing.
+10. `20261109_0010_revoke_anon_invite_rpcs.sql` — **live** (was "not applied" when written). Needs Spencer's approval. Revokes `EXECUTE` from `anon` and `public` on `public.sq8_join_with_code`, `public.sq8_create_invite`, and the `sq8` implementations. `authenticated` keeps the two public wrappers. Running it again is safe.
 11. `20261109_0011_invite_capacity_by_members.sql` — live per Grok Bot report (~4:13 AM CT Nov 9, matches `33a26ab`). This checkout did not query the project. Apply after file 8 if a project does not have it yet. Files 9 and 10 may already be applied or not; this file does not depend on either. Preflight: `sq8.join_with_code(text)` and `public.sq8_invites` exist. Running it again is safe. It does not grant `anon` or `public`.
 12. `20261110_0012_device_tokens.sql` — **not applied**. Device tokens for the signed-in person, and `sq8.message_push_targets` for the service role only. Apply after files 1 and 2. Running it again is safe. It does not grant `anon` or `public`, and authenticated cannot list other people's tokens. The iOS app calls `sq8_register_device_token` and `sq8_unregister_device_token` on this table. A new token unregisters the previous one. Do not add a second token table. The edge function in `supabase/functions/sq8-notify-message` is not deployed. Secrets and console steps are in that folder's README.
-13. `20261110_0013_spot_calls.sql` — **not applied**. A squad spot call, RSVPs, a lock, cancel, and end. The join window is five minutes on the database clock. A starter is available now, or available later from `until_at` through the next 60 minutes. The caller can cancel before lock. The caller or the owner can end a locked call. A locked call older than 6 hours ends when the next call is made. Apply after files 1, 2, and 6. Running it again is safe. It does not grant `anon` or `public`. `authenticated` gets the public wrappers only. Lock order is the squad row, then the call. `sq8_spot_calls` and `sq8_spot_rsvps` are added to `supabase_realtime` when that publication exists or is created here.
-14. `20261110_0014_chat_messenger.sql` — **not applied**. Reactions, a shared read cursor, and `reply_to_id` on `sq8_messages`. Typing is not a table. Apply after files 1, 2, and 3: file 3 creates the messages table this file alters, and files 1 and 2 create the profiles and squads it references. Running it again is safe. It does not grant `anon` or `public`. Members of the squad can read. A person writes only their own reaction and their own cursor. Both tables are added to `supabase_realtime` when that publication is missing them.
+13. `20261110_0013_spot_calls.sql` — **live** (was "not applied" when written). A squad spot call, RSVPs, a lock, cancel, and end. The join window is five minutes on the database clock. A starter is available now, or available later from `until_at` through the next 60 minutes. The caller can cancel before lock. The caller or the owner can end a locked call. A locked call older than 6 hours ends when the next call is made. Apply after files 1, 2, and 6. Running it again is safe. It does not grant `anon` or `public`. `authenticated` gets the public wrappers only. Lock order is the squad row, then the call. `sq8_spot_calls` and `sq8_spot_rsvps` are added to `supabase_realtime` when that publication exists or is created here.
+14. `20261110_0014_chat_messenger.sql` — **live** (was "not applied" when written). Reactions, a shared read cursor, and `reply_to_id` on `sq8_messages`. Typing is not a table. Apply after files 1, 2, and 3: file 3 creates the messages table this file alters, and files 1 and 2 create the profiles and squads it references. Running it again is safe. It does not grant `anon` or `public`. Members of the squad can read. A person writes only their own reaction and their own cursor. Both tables are added to `supabase_realtime` when that publication is missing them.
 15. `20261110_0015_steam_links.sql` — **not applied**. One SteamID64 per person. The person can read and write only their own row. Squad mates cannot read the id. The presence function reads it with the service role. Apply after files 1 and 2. Running it again is safe. It does not grant `anon` or `public`.
 16. `20261110_0016_sessions.sql` — **not applied**. A scheduled session and self-only RSVPs. Members can read. The creator or the owner can update. At most eight RSVPs can be `in`. Apply after files 1 and 2. Running it again is safe. It does not grant `anon` or `public`. Both tables are added to `supabase_realtime` when that publication is missing them.
+17. `20261113_0017_side_threads.sql` — **not applied**. Side groups and DMs inside a squad. Needs Spencer's yes.
+18. `20261113_0018_squad_name.sql` — **live**.
+19. `20261115_0019_self_leave.sql` — **live**.
+20. `20261116_0020_ready_lock.sql` — **live**.
+21. `20261116_0021_rename_squad.sql` — **live**.
+22. `20261117_0022_check_in_details.sql` — **not applied**. Optional game and console on a check-in. The app works without it.
+23. `20261117_0023_profile_games.sql` — **not applied**. The profile games list. Until it's applied, the app keeps the list on the phone and says so.
 
 ## What each file does
 

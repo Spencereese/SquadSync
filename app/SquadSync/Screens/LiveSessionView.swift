@@ -45,8 +45,11 @@ final class LiveSessionModel {
         LiveShellCopy.footer
     ]
     var busy = false
+    /// Voice is a mock on the home header. The pill drives the in-memory room only.
+    var voicePill = VoicePillState()
 
     private let config: BackendConfig
+    private let voiceRoom: VoiceRoomService = InMemoryVoiceRoomService()
     private let sessionStore: SessionStoring
     private var auth: AuthService
     private let mockProfiles: ProfileService?
@@ -579,7 +582,34 @@ final class LiveSessionModel {
         await deliver(message, session: session)
     }
 
+    /// Presence strip rows for the home header. Only real signals: spot seats and the viewer.
+    func presenceEntries(now: Date) -> [SquadPresenceEntry] {
+        guard let squad else { return [] }
+        return SquadPresence.entries(
+            members: squad.members,
+            ownerId: squad.ownerId,
+            viewerId: viewerId ?? profile?.id,
+            spot: spot,
+            now: now
+        )
+    }
+
+    /// Joins or leaves the in-memory voice room. Nothing goes over the network.
+    func toggleVoice() async {
+        let user = (viewerId ?? profile?.id)?.uuidString ?? "viewer"
+        if voicePill.joined {
+            await voiceRoom.leave(userId: user)
+        } else {
+            voicePill.connection = .connecting
+            await voiceRoom.join(userId: user)
+        }
+        voicePill.joined = voiceRoom.participants.contains { $0.id == user }
+        voicePill.count = voiceRoom.participants.count
+        voicePill.connection = voiceRoom.connection
+    }
+
     func signOut() async {
+        if voicePill.joined { await toggleVoice() }
         realtime?.stop()
         realtime = nil
         poll?.cancel()
@@ -996,6 +1026,8 @@ struct LiveSessionView: View {
     @State private var confirmLeave = false
     @ScaledMetric(relativeTo: .body) private var composerLine: CGFloat = 22
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @FocusState private var composerFocused: Bool
 
     init(config: BackendConfig = .fromBundle(), backend: BackendMode = .live, scenario: LaunchScenario = .seated) {
         _model = State(initialValue: LiveSessionModel(config: config, backend: backend, scenario: scenario))
@@ -1003,59 +1035,34 @@ struct LiveSessionView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if model.phase == .ready {
-                    ready
-                } else {
-                    signIn
+            ZStack {
+                SQColor.surface0
+                    .ignoresSafeArea()
+                Group {
+                    if model.phase == .ready {
+                        ready
+                    } else {
+                        signIn
+                    }
                 }
-            }
-            .padding(SQSpace.l)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if pushToastText != nil {
-                    pushToast
-                        .padding(.top, SQSpace.s)
-                        .padding(.bottom, SQSpace.xs)
+                .padding(.horizontal, model.phase == .ready ? SQSpace.m : SQSpace.l)
+                .padding(.vertical, model.phase == .ready ? SQSpace.s : SQSpace.l)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if pushToastText != nil {
+                        pushToast
+                            .padding(.top, SQSpace.s)
+                            .padding(.bottom, SQSpace.xs)
+                    }
                 }
             }
             .navigationTitle(squadTitle ?? "SquadSync")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                if model.phase == .ready {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            showMembers = true
-                        } label: {
-                            Image(systemName: "person.3")
-                        }
-                        .accessibilityLabel("Members")
-                        .accessibilityHint("Opens invite, join, and remove")
-                        .accessibilityIdentifier("members")
-                    }
-                }
-                if let squadTitle {
-                    ToolbarItem(placement: .principal) {
-                        Text(squadTitle)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.65)
-                            .accessibilityIdentifier("squad-title")
-                            .accessibilityLabel(squadTitle)
-                            .accessibilityAddTraits(.isHeader)
-                    }
-                }
-                if model.phase == .ready {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            confirmSignOut = true
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
-                        }
-                        .accessibilityLabel("Account")
-                    }
-                }
-            }
+            // Chat-first: once signed in, the squad header replaces the navigation bar.
+            // Sign-in keeps the system bar and its "SquadSync" title.
+            .toolbar(model.phase == .ready ? .hidden : .visible, for: .navigationBar)
         }
+        .preferredColorScheme(.dark)
         .sheet(isPresented: $confirmSignOut) {
             signOutSheet
                 .adoptingLaunchDynamicType()
@@ -1188,8 +1195,20 @@ struct LiveSessionView: View {
         return SquadTitle.line(name: squad.name, memberCount: squad.members.count)
     }
 
+    /// Chat-first home: header, pinned spot bar, then the chat fills the rest.
+    /// Profile, members, rename, invite, and leave live in the squad panel.
     private var ready: some View {
-        VStack(alignment: .leading, spacing: SQSpace.m) {
+        VStack(alignment: .leading, spacing: SQSpace.s) {
+            homeHeader
+            if model.squad != nil, !model.status.isEmpty {
+                Text(model.status)
+                    .font(SQType.caption)
+                    .foregroundStyle(SQColor.subtle)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, SQSpace.xs)
+                    .accessibilityIdentifier("home-status")
+            }
             if let spot = model.spot {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
@@ -1198,51 +1217,57 @@ struct LiveSessionView: View {
                     }
                 }
             }
-            ScrollView {
-                VStack(alignment: .leading, spacing: SQSpace.m) {
-                    if model.profile != nil {
-                        TextField("Display name", text: Binding(get: { model.displayName }, set: { model.displayName = $0 }))
-                            .textFieldStyle(.roundedBorder)
-                        TextField("Default game", text: Binding(get: { model.defaultGame }, set: { model.defaultGame = $0 }))
-                            .textFieldStyle(.roundedBorder)
-                        Button("Save profile") { Task { await model.saveProfile() } }
-                            .disabled(model.busy)
-                    }
-                    if model.squad != nil {
-                        if let notice = liveNotice {
-                            Text(notice).font(.caption).foregroundStyle(SQColor.muted)
-                        }
-                    } else if model.reconnecting {
-                        Text("Reconnecting…")
-                            .accessibilityIdentifier("reconnecting")
-                    } else {
-                        joinControls
-                        Text("You're not in a squad yet.")
-                        TextField("Squad name", text: Binding(get: { model.squadName }, set: { model.squadName = $0 }))
-                            .textFieldStyle(.roundedBorder)
-                            .accessibilityIdentifier("squad-name")
-                        if !model.squadNameError.isEmpty {
-                            Text(model.squadNameError)
-                                .font(.footnote)
-                                .foregroundStyle(SQColor.danger)
-                        }
-                        Button("Create squad") { Task { await model.createSquad() } }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(model.busy)
-                    }
-                    if !model.status.isEmpty {
-                        Text(model.status).font(.footnote).foregroundStyle(SQColor.muted)
-                    }
-                    notes
-                }
-            }
             if model.squad != nil {
                 chatList
-                    .frame(minHeight: 180, maxHeight: .infinity, alignment: .top)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .layoutPriority(1)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: SQSpace.m) {
+                        if model.reconnecting {
+                            Text("Reconnecting…")
+                                .accessibilityIdentifier("reconnecting")
+                        } else {
+                            joinControls
+                            Text("You're not in a squad yet.")
+                            TextField("Squad name", text: Binding(get: { model.squadName }, set: { model.squadName = $0 }))
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityIdentifier("squad-name")
+                            if !model.squadNameError.isEmpty {
+                                Text(model.squadNameError)
+                                    .font(.footnote)
+                                    .foregroundStyle(SQColor.danger)
+                            }
+                            Button("Create squad") { Task { await model.createSquad() } }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(model.busy)
+                        }
+                        if !model.status.isEmpty {
+                            Text(model.status).font(.footnote).foregroundStyle(SQColor.muted)
+                        }
+                        notes
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var homeHeader: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
+            SquadHomeHeader(
+                squad: model.squad,
+                entries: model.presenceEntries(now: now),
+                compact: typeSize.isAccessibilitySize && composerFocused,
+                voice: model.voicePill,
+                linkNote: model.squad == nil ? nil : liveNotice,
+                onOpenPanel: { showMembers = true },
+                onAccount: { confirmSignOut = true },
+                onVoice: { Task { await model.toggleVoice() } }
+            )
+        }
     }
 
     private var notes: some View {
@@ -1367,7 +1392,7 @@ struct LiveSessionView: View {
             .padding(.bottom, SQSpace.s)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(SQColor.canvas)
+        .background(SQColor.surface0)
     }
 
     private func scrollChatToBottom(_ proxy: ScrollViewProxy) {
@@ -1649,8 +1674,12 @@ struct LiveSessionView: View {
         HStack(alignment: .center) {
             TextField("Message", text: Binding(get: { model.draft }, set: { model.draft = $0 }))
                 .textFieldStyle(.roundedBorder)
-            Button("Send") { Task { await model.send() } }
-                .accessibilityIdentifier("send-message")
+                .focused($composerFocused)
+            Button("Send") {
+                SQHaptics.play(.tap)
+                Task { await model.send() }
+            }
+            .accessibilityIdentifier("send-message")
         }
         .frame(maxHeight: composerLine * 3)
     }
@@ -1700,6 +1729,12 @@ struct LiveSessionView: View {
                             .foregroundStyle(SQColor.muted)
                             .accessibilityIdentifier("invite-empty")
                     }
+                }
+                profileSection
+                if !model.notes.isEmpty {
+                    Divider()
+                    notes
+                        .accessibilityIdentifier("panel-notes")
                 }
             }
             .padding(SQSpace.l)
@@ -1825,6 +1860,29 @@ struct LiveSessionView: View {
                         .disabled(model.busy)
                         .accessibilityIdentifier("cancel-leave")
                 }
+            }
+        }
+    }
+
+    /// Profile moved off the home screen into the squad panel.
+    @ViewBuilder
+    private var profileSection: some View {
+        if model.profile != nil {
+            VStack(alignment: .leading, spacing: SQSpace.s) {
+                Divider()
+                Text("Your profile")
+                    .font(SQType.section)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("profile-heading")
+                TextField("Display name", text: Binding(get: { model.displayName }, set: { model.displayName = $0 }))
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("profile-name")
+                TextField("Default game", text: Binding(get: { model.defaultGame }, set: { model.defaultGame = $0 }))
+                    .textFieldStyle(.roundedBorder)
+                    .accessibilityIdentifier("profile-game")
+                Button("Save profile") { Task { await model.saveProfile() } }
+                    .disabled(model.busy)
+                    .accessibilityIdentifier("save-profile")
             }
         }
     }

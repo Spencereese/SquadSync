@@ -808,4 +808,27 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(me.exists)
         XCTAssertTrue(me.label.hasPrefix("You"), "The viewer's avatar does not identify you: \(me.label)")
     }
+
+    func testSquadPanelGroupsSectionsAndKeepsIdentifiers() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
+        app.launch()
+
+        let members = app.buttons["members"]
+        XCTAssertTrue(members.waitForExistence(timeout: 15))
+        members.tap()
+        XCTAssertTrue(app.staticTexts["Members"].waitForExistence(timeout: 5), "The panel title was missing")
+        for heading in ["Join with a code", "In this squad", "Rename", "Invite", "Your profile"] {
+            XCTAssertTrue(app.staticTexts[heading].waitForExistence(timeout: 5), "Panel section \(heading) was missing")
+        }
+        XCTAssertTrue(app.buttons["leave-squad"].waitForExistence(timeout: 5), "Leave did not appear after the probe")
+        XCTAssertTrue(app.textFields["rename-field"].waitForExistence(timeout: 5), "Rename did not appear after the probe")
+        for identifier in ["squad-count", "join-code", "join-squad", "remove-Riley", "leave-squad", "rename-field", "rename-squad", "create-invite", "invite-empty", "profile-name", "profile-game", "save-profile"] {
+            XCTAssertEqual(
+                app.descendants(matching: .any).matching(identifier: identifier).count,
+                1,
+                "\(identifier) is missing or duplicated in the restyled panel"
+            )
+        }
+    }
 }

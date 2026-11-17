@@ -1733,10 +1733,16 @@ struct LiveSessionView: View {
         let isOwner = model.squad?.ownerId == ownerId
         return ScrollView {
             VStack(alignment: .leading, spacing: SQSpace.m) {
-                Text("Members")
-                    .font(.title2.weight(.semibold))
-                Text(model.squad.map { SquadTitle.line(name: $0.name, memberCount: $0.members.count) } ?? "You're not in a squad yet.")
-                    .accessibilityIdentifier("squad-count")
+                VStack(alignment: .leading, spacing: SQSpace.xs) {
+                    Text("Members")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(SQColor.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(model.squad.map { SquadTitle.line(name: $0.name, memberCount: $0.members.count) } ?? "You're not in a squad yet.")
+                        .font(SQType.detail)
+                        .foregroundStyle(SQColor.subtle)
+                        .accessibilityIdentifier("squad-count")
+                }
                 if !model.status.isEmpty {
                     Text(model.status)
                         .font(.footnote)
@@ -1744,40 +1750,62 @@ struct LiveSessionView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("membership-status")
                 }
-                joinControls
-                if model.squad?.members.isEmpty != false && model.squad != nil {
-                    Text("No members yet.")
-                        .accessibilityIdentifier("members-empty")
+                SQCardSurface {
+                    VStack(alignment: .leading, spacing: SQSpace.s) {
+                        panelHeading("Join with a code")
+                        joinControls
+                    }
                 }
                 if let squad = model.squad {
-                    ForEach(squad.members) { member in
-                        memberRow(member, isOwner: isOwner)
-                    }
-                    if model.leaveAvailable {
-                        leaveControls(squad: squad, isOwner: isOwner)
-                    }
-                    if let line = LeaveAvailabilityCopy.line(isOwner: isOwner, leaveShown: model.leaveAvailable) {
-                        Text(line)
-                            .font(.footnote)
-                            .foregroundStyle(SQColor.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("leave-unavailable")
+                    SQCardSurface {
+                        VStack(alignment: .leading, spacing: SQSpace.s) {
+                            panelHeading("In this squad")
+                            if squad.members.isEmpty {
+                                Text("No members yet.")
+                                    .accessibilityIdentifier("members-empty")
+                            }
+                            ForEach(squad.members) { member in
+                                memberRow(member, isOwner: isOwner)
+                                    .padding(.vertical, SQSpace.xs)
+                            }
+                            if model.leaveAvailable {
+                                Divider()
+                                leaveControls(squad: squad, isOwner: isOwner)
+                            }
+                            if let line = LeaveAvailabilityCopy.line(isOwner: isOwner, leaveShown: model.leaveAvailable) {
+                                Text(line)
+                                    .font(.footnote)
+                                    .foregroundStyle(SQColor.muted)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .accessibilityIdentifier("leave-unavailable")
+                            }
+                        }
                     }
                 }
                 if isOwner {
-                    renameControls
-                    inviteControls
-                    if model.inviteCode.isEmpty {
-                        Text("No invite yet.")
-                            .font(.footnote)
-                            .foregroundStyle(SQColor.muted)
-                            .accessibilityIdentifier("invite-empty")
+                    SQCardSurface {
+                        VStack(alignment: .leading, spacing: SQSpace.s) {
+                            panelHeading("Rename")
+                            renameControls
+                        }
+                    }
+                    SQCardSurface {
+                        VStack(alignment: .leading, spacing: SQSpace.s) {
+                            panelHeading("Invite")
+                            inviteControls
+                            if model.inviteCode.isEmpty {
+                                Text("No invite yet.")
+                                    .font(.footnote)
+                                    .foregroundStyle(SQColor.muted)
+                                    .accessibilityIdentifier("invite-empty")
+                            }
+                        }
                     }
                 }
                 profileSection
                 if !model.notes.isEmpty {
-                    Divider()
                     notes
+                        .padding(.horizontal, SQSpace.xs)
                         .accessibilityIdentifier("panel-notes")
                 }
             }
@@ -1785,6 +1813,8 @@ struct LiveSessionView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollDismissesKeyboard(.interactively)
+        .background(SQColor.surface0)
+        .presentationBackground(SQColor.surface0)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .adoptingLaunchDynamicType()
@@ -1912,23 +1942,32 @@ struct LiveSessionView: View {
     @ViewBuilder
     private var profileSection: some View {
         if model.profile != nil {
-            VStack(alignment: .leading, spacing: SQSpace.s) {
-                Divider()
-                Text("Your profile")
-                    .font(SQType.section)
-                    .accessibilityAddTraits(.isHeader)
-                    .accessibilityIdentifier("profile-heading")
-                TextField("Display name", text: Binding(get: { model.displayName }, set: { model.displayName = $0 }))
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier("profile-name")
-                TextField("Default game", text: Binding(get: { model.defaultGame }, set: { model.defaultGame = $0 }))
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityIdentifier("profile-game")
-                Button("Save profile") { Task { await model.saveProfile() } }
-                    .disabled(model.busy)
-                    .accessibilityIdentifier("save-profile")
+            SQCardSurface {
+                VStack(alignment: .leading, spacing: SQSpace.s) {
+                    Text("Your profile")
+                        .font(SQType.section)
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("profile-heading")
+                    TextField("Display name", text: Binding(get: { model.displayName }, set: { model.displayName = $0 }))
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("profile-name")
+                    TextField("Default game", text: Binding(get: { model.defaultGame }, set: { model.defaultGame = $0 }))
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("profile-game")
+                    Button("Save profile") { Task { await model.saveProfile() } }
+                        .disabled(model.busy)
+                        .accessibilityIdentifier("save-profile")
+                }
             }
         }
+    }
+
+    private func panelHeading(_ title: String) -> some View {
+        Text(title)
+            .font(SQType.section)
+            .foregroundStyle(SQColor.ink)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private var renameControls: some View {

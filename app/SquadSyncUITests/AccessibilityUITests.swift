@@ -144,9 +144,10 @@ final class AccessibilityUITests: XCTestCase {
         app.launchArguments = ["-backend", "mock", "-scenario", "spotCallExpired"]
         app.launch()
 
-        let status = app.descendants(matching: .any)["spot-countdown"]
-        XCTAssertTrue(status.waitForExistence(timeout: 15), "The stale spot was not on screen")
-        XCTAssertEqual(status.label, "Expired")
+        let stale = app.descendants(matching: .any)["spot-history"]
+        XCTAssertTrue(stale.waitForExistence(timeout: 15), "The stale spot was not on screen as history")
+        XCTAssertTrue(stale.label.contains("expired"), "The stale call did not read as expired: \(stale.label)")
+        XCTAssertFalse(app.descendants(matching: .any)["spot-card"].exists, "An expired call kept the full card")
         let call = app.buttons["call-spots"]
         XCTAssertTrue(call.waitForExistence(timeout: 5), "Call spots was hidden by the expired card")
         XCTAssertEqual(call.label, "Call spots")
@@ -156,6 +157,9 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(replacement.waitForExistence(timeout: 5))
         XCTAssertTrue(replacement.label.contains("left"), "The new call did not replace the stale one, label \(replacement.label)")
         XCTAssertFalse(app.buttons["call-spots"].exists)
+        let archived = app.descendants(matching: .any)["spot-history"]
+        XCTAssertTrue(archived.waitForExistence(timeout: 5), "The replaced call did not move into the thread as history")
+        XCTAssertTrue(archived.label.contains("Warzone"))
     }
 
     func testMockSpotCallCallerCanCancel() {
@@ -170,9 +174,9 @@ final class AccessibilityUITests: XCTestCase {
         reveal(cancel, in: app)
         cancel.tap()
 
-        let status = app.descendants(matching: .any)["spot-countdown"]
-        XCTAssertTrue(status.waitForExistence(timeout: 5))
-        XCTAssertEqual(status.label, "Cancelled")
+        let history = app.descendants(matching: .any)["spot-history"]
+        XCTAssertTrue(history.waitForExistence(timeout: 5), "The cancelled call did not turn into a history card")
+        XCTAssertTrue(history.label.contains("cancelled"), "History card label: \(history.label)")
         XCTAssertFalse(app.buttons["spot-join"].exists)
         XCTAssertFalse(app.buttons["spot-lock"].exists)
         XCTAssertFalse(app.buttons["spot-cancel"].exists)
@@ -198,9 +202,9 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(confirm.waitForExistence(timeout: 5), "End confirmation was not shown")
         confirm.tap()
 
-        let status = app.descendants(matching: .any)["spot-countdown"]
-        XCTAssertTrue(status.waitForExistence(timeout: 5))
-        XCTAssertEqual(status.label, "Ended")
+        let history = app.descendants(matching: .any)["spot-history"]
+        XCTAssertTrue(history.waitForExistence(timeout: 5), "The ended call did not turn into a history card")
+        XCTAssertTrue(history.label.contains("ended"), "History card label: \(history.label)")
         XCTAssertFalse(app.buttons["spot-end"].exists)
         XCTAssertFalse(app.buttons["spot-lock"].exists)
     }
@@ -825,9 +829,9 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertLessThanOrEqual(frame.maxY + 8, composer.frame.minY, "The card's Cancel is under the composer")
         XCTAssertLessThanOrEqual(frame.maxX, window.maxX + 1)
         cancel.tap()
-        let status = app.descendants(matching: .any)["spot-countdown"]
-        XCTAssertTrue(status.waitForExistence(timeout: 5))
-        XCTAssertEqual(status.label, "Cancelled", "Cancelling from the card did not cancel the call")
+        let history = app.descendants(matching: .any)["spot-history"]
+        XCTAssertTrue(history.waitForExistence(timeout: 5), "Cancelling from the card did not cancel the call")
+        XCTAssertTrue(history.label.contains("cancelled"))
     }
 
     func testPresenceDecorationsAreNotReadAloud() {
@@ -872,4 +876,257 @@ final class AccessibilityUITests: XCTestCase {
             )
         }
     }
+
+    // MARK: S2 spot card
+
+    private func tapMenuCallSpots(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let plus = app.buttons["composer-plus"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 15), "The composer's + menu was missing", file: file, line: line)
+        XCTAssertTrue(plus.isHittable, "The composer's + menu was not hittable, frame \(plus.frame)", file: file, line: line)
+        plus.tap()
+        let item = app.buttons["composer-call-spots"]
+        if item.waitForExistence(timeout: 3) {
+            item.tap()
+            return
+        }
+        let fallback = app.collectionViews.buttons["Call spots"]
+        XCTAssertTrue(fallback.waitForExistence(timeout: 3), "Call spots was not in the + menu", file: file, line: line)
+        fallback.tap()
+    }
+
+    private func sendCommand(_ text: String, in app: XCUIApplication) {
+        let field = app.textFields["Message"]
+        XCTAssertTrue(field.waitForExistence(timeout: 15), "Message field was missing")
+        field.tap()
+        field.typeText(text)
+        app.buttons["send-message"].tap()
+    }
+
+    private func historyCard(_ game: String, in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(identifier: "spot-history")
+            .matching(NSPredicate(format: "label CONTAINS %@", game))
+            .firstMatch
+    }
+
+    func testPlusMenuCallsSpotsFromTheComposer() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotHistory"]
+        app.launch()
+
+        XCTAssertFalse(app.descendants(matching: .any)["spot-card"].exists, "There should be no open call yet")
+        tapMenuCallSpots(app)
+        let game = app.textFields["spot-sheet-game"]
+        XCTAssertTrue(game.waitForExistence(timeout: 5), "The call sheet did not open from the + menu")
+        let call = app.buttons["spot-sheet-call"]
+        XCTAssertTrue(call.isHittable)
+        call.tap()
+        XCTAssertTrue(call.waitForNonExistence(timeout: 5), "The call sheet stayed open after a successful call")
+        let title = app.descendants(matching: .any)["spot-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5), "The new call did not pin its card in the chat")
+        XCTAssertTrue(title.label.contains("Warzone"), "Card title: \(title.label)")
+        XCTAssertTrue(app.descendants(matching: .any)["active-call-bar"].waitForExistence(timeout: 5), "The pinned bar did not appear for the active call")
+        XCTAssertFalse(app.buttons["call-spots"].exists, "Call spots stayed offered while a call is active")
+    }
+
+    func testPlusMenuWithAnActiveCallSaysOneIsOpen() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall"]
+        app.launch()
+
+        tapMenuCallSpots(app)
+        XCTAssertFalse(app.buttons["spot-sheet-call"].waitForExistence(timeout: 2), "A second call sheet opened over an active call")
+        let note = app.descendants(matching: .any)["spot-note"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5))
+        XCTAssertEqual(note.label, "This squad already has a spot call.")
+    }
+
+    func testSlashSpotsWithAGameCallsRightAway() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotHistory"]
+        app.launch()
+
+        sendCommand("/spots Halo", in: app)
+        let title = app.descendants(matching: .any)["spot-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5), "/spots Halo did not call spots")
+        XCTAssertTrue(title.label.contains("Halo"), "Card title: \(title.label)")
+        let sent = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "/spots"))
+        XCTAssertEqual(sent.count, 0, "The command was sent as a chat message")
+    }
+
+    func testBareSlashSpotsOpensTheCallSheet() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotHistory"]
+        app.launch()
+
+        sendCommand("/spots", in: app)
+        let call = app.buttons["spot-sheet-call"]
+        XCTAssertTrue(call.waitForExistence(timeout: 5), "/spots did not open the call sheet")
+        app.buttons["spot-sheet-cancel"].tap()
+        XCTAssertTrue(call.waitForNonExistence(timeout: 5))
+        XCTAssertFalse(app.descendants(matching: .any)["spot-card"].exists, "Not now still called spots")
+    }
+
+    func testPinnedCardTurnsIntoHistoryWhenCancelled() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine"]
+        app.launch()
+
+        let card = app.descendants(matching: .any)["spot-card"]
+        XCTAssertTrue(card.waitForExistence(timeout: 15))
+        let bar = app.descendants(matching: .any)["active-call-bar"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5), "The active call was not pinned")
+        let cancel = app.buttons["spot-cancel"]
+        reveal(cancel, in: app)
+        cancel.tap()
+        XCTAssertTrue(card.waitForNonExistence(timeout: 5), "The full card stayed after cancel")
+        XCTAssertTrue(bar.waitForNonExistence(timeout: 5), "The pinned bar stayed after cancel")
+        let history = app.descendants(matching: .any)["spot-history"]
+        XCTAssertTrue(history.waitForExistence(timeout: 5), "No history card after cancel")
+        XCTAssertTrue(history.label.hasPrefix("Spot call for Warzone, cancelled"), "History label: \(history.label)")
+        XCTAssertTrue(app.buttons["call-spots"].waitForExistence(timeout: 5), "Call spots did not come back after cancel")
+    }
+
+    func testHistoryCardsSitBetweenMessagesInTimeOrder() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotHistory"]
+        app.launch()
+
+        let first = app.descendants(matching: .any)["message-row-00000000-0000-0000-0000-000000000201"]
+        let middle = app.descendants(matching: .any)["message-row-00000000-0000-0000-0000-000000000202"]
+        let last = app.descendants(matching: .any)["message-row-00000000-0000-0000-0000-000000000203"]
+        let apex = historyCard("Apex", in: app)
+        let valorant = historyCard("Valorant", in: app)
+        for element in [first, middle, last, apex, valorant] {
+            XCTAssertTrue(element.waitForExistence(timeout: 15), "A thread row was missing: \(element)")
+        }
+        XCTAssertLessThan(first.frame.minY, apex.frame.minY)
+        XCTAssertLessThan(apex.frame.minY, middle.frame.minY)
+        XCTAssertLessThan(middle.frame.minY, valorant.frame.minY)
+        XCTAssertLessThan(valorant.frame.minY, last.frame.minY)
+        XCTAssertTrue(apex.label.contains("ended"))
+        XCTAssertTrue(apex.label.contains("4 people joined"), "Apex label: \(apex.label)")
+        XCTAssertTrue(valorant.label.contains("cancelled"))
+        XCTAssertFalse(app.descendants(matching: .any)["spot-card"].exists, "A finished call kept the full card")
+    }
+
+    func testServerWithoutSpotRpcsSaysSo() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotServerMissing"]
+        app.launch()
+
+        let note = app.descendants(matching: .any)["spot-history-note"]
+        XCTAssertTrue(note.waitForExistence(timeout: 15), "The failed history read was silent")
+        tapMenuCallSpots(app)
+        let call = app.buttons["spot-sheet-call"]
+        XCTAssertTrue(call.waitForExistence(timeout: 5))
+        call.tap()
+        let error = app.descendants(matching: .any)["spot-sheet-error"]
+        XCTAssertTrue(error.waitForExistence(timeout: 5), "The sheet did not say why the call failed")
+        XCTAssertEqual(error.label, "Spot calls aren't set up on this server yet.")
+        XCTAssertTrue(call.exists, "The sheet closed even though the call failed")
+        app.buttons["spot-sheet-cancel"].tap()
+        XCTAssertFalse(app.descendants(matching: .any)["spot-card"].exists)
+    }
+
+    func testSpotCardPathsStayUsableAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotHistory", "-uitest-largeText"]
+        app.launch()
+
+        let valorant = historyCard("Valorant", in: app)
+        XCTAssertTrue(valorant.waitForExistence(timeout: 15))
+        let window = app.windows.firstMatch.frame
+        XCTAssertLessThanOrEqual(valorant.frame.maxX, window.maxX + 1, "The history card runs off the right edge")
+        tapMenuCallSpots(app)
+        let call = app.buttons["spot-sheet-call"]
+        XCTAssertTrue(call.waitForExistence(timeout: 5))
+        var swipes = 0
+        while !call.isHittable, swipes < 6 {
+            app.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(call.isHittable, "The sheet's Call spots was not reachable at AX5")
+        call.tap()
+        // The caller's bar offers Lock (mock calls have no Ready gate) or Cancel.
+        let lock = app.buttons["active-call-lock"]
+        let cancel = app.buttons["active-call-cancel"]
+        XCTAssertTrue(lock.waitForExistence(timeout: 5) || cancel.exists, "The pinned bar's action was missing at AX5")
+        XCTAssertTrue(lock.exists ? lock.isHittable : cancel.isHittable, "The pinned bar's action was not hittable at AX5")
+        let symbolNames = ["plus.circle", "antenna", "radiowaves", "mic.slash", "waveform", "checkmark", "lock.fill", "chevron", "ellipsis"]
+        let format = symbolNames.map { "label CONTAINS[c] '\($0)'" }.joined(separator: " OR ")
+        let leaked = app.descendants(matching: .any).matching(NSPredicate(format: format))
+        XCTAssertEqual(leaked.count, 0, "An SF Symbol name is exposed to VoiceOver: \(leaked.allElementsBoundByIndex.map(\.label))")
+    }
+
+    // MARK: AX5 presence roster regressions
+
+    func testPresenceRosterShowsItsLastRowAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-uitest-largeText"]
+        app.launch()
+
+        let toggle = app.buttons["presence-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 15))
+        toggle.tap()
+        let roster = app.descendants(matching: .any)["presence-strip"]
+        let note = app.descendants(matching: .any)["presence-untracked"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "The roster's last row was missing")
+        XCTAssertLessThanOrEqual(note.frame.maxY, roster.frame.maxY + 1, "The last row is cut off by the roster. note \(note.frame) roster \(roster.frame)")
+        let list = app.scrollViews["message-list"]
+        XCTAssertLessThanOrEqual(note.frame.maxY, list.frame.maxY + 1, "The last row runs past the chat list. note \(note.frame) list \(list.frame)")
+        XCTAssertFalse(roster.scrollViews.firstMatch.exists, "The roster scrolls instead of fitting")
+    }
+
+    func testPresenceRosterKeepsThePinnedBarVisibleAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall", "-uitest-largeText"]
+        app.launch()
+
+        let toggle = app.buttons["presence-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 15))
+        toggle.tap()
+        let roster = app.descendants(matching: .any)["presence-strip"]
+        XCTAssertTrue(roster.waitForExistence(timeout: 5))
+        let bar = app.descendants(matching: .any)["active-call-bar"]
+        XCTAssertTrue(bar.exists)
+        XCTAssertGreaterThanOrEqual(roster.frame.minY, bar.frame.maxY - 1, "The roster covers the pinned bar. roster \(roster.frame) bar \(bar.frame)")
+        let join = app.buttons["active-call-join"]
+        XCTAssertTrue(join.isHittable, "The pinned Join was covered with the roster open")
+        let list = app.scrollViews["message-list"]
+        XCTAssertGreaterThan(list.frame.height, app.windows.firstMatch.frame.height * 0.4, "The chat dropped under 40% with the roster open")
+    }
+
+    func testPresenceRosterPassesEmptyTapsToTheChat() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-uitest-largeText"]
+        app.launch()
+
+        let toggle = app.buttons["presence-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 15))
+        toggle.tap()
+        let roster = app.descendants(matching: .any)["presence-strip"]
+        XCTAssertTrue(roster.waitForExistence(timeout: 5))
+        let frame = roster.frame
+        let candidates = [
+            CGPoint(x: frame.maxX - 10, y: frame.minY + 6),
+            CGPoint(x: frame.maxX - 10, y: frame.maxY - 6)
+        ]
+        let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'message-row-'"))
+        var target: CGPoint?
+        for point in candidates where target == nil {
+            for index in 0..<rows.count where rows.element(boundBy: index).frame.contains(point) {
+                target = point
+                break
+            }
+        }
+        guard let target else {
+            XCTFail("No message row lies under an empty corner of the roster, roster \(frame)")
+            return
+        }
+        let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
+        origin.withOffset(CGVector(dx: target.x, dy: target.y)).tap()
+        XCTAssertTrue(app.buttons["react"].waitForExistence(timeout: 3), "The tap on the roster's empty corner did not reach the message under it")
+    }
 }
+

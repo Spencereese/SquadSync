@@ -1685,6 +1685,31 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(element("whos-in-sheet", in: app).waitForExistence(timeout: 5), "Who's in didn't open", file: file, line: line)
     }
 
+    /// Floating point puts a 44pt frame at 43.99999999999994, so size checks allow 0.5pt.
+    private func assertHitTarget(_ target: XCUIElement, _ what: String, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertGreaterThanOrEqual(target.frame.height, 43.5, "\(what) is too short to hit: \(target.frame)", file: file, line: line)
+    }
+
+    /// Drags Who's in up to its large detent. iOS 26 draws a medium sheet's content
+    /// at about 96% scale (342/354), so a real 44pt button measures 42.25 there;
+    /// at the large detent it measures true. Sizes are checked after this.
+    private func expandWhosIn(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let sheet = element("whos-in-sheet", in: app)
+        let window = app.windows.firstMatch
+        let tall = { sheet.frame.height >= window.frame.height * 0.7 }
+        for _ in 0..<3 where !tall() {
+            // Grab just inside the sheet's top. Never above it: that's the dimmed
+            // background, and a tap there dismisses the sheet. Pulling up on the
+            // content at its top resizes a medium sheet before it scrolls.
+            let origin = window.coordinate(withNormalizedOffset: .zero)
+            let grab = origin.withOffset(CGVector(dx: window.frame.midX, dy: sheet.frame.minY + 8))
+            let top = origin.withOffset(CGVector(dx: window.frame.midX, dy: 60))
+            grab.press(forDuration: 0.05, thenDragTo: top, withVelocity: .fast, thenHoldForDuration: 0.2)
+            _ = waitUntil(timeout: 2, tall)
+        }
+        XCTAssertTrue(tall(), "Who's in didn't reach its large detent: \(sheet.frame)", file: file, line: line)
+    }
+
     private func whosInRow(_ name: String, in app: XCUIApplication) -> XCUIElement {
         element("whos-in-row-\(name)", in: app)
     }
@@ -1750,12 +1775,13 @@ final class AccessibilityUITests: XCTestCase {
         let status = element("check-in-status", in: app)
         XCTAssertTrue(status.waitForExistence(timeout: 5))
         XCTAssertEqual(status.label, "You haven't checked in.")
+        expandWhosIn(app)
         XCTAssertTrue(element("check-in-details-missing", in: app).exists, "This server can't keep a game; the sheet should say so")
         XCTAssertFalse(app.textFields["check-in-game"].exists, "No game field without 0022")
         XCTAssertTrue(element("check-in-honor", in: app).exists, "The honor-system note is missing")
         let now = app.buttons["check-in-now"]
         XCTAssertTrue(now.isHittable)
-        XCTAssertGreaterThanOrEqual(now.frame.height, 44)
+        assertHitTarget(now, "I'm on now")
         now.tap()
         XCTAssertTrue(waitForLabel(status, "label BEGINSWITH \"You're on until\""), "Checking in didn't update your status: \(status.label)")
         let clear = app.buttons["check-in-clear"]
@@ -1777,6 +1803,7 @@ final class AccessibilityUITests: XCTestCase {
         openWhosInFromMenu(app)
         let game = app.textFields["check-in-game"]
         XCTAssertTrue(game.waitForExistence(timeout: 5), "No game field on a server with 0022")
+        expandWhosIn(app)
         game.tap()
         game.typeText("Apex")
         app.buttons["check-in-later"].tap()
@@ -1784,7 +1811,7 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(options.firstMatch.waitForExistence(timeout: 5), "Later didn't offer times")
         XCTAssertGreaterThanOrEqual(options.count, 3)
         for option in options.allElementsBoundByIndex where option.isHittable {
-            XCTAssertGreaterThanOrEqual(option.frame.height, 44, "A later time is too short to hit: \(option.frame)")
+            assertHitTarget(option, "A later time")
         }
         let first = options.firstMatch
         XCTAssertTrue(first.label.hasPrefix("In 30 min, around "), first.label)
@@ -1812,9 +1839,10 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(error.waitForExistence(timeout: 5), "No error row")
         XCTAssertEqual(error.label, "Who's in couldn't load. The server didn't answer.")
         XCTAssertFalse(element("whos-in-section-none", in: app).exists, "A failed read must not look like nobody checked in")
+        expandWhosIn(app)
         let retry = app.buttons["whos-in-retry"]
         XCTAssertTrue(waitUntil(timeout: 5) { retry.isHittable }, "Retry isn't on screen: \(retry.frame)")
-        XCTAssertGreaterThanOrEqual(retry.frame.height, 44)
+        assertHitTarget(retry, "Retry")
         retry.tap()
         XCTAssertTrue(element("whos-in-section-now", in: app).waitForExistence(timeout: 5), "Retry didn't load")
         XCTAssertTrue(error.waitForNonExistence(timeout: 5))
@@ -1854,7 +1882,7 @@ final class AccessibilityUITests: XCTestCase {
         let width = app.windows.firstMatch.frame.width
         let now = app.buttons["check-in-now"]
         guard scrollSheet(to: now, in: app) else { return }
-        XCTAssertGreaterThanOrEqual(now.frame.height, 44)
+        assertHitTarget(now, "I'm on now")
         XCTAssertLessThanOrEqual(now.frame.maxX, width + 1, "I'm on now runs off screen at AX5: \(now.frame)")
         let cant = app.buttons["check-in-cant"]
         guard scrollSheet(to: cant, in: app) else { return }
@@ -1891,7 +1919,7 @@ final class AccessibilityUITests: XCTestCase {
         let retry = app.buttons["whos-in-retry"]
         XCTAssertTrue(retry.waitForExistence(timeout: 5))
         XCTAssertTrue(waitUntil(timeout: 5) { retry.isHittable }, "Retry starts off screen at AX5: \(retry.frame)")
-        XCTAssertGreaterThanOrEqual(retry.frame.height, 44)
+        assertHitTarget(retry, "Retry")
         XCTAssertLessThanOrEqual(retry.frame.maxX, app.windows.firstMatch.frame.width + 1)
     }
 }

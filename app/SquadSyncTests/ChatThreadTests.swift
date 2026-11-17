@@ -69,6 +69,9 @@ final class ChatThreadTests: XCTestCase {
         XCTAssertEqual(shown.map(\.startsGroup), [true, false, true, true])
         XCTAssertEqual(shown.map(\.endsGroup), [false, true, true, true])
         XCTAssertEqual(shown.map(\.senderName), ["Riley", "Riley", "Riley", "Alex"])
+        XCTAssertEqual(shown.map { ChatSeed.bubbleIdentifier(startsGroup: $0.startsGroup) },
+                       ["bubble-group-start", "bubble-group-continues", "bubble-group-start", "bubble-group-start"],
+                       "The UI tests read grouping from these identifiers")
         XCTAssertEqual(shown.first?.time, "2:54 PM")
     }
 

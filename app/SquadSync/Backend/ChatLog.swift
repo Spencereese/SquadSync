@@ -169,6 +169,12 @@ enum ChatSeed {
     static func rowIdentifier(for id: UUID) -> String {
         id == messageId ? "message-row-seed-1" : "message-row-\(id.uuidString)"
     }
+
+    /// Identifier on a message bubble: whether it opens a sender group (and so
+    /// carries the name header) or continues the one above. Never spoken.
+    static func bubbleIdentifier(startsGroup: Bool) -> String {
+        startsGroup ? "bubble-group-start" : "bubble-group-continues"
+    }
 }
 
 enum ChatBackfill {

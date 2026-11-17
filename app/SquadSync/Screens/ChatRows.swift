@@ -10,6 +10,10 @@ struct ChatDaySeparator: View {
     let label: String
 
     var body: some View {
+        // One accessibility element: the label carries the identifier and header
+        // trait, the rules are hidden, and the stack adds no element of its own.
+        // (A combined container still exposed its inner Text, so VoiceOver met
+        // "Today" twice.)
         HStack(spacing: SQSpace.s) {
             line
             Text(label)
@@ -18,14 +22,13 @@ struct ChatDaySeparator: View {
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .layoutPriority(1)
+                .accessibilityLabel(label)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("day-separator")
             line
         }
         .padding(.vertical, SQSpace.s)
         .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(label)
-        .accessibilityAddTraits(.isHeader)
-        .accessibilityIdentifier("day-separator")
     }
 
     private var line: some View {
@@ -223,6 +226,7 @@ struct ChatJumpButton: View {
 struct ChatHistoryRow: View {
     let display: ChatHistoryState.Display
     let retry: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         switch display {
@@ -243,20 +247,34 @@ struct ChatHistoryRow: View {
                 .frame(maxWidth: .infinity)
                 .accessibilityIdentifier("chat-empty")
         case .failed(let reason), .stale(let reason):
-            HStack(alignment: .center, spacing: SQSpace.s) {
+            // Side by side normally; stacked at accessibility sizes so the reason
+            // gets the full width and Retry sits right under it.
+            let layout = typeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: SQSpace.xs))
+                : AnyLayout(HStackLayout(alignment: .center, spacing: SQSpace.s))
+            layout {
                 text(reason)
                     .accessibilityIdentifier("chat-error")
-                Spacer(minLength: 0)
-                Button("Retry", action: retry)
-                    .font(SQType.label)
-                    .frame(minHeight: 44)
-                    .accessibilityLabel("Retry loading messages")
-                    .accessibilityIdentifier("chat-retry")
+                if !typeSize.isAccessibilitySize {
+                    Spacer(minLength: 0)
+                }
+                Button(action: retry) {
+                    Text("Retry")
+                        .font(SQType.label)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Retry loading messages")
+                .accessibilityIdentifier("chat-retry")
             }
             .padding(.vertical, SQSpace.s)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .id(ChatHistoryRow.anchor)
         }
     }
+
+    /// Scroll target for the history error, so its Retry can be brought into view.
+    static let anchor = "chat-history-row"
 
     private func text(_ value: String) -> some View {
         Text(value)

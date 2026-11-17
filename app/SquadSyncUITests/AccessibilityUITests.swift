@@ -1255,20 +1255,42 @@ final class AccessibilityUITests: XCTestCase {
             .firstMatch
     }
 
-    /// Scrolls the chat until the element is hittable: up toward older messages
-    /// first, then back down.
+    /// Scrolls the chat in short, slow drags until the element is hittable. The element
+    /// is a query, so every check re-resolves it. While it's in the tree its frame picks
+    /// the direction; while it isn't (a lazy row off screen), sweep toward older messages
+    /// first, then toward the newest. Bounded, so it fails instead of hanging. Callers
+    /// that read a frame afterwards should `guard` on the result.
     @discardableResult
-    private func reveal(_ target: XCUIElement, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) -> Bool {
+    private func scrollChat(to target: XCUIElement, in app: XCUIApplication, maxDrags: Int = 30, file: StaticString = #filePath, line: UInt = #line) -> Bool {
         let list = app.scrollViews["message-list"]
-        for direction in [true, false] {
-            for _ in 0..<10 {
-                if target.exists && target.isHittable { return true }
-                if direction { list.swipeDown() } else { list.swipeUp() }
+        guard list.waitForExistence(timeout: 5) else {
+            XCTFail("No message list to scroll", file: file, line: line)
+            return false
+        }
+        var blindDrags = 0
+        for _ in 0..<maxDrags {
+            var towardOlder = blindDrags < maxDrags / 3
+            if target.exists {
+                if target.isHittable { return true }
+                let frame = target.frame
+                if !frame.isEmpty { towardOlder = frame.midY < list.frame.midY }
+            } else {
+                blindDrags += 1
             }
+            dragChat(list, towardOlder: towardOlder)
         }
         let found = target.exists && target.isHittable
-        XCTAssertTrue(found, "Couldn't scroll to \(target)", file: file, line: line)
+        XCTAssertTrue(found, "Couldn't scroll to \(target) in \(maxDrags) drags", file: file, line: line)
         return found
+    }
+
+    /// A third of the list per drag, slow so there's no fling past lazy rows. Pressed
+    /// near the trailing edge and released quickly, so it never opens a context menu.
+    private func dragChat(_ list: XCUIElement, towardOlder: Bool) {
+        let upper = list.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.33))
+        let lower = list.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.66))
+        let (from, to) = towardOlder ? (upper, lower) : (lower, upper)
+        from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.1)
     }
 
     /// The message bubble inside a row: the row's first button.
@@ -1281,28 +1303,38 @@ final class AccessibilityUITests: XCTestCase {
         return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
     }
 
+    /// Grouping is read from the bubble identifiers (start / continues), not from
+    /// gaps between rows: the name header sits inside the row frame, so gaps can't
+    /// tell a new group from a continued one.
     func testThreadGroupsBySenderUnderDaySeparators() {
         let app = launchChat("chatPolish")
-        let latest = element(Polish.reply, in: app)
-        XCTAssertTrue(latest.waitForExistence(timeout: 15), "The seeded thread didn't load")
-        let days = app.descendants(matching: .any).matching(identifier: "day-separator")
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15), "The seeded thread didn't load")
+        let days = app.staticTexts.matching(identifier: "day-separator")
         let today = days.matching(NSPredicate(format: "label == 'Today'")).firstMatch
-        XCTAssertTrue(reveal(today, in: app), "No Today separator")
-        let yesterday = days.matching(NSPredicate(format: "label == 'Yesterday'")).firstMatch
-        XCTAssertTrue(reveal(yesterday, in: app), "No Yesterday separator")
-        XCTAssertTrue(yesterday.frame.maxY <= today.frame.minY || !today.exists, "Yesterday should sit above Today")
+        guard scrollChat(to: today, in: app) else { return }
 
-        let first = element(Polish.question, in: app)
-        reveal(first, in: app)
-        let second = element(Polish.alexSecond, in: app)
-        let mine = element(Polish.mineFirst, in: app)
-        XCTAssertTrue(second.exists && mine.exists)
-        XCTAssertTrue(bubble(Polish.question, in: app).label.hasPrefix("Alex, Who's on tonight?, "), bubble(Polish.question, in: app).label)
-        XCTAssertTrue(bubble(Polish.alexSecond, in: app).label.hasPrefix("Alex, I can do 9, "))
-        let inGroup = second.frame.minY - first.frame.maxY
-        let betweenGroups = mine.frame.minY - second.frame.maxY
-        XCTAssertLessThan(inGroup, betweenGroups, "Alex's second line should sit tight under the first; a new sender gets a header. in \(inGroup) between \(betweenGroups)")
-        XCTAssertLessThan(first.frame.maxY, mine.frame.minY)
+        let first = bubble(Polish.question, in: app)
+        guard scrollChat(to: first, in: app) else { return }
+        XCTAssertEqual(first.identifier, "bubble-group-start", "Alex's first line should open a group")
+        XCTAssertTrue(first.label.hasPrefix("Alex, Who's on tonight?, "), first.label)
+
+        let second = bubble(Polish.alexSecond, in: app)
+        guard scrollChat(to: second, in: app) else { return }
+        XCTAssertEqual(second.identifier, "bubble-group-continues", "Alex's second line should continue his group")
+        XCTAssertTrue(second.label.hasPrefix("Alex, I can do 9, "), second.label)
+
+        let mine = bubble(Polish.mineFirst, in: app)
+        guard scrollChat(to: mine, in: app) else { return }
+        XCTAssertEqual(mine.identifier, "bubble-group-start", "A new sender should open a new group")
+        if first.exists && second.exists {
+            XCTAssertLessThan(first.frame.minY, second.frame.minY, "Alex's lines are out of order")
+        }
+
+        let yesterday = days.matching(NSPredicate(format: "label == 'Yesterday'")).firstMatch
+        guard scrollChat(to: yesterday, in: app) else { return }
+        if today.exists {
+            XCTAssertLessThanOrEqual(yesterday.frame.maxY, today.frame.minY, "Yesterday should sit above Today")
+        }
     }
 
     func testOnlyTheLatestMessageShowsSeenBy() {
@@ -1315,7 +1347,7 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertEqual(seen.firstMatch.label, "Seen by Alex and Jordan")
         XCTAssertTrue(latest.frame.contains(CGPoint(x: seen.firstMatch.frame.midX, y: seen.firstMatch.frame.midY)), "Seen by isn't on the latest message")
         let mine = element(Polish.longLine, in: app)
-        reveal(mine, in: app)
+        guard scrollChat(to: mine, in: app) else { return }
         let captions = app.descendants(matching: .any).matching(identifier: "delivery-caption")
         XCTAssertLessThanOrEqual(captions.count, 1, "Only your latest message gets Sent; others' messages get no caption")
         let sent = caption("Sent", in: app)
@@ -1356,7 +1388,7 @@ final class AccessibilityUITests: XCTestCase {
         let app = launchChat("chatPolish")
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
         let chip = app.buttons[Polish.thumbs]
-        reveal(chip, in: app)
+        guard scrollChat(to: chip, in: app) else { return }
         XCTAssertEqual(chip.label, "Thumbs up, 2 reactions, including yours")
         XCTAssertGreaterThanOrEqual(chip.frame.height, 44, "Chip is too short to hit: \(chip.frame)")
         XCTAssertGreaterThanOrEqual(chip.frame.width, 44, "Chip is too narrow to hit: \(chip.frame)")
@@ -1372,16 +1404,19 @@ final class AccessibilityUITests: XCTestCase {
         let app = launchChat("chatPolish")
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
         let target = bubble(Polish.question, in: app)
-        reveal(target, in: app)
+        guard scrollChat(to: target, in: app) else { return }
         target.press(forDuration: 1.2)
         XCTAssertTrue(app.buttons["Copy"].waitForExistence(timeout: 5), "Long-press had no Copy")
         XCTAssertTrue(app.buttons["Reply"].exists, "Long-press had no Reply")
+        // Reactions sit in the menu itself; there is no separate React item.
         XCTAssertTrue(app.buttons["Thumbs up"].exists, "Long-press had no reactions")
+        XCTAssertTrue(app.buttons["Ha ha"].exists, "The laugh reaction should read Ha ha")
         XCTAssertFalse(app.buttons["Retry sending"].exists, "A sent message offered Retry")
         app.buttons["Copy"].tap()
-        let toast = element("chat-toast", in: app)
-        XCTAssertTrue(toast.waitForExistence(timeout: 2), "Copy didn't say Copied")
-        XCTAssertEqual(toast.label, "Copied")
+        // Match on the label in the same query, so a toast that's already fading isn't read twice.
+        let copied = app.descendants(matching: .any).matching(identifier: "chat-toast")
+            .matching(NSPredicate(format: "label == 'Copied'")).firstMatch
+        XCTAssertTrue(copied.waitForExistence(timeout: 4), "Copy didn't say Copied")
     }
 
     func testReplyFromLongPressQuotesTheOriginal() {
@@ -1390,7 +1425,7 @@ final class AccessibilityUITests: XCTestCase {
         let quotes = app.descendants(matching: .any).matching(identifier: "reply-quote")
         XCTAssertEqual(quotes.firstMatch.label, "Replying to Alex: Who's on tonight?", "The seeded reply's quote is wrong")
         let target = bubble(Polish.question, in: app)
-        reveal(target, in: app)
+        guard scrollChat(to: target, in: app) else { return }
         target.press(forDuration: 1.2)
         let reply = app.buttons["Reply"]
         XCTAssertTrue(reply.waitForExistence(timeout: 5))
@@ -1413,7 +1448,7 @@ final class AccessibilityUITests: XCTestCase {
         let app = launchChat("chatPolish")
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
         let target = bubble(Polish.question, in: app)
-        reveal(target, in: app)
+        guard scrollChat(to: target, in: app) else { return }
         target.press(forDuration: 1.2)
         XCTAssertTrue(app.buttons["Reply"].waitForExistence(timeout: 5))
         app.buttons["Reply"].tap()
@@ -1429,7 +1464,7 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
         XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "reply-quote").count, 0)
         let target = bubble(Polish.question, in: app)
-        reveal(target, in: app)
+        guard scrollChat(to: target, in: app) else { return }
         target.press(forDuration: 1.2)
         XCTAssertTrue(app.buttons["Copy"].waitForExistence(timeout: 5))
         XCTAssertFalse(app.buttons["Reply"].exists, "Reply showed on a server without reply_to_id")
@@ -1468,10 +1503,26 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(error.waitForExistence(timeout: 15), "No history error")
         XCTAssertEqual(error.label, "Messages couldn't load.")
         let retry = app.buttons["chat-retry"]
-        XCTAssertTrue(retry.isHittable)
+        XCTAssertTrue(waitUntil(timeout: 5) { retry.isHittable }, "Retry isn't on screen: \(retry.frame)")
+        XCTAssertGreaterThanOrEqual(retry.frame.height, 44, "Retry is too short to hit")
         retry.tap()
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 10), "Retry didn't load the thread")
         XCTAssertTrue(error.waitForNonExistence(timeout: 5), "The error stayed after loading")
+    }
+
+    func testHistoryErrorRetryIsInViewAtLargeText() {
+        let app = launchChat("chatHistoryFailed", largeText: true)
+        let error = element("chat-error", in: app)
+        XCTAssertTrue(error.waitForExistence(timeout: 15), "No history error")
+        let retry = app.buttons["chat-retry"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        // No swiping: the list brings the error's Retry into view by itself.
+        XCTAssertTrue(waitUntil(timeout: 5) { retry.isHittable }, "Retry starts off screen at AX5: \(retry.frame)")
+        let list = app.scrollViews["message-list"]
+        if list.exists {
+            XCTAssertLessThanOrEqual(retry.frame.maxY, list.frame.maxY + 1, "Retry is clipped by the list at AX5: \(retry.frame) in \(list.frame)")
+        }
+        XCTAssertGreaterThanOrEqual(retry.frame.height, 44)
     }
 
     func testHistoryLoadingShowsThenMessagesArrive() {
@@ -1489,21 +1540,21 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
         let width = app.windows.firstMatch.frame.width
         let seen = element("seen-by", in: app)
-        reveal(seen, in: app)
+        guard scrollChat(to: seen, in: app) else { return }
         XCTAssertGreaterThanOrEqual(seen.frame.minX, 0)
         XCTAssertLessThanOrEqual(seen.frame.maxX, width + 1, "Seen by runs off screen: \(seen.frame)")
 
         let divider = element("unread-divider", in: app)
-        reveal(divider, in: app)
+        guard scrollChat(to: divider, in: app) else { return }
         XCTAssertLessThanOrEqual(divider.frame.maxX, width + 1, "The unread divider runs off screen")
 
         let long = bubble(Polish.longLine, in: app)
-        reveal(long, in: app)
+        guard scrollChat(to: long, in: app) else { return }
         XCTAssertLessThanOrEqual(long.frame.maxX, width + 1, "The long message runs off screen")
         XCTAssertGreaterThan(long.frame.height, 100, "The long message didn't wrap at AX5: \(long.frame)")
 
         let chip = app.buttons[Polish.thumbs]
-        reveal(chip, in: app)
+        guard scrollChat(to: chip, in: app) else { return }
         XCTAssertGreaterThanOrEqual(chip.frame.height, 44)
         XCTAssertLessThanOrEqual(chip.frame.maxX, width + 1, "A chip runs off screen at AX5")
 
@@ -1522,7 +1573,7 @@ final class AccessibilityUITests: XCTestCase {
         let app = launchChat("chatPolish", largeText: true)
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
         let target = bubble(Polish.question, in: app)
-        reveal(target, in: app)
+        guard scrollChat(to: target, in: app) else { return }
         target.press(forDuration: 1.2)
         XCTAssertTrue(app.buttons["Reply"].waitForExistence(timeout: 5))
         app.buttons["Reply"].tap()
@@ -1542,7 +1593,7 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
         let today = app.descendants(matching: .any).matching(identifier: "day-separator")
             .matching(NSPredicate(format: "label == 'Today'")).firstMatch
-        XCTAssertTrue(reveal(today, in: app))
+        guard scrollChat(to: today, in: app) else { return }
         XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Today'")).count == 1,
                       "The day label is read more than once")
         let symbolNames = ["arrow.down", "xmark", "doc.on.doc", "arrowshape", "hand.thumbsup", "exclamationmark", "arrow.clockwise"]

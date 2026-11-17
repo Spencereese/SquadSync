@@ -758,7 +758,8 @@ final class LiveSessionModel {
         chatToast = text
         toastTask?.cancel()
         toastTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            // Long enough to outlast the context menu closing and still be read.
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard !Task.isCancelled else { return }
             if self?.chatToast == text { self?.chatToast = "" }
         }
@@ -1562,6 +1563,11 @@ struct LiveSessionView: View {
         }
     }
 
+    private var historyFailedWithoutMessages: Bool {
+        if case .failed = model.chatLoad.display(hasMessages: !model.log.entries.isEmpty) { return true }
+        return false
+    }
+
     private var liveNotice: String? {
         guard model.usesLiveSocket else { return nil }
         if !model.presenceNote.isEmpty { return model.presenceNote }
@@ -1644,6 +1650,13 @@ struct LiveSessionView: View {
                 Task { @MainActor in
                     scrollChatToBottom(proxy)
                     await model.catchUp(pinned: pinnedToBottom)
+                }
+            }
+            // At AX5 the history error can land below the fold; bring its Retry into view.
+            .onChange(of: historyFailedWithoutMessages, initial: true) { _, failed in
+                guard failed else { return }
+                Task { @MainActor in
+                    withAnimation { proxy.scrollTo(ChatHistoryRow.anchor, anchor: .bottom) }
                 }
             }
             .onChange(of: model.followSend) { _, id in
@@ -2446,6 +2459,8 @@ struct LiveSessionView: View {
                     .contentShape(Rectangle())
             }
             .accessibilityLabel(ChatSpeech.bubble(bubble))
+            // Not spoken; lets UI tests read sender grouping without measuring gaps.
+            .accessibilityIdentifier(ChatSeed.bubbleIdentifier(startsGroup: bubble.startsGroup))
             .accessibilityActions {
                 ForEach(actions, id: \.title) { action in
                     Button(action.title) { run(action, on: entry.id) }
@@ -2479,18 +2494,27 @@ struct LiveSessionView: View {
                     .accessibilityIdentifier("seen-by")
             }
             if model.selectedMessage == entry.id, actions.contains(.react) {
-                Button("React") { model.reacting = true }
-                    .frame(minHeight: 44)
-                    .accessibilityIdentifier("react")
+                Button { model.reacting = true } label: {
+                    Text("React")
+                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("react")
             }
             if model.reacting, model.selectedMessage == entry.id {
                 reactionChoices(entry.id)
             }
             if entry.delivery == .failed {
-                Button("Retry") { Task { await model.retry(entry.id) } }
-                    .frame(minHeight: 44)
-                    .accessibilityIdentifier("retry-send")
-                    .accessibilityLabel("Retry sending")
+                // The frame sits on the label, not the Button, so the hit target and
+                // the accessibility frame are both at least 44 pt tall.
+                Button { Task { await model.retry(entry.id) } } label: {
+                    Text("Retry")
+                        .font(SQType.label)
+                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("retry-send")
+                .accessibilityLabel("Retry sending")
             }
         }
         .padding(.top, bubble.startsGroup ? SQSpace.s : 0)

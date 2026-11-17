@@ -309,4 +309,67 @@ final class SquadHomeTests: XCTestCase {
         XCTAssertTrue(SQHaptics.isEnabled(environment: [:]))
         XCTAssertFalse(SQHaptics.isEnabled(environment: ["XCTestConfigurationFilePath": "/tmp/x"]))
     }
+
+    // MARK: Mock services under concurrency (Mac pass c165577 crash)
+
+    func testMockChatReadsSurviveConcurrentMarkRead() async throws {
+        let chat = MockChatService()
+        let squad = ChatSeed.squadId
+        let users = (0..<200).map { _ in UUID() }
+        try await withThrowingTaskGroup(of: Int.self) { group in
+            for (index, user) in users.enumerated() {
+                group.addTask {
+                    let at = Date(timeIntervalSince1970: 1_700_000_000 + Double(index))
+                    try await chat.markRead(squadId: squad, userId: user, at: at, messageId: nil)
+                    return try await chat.reads(squadId: squad).count
+                }
+                group.addTask {
+                    _ = try await chat.ownReadAt(squadId: squad, userId: user)
+                    return try await chat.reads(squadId: squad).count
+                }
+            }
+            for try await count in group {
+                XCTAssertLessThanOrEqual(count, users.count)
+            }
+        }
+        let reads = try await chat.reads(squadId: squad)
+        XCTAssertEqual(reads.count, users.count)
+        XCTAssertEqual(Set(reads.map(\.userId)), Set(users))
+        let last = try await chat.ownReadAt(squadId: squad, userId: users[199])
+        XCTAssertEqual(last, Date(timeIntervalSince1970: 1_700_000_199))
+    }
+
+    func testMockSquadAndSpotSurviveConcurrentCalls() async throws {
+        let owner = UUID()
+        let squads = MockSquadService()
+        let seeded = squads.seedSpotSquad(ownerId: owner)
+        let card = SpotSeed.calledByViewer(ownerId: owner, squadId: seeded.id, now: Date())
+        let spots = MockSpotService(viewerId: owner, ownerId: owner, call: card)
+        let profiles = MockProfileService()
+        let squadId = seeded.id
+        let callId = card.id
+        await withTaskGroup(of: Void.self) { group in
+            for index in 0..<100 {
+                group.addTask {
+                    try? await squads.renameSquad(squadId: squadId, name: "Night \(index)")
+                    _ = try? await squads.currentSquad(userId: owner)
+                }
+                group.addTask {
+                    _ = try? await spots.current(squadId: squadId)
+                    try? await spots.rsvp(callId: callId, response: index.isMultiple(of: 2) ? "in" : "out")
+                }
+                group.addTask {
+                    _ = try? await profiles.loadOrCreate(userId: owner, email: "you@example.com")
+                    try? await profiles.save(UserProfile(id: owner, displayName: "You \(index)", defaultGame: "Warzone"))
+                }
+            }
+        }
+        let squad = try await squads.currentSquad(userId: owner)
+        XCTAssertEqual(squad?.members.count, 5)
+        XCTAssertTrue((squad?.name ?? "").hasPrefix("Night "))
+        let spot = try await spots.current(squadId: seeded.id)
+        XCTAssertEqual(spot?.id, card.id)
+        let profile = try await profiles.loadOrCreate(userId: owner, email: "you@example.com")
+        XCTAssertTrue(profile.displayName.hasPrefix("You "))
+    }
 }

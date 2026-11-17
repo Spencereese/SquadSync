@@ -1,7 +1,16 @@
 import Foundation
 
+// The mock services keep plain dictionaries and arrays. Their only app caller is
+// the main-actor LiveSessionModel, but its async calls used to run on the global
+// executor, so loadChat's reads(squadId:) could race markRead's write and crash
+// (Mac pass c165577). Isolating each mock with state to the main actor serializes
+// every access, matching how the model already uses them.
+
+/// Stays nonisolated because `restore()` is a synchronous requirement. Its one
+/// piece of mutable state sits behind a lock.
 final class MockAuthService: AuthService {
     private let store: SessionStoring
+    private let lock = NSLock()
     private var pendingEmail: String?
 
     init(store: SessionStoring) {
@@ -9,12 +18,14 @@ final class MockAuthService: AuthService {
     }
 
     func sendCode(to email: String) async throws {
-        pendingEmail = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
+        lock.withLock { pendingEmail = trimmed }
     }
 
     func verify(email: String, code: String) async throws -> AuthSession {
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed == pendingEmail, SignInCode.isValid(code) else {
+        let expected = lock.withLock { pendingEmail }
+        guard trimmed == expected, SignInCode.isValid(code) else {
             throw BackendFailure.rejected("Enter the code from your email.")
         }
         let session = AuthSession(
@@ -34,6 +45,7 @@ final class MockAuthService: AuthService {
     func signOut() async throws { try store.clear() }
 }
 
+@MainActor
 final class MockProfileService: ProfileService {
     private var profiles: [UUID: UserProfile] = [:]
 
@@ -50,6 +62,7 @@ final class MockProfileService: ProfileService {
     }
 }
 
+@MainActor
 final class MockSquadService: SquadService {
     private var squad: SquadRecord?
     private var viewerJoined = true
@@ -194,10 +207,10 @@ final class MockSquadService: SquadService {
         return Self.bench.first { guest in !squad.members.contains { $0.id == guest.id } }
     }
 
-    static let morgan = UUID(uuidString: "00000000-0000-0000-0000-00000000B015")!
-    static let quinn = UUID(uuidString: "00000000-0000-0000-0000-00000000B016")!
-    static let avery = UUID(uuidString: "00000000-0000-0000-0000-00000000B017")!
-    static let bench: [(id: UUID, name: String)] = [
+    nonisolated static let morgan = UUID(uuidString: "00000000-0000-0000-0000-00000000B015")!
+    nonisolated static let quinn = UUID(uuidString: "00000000-0000-0000-0000-00000000B016")!
+    nonisolated static let avery = UUID(uuidString: "00000000-0000-0000-0000-00000000B017")!
+    nonisolated static let bench: [(id: UUID, name: String)] = [
         (ChatSeed.otherId, "Riley"),
         (avery, "Avery"),
         (morgan, "Morgan"),
@@ -205,6 +218,7 @@ final class MockSquadService: SquadService {
     ]
 }
 
+@MainActor
 final class MockChatService: ChatService {
     private var stored: [RemoteMessage] = []
 
@@ -262,6 +276,7 @@ final class MockChatService: ChatService {
     private var reads: [UUID: Date] = [:]
 }
 
+@MainActor
 final class MockSpotService: SpotServing {
     private var call: SpotCall?
     private let viewerId: UUID
@@ -381,6 +396,7 @@ final class MockSpotService: SpotServing {
     }
 }
 
+@MainActor
 final class MockInviteService: InviteServing {
     private let squads: MockSquadService
 
@@ -407,7 +423,7 @@ final class MockInviteService: InviteServing {
         return squad.id
     }
 
-    static func problem(for code: String) -> InviteProblem? {
+    nonisolated static func problem(for code: String) -> InviteProblem? {
         switch code.uppercased() {
         case "EXPIRED2": .expired
         case "REVOKED2": .revokedOrUnknown

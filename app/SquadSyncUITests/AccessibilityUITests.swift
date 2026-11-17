@@ -2208,4 +2208,62 @@ final class AccessibilityUITests: XCTestCase {
         assertHitTarget(create, "Create squad")
         XCTAssertLessThanOrEqual(create.frame.maxX, width + 1)
     }
+
+    // MARK: Errors stay above the keyboard (AX5)
+
+    /// Waits for the keyboard (focusing `field` if it went away), then checks the
+    /// whole error frame sits above the keyboard and below the top of the screen.
+    private func assertErrorAboveKeyboard(_ error: XCUIElement, focusing field: XCUIElement, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let keyboard = app.keyboards.firstMatch
+        if !keyboard.waitForExistence(timeout: 2) {
+            guard revealInOnboarding(field, in: app, file: file, line: line) else { return }
+            field.tap()
+        }
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "No keyboard to check against", file: file, line: line)
+        let top = element("onboarding", in: app).frame.minY
+        let clear = waitUntil(timeout: 4) {
+            error.exists && error.frame.height > 0
+                && error.frame.maxY <= keyboard.frame.minY + 0.5
+                && error.frame.minY >= top - 0.5
+        }
+        XCTAssertTrue(clear, "The error isn't fully above the keyboard: error \(error.frame), keyboard \(keyboard.frame), top \(top)", file: file, line: line)
+    }
+
+    func testSignInEmailErrorStaysAboveKeyboardAtLargeText() {
+        let app = launchChat("onboarding", largeText: true)
+        let field = app.textFields["signin-email"]
+        XCTAssertTrue(field.waitForExistence(timeout: 15))
+        sendCode(app, email: "nope")
+        let error = element("signin-error", in: app)
+        XCTAssertTrue(error.waitForExistence(timeout: 3), "No error for a bad email")
+        XCTAssertEqual(error.label, Onboard.invalidEmail)
+        assertErrorAboveKeyboard(error, focusing: field, in: app)
+    }
+
+    func testWrongCodeErrorStaysAboveKeyboardAtLargeText() {
+        let app = launchChat("onboarding", largeText: true)
+        XCTAssertTrue(app.textFields["signin-email"].waitForExistence(timeout: 15))
+        sendCode(app)
+        enterCode("000000", in: app)
+        let error = element("signin-error", in: app)
+        XCTAssertTrue(error.waitForExistence(timeout: 5), "No error for a wrong code")
+        XCTAssertEqual(error.label, Onboard.wrongCode)
+        assertErrorAboveKeyboard(error, focusing: app.textFields["signin-code"], in: app)
+    }
+
+    func testProfileNameErrorStaysAboveKeyboardAtLargeText() {
+        let app = launchChat("onboardingProfile", largeText: true)
+        let name = app.textFields["onboarding-name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 15))
+        guard revealInOnboarding(name, in: app) else { return }
+        name.tap()
+        name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 20))
+        let save = app.buttons["onboarding-save-profile"]
+        guard revealInOnboarding(save, in: app) else { return }
+        save.tap()
+        let error = element("onboarding-name-error", in: app)
+        XCTAssertTrue(error.waitForExistence(timeout: 3), "An empty name moved on")
+        XCTAssertEqual(error.label, "Add the name your squad will see.")
+        assertErrorAboveKeyboard(error, focusing: name, in: app)
+    }
 }

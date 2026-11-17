@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 import UIKit
 
@@ -19,6 +20,21 @@ struct OnboardingView: View {
     private var motion: MotionPolicy { .current(systemReduceMotion: systemReduceMotion) }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            content
+                .onChange(of: errorKey) { _, _ in revealError(proxy) }
+                .onChange(of: focus) { _, field in
+                    if field != nil, field == errorField { revealError(proxy) }
+                }
+                // The keyboard arrives after focus moves; at AX5 it would cover the
+                // error's lower lines, so line it up again once the keyboard is in.
+                .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+                    if focus != nil, focus == errorField { revealError(proxy) }
+                }
+        }
+    }
+
+    private var content: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: SQSpace.l) {
                 OnboardingHeader(step: step)
@@ -48,6 +64,65 @@ struct OnboardingView: View {
             focus = Self.firstField(next)
             // VoiceOver moves to the new step's heading.
             UIAccessibility.post(notification: .screenChanged, argument: nil)
+        }
+    }
+
+    // MARK: Keeping errors above the keyboard
+
+    /// The error showing on this step, as its identifier (also its scroll id). On the
+    /// profile step the first one down the form wins.
+    private var errorAnchor: String? {
+        switch step {
+        case .email, .code:
+            return model.signInError.isEmpty ? nil : "signin-error"
+        case .profile:
+            if case .failed = model.profileLoad { return "onboarding-profile-load-error" }
+            let draft = model.profileDraft
+            if model.showProfileErrors, draft.nameError != nil { return "onboarding-name-error" }
+            if model.showProfileErrors, draft.gameError != nil { return "onboarding-game-error" }
+            if !model.gamesError.isEmpty { return "onboarding-games-error" }
+            if !model.profileError.isEmpty { return "onboarding-profile-error" }
+            return nil
+        case .squad, .home:
+            return nil
+        }
+    }
+
+    /// Changes whenever a different error, or different text, appears.
+    private var errorKey: String {
+        guard let anchor = errorAnchor else { return "" }
+        let text: String
+        switch anchor {
+        case "signin-error": text = model.signInError
+        case "onboarding-name-error": text = model.profileDraft.nameError ?? ""
+        case "onboarding-game-error": text = model.profileDraft.gameError ?? ""
+        case "onboarding-games-error": text = model.gamesError
+        case "onboarding-profile-error": text = model.profileError
+        default: text = ""
+        }
+        return "\(anchor)|\(text)"
+    }
+
+    /// The field an error sits under. Focusing that field (and its keyboard coming
+    /// up) brings the error back into view; focusing another field doesn't.
+    private var errorField: Field? {
+        switch errorAnchor ?? "" {
+        case "signin-error": step == .code ? Field.code : Field.email
+        case "onboarding-name-error": .name
+        case "onboarding-game-error": .game
+        case "onboarding-games-error": .addGame
+        default: nil
+        }
+    }
+
+    /// Scrolls so the whole error sits at the bottom of the visible area, which is
+    /// above the keyboard when it's up. Waits a beat so the error has laid out.
+    private func revealError(_ proxy: ScrollViewProxy) {
+        guard let anchor = errorAnchor else { return }
+        let motion = motion
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 80_000_000)
+            withMotion(motion, .scroll) { proxy.scrollTo(anchor, anchor: .bottom) }
         }
     }
 
@@ -560,6 +635,8 @@ struct OnboardingError: View {
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(text)
                     .accessibilityIdentifier(identifier)
+                    // Scroll target, so the screen can keep the error above the keyboard.
+                    .id(identifier)
                     .transition(motion.appearTransition)
                     .onAppear { UIAccessibility.post(notification: .announcement, argument: text) }
             }

@@ -221,6 +221,29 @@ final class MockSquadService: SquadService {
 @MainActor
 final class MockChatService: ChatService {
     private var stored: [RemoteMessage] = []
+    /// Mock of a server without 0014's `reply_to_id`.
+    var replies: Bool
+    /// Mock of a history read that keeps failing until Retry brings the server back.
+    var historyDown: Bool
+    /// Mock of a slow history read, so the loading row can be seen.
+    var historyDelay: TimeInterval
+
+    init(replies: Bool = true, historyDown: Bool = false, historyDelay: TimeInterval = 0) {
+        self.replies = replies
+        self.historyDown = historyDown
+        self.historyDelay = historyDelay
+    }
+
+    func repliesAvailable() async -> Bool { replies }
+
+    func seedRead(userId: UUID, at date: Date) {
+        reads[userId] = date
+    }
+
+    func seedReaction(_ mark: ReactionMark) {
+        guard !reactionMarks.contains(mark) else { return }
+        reactionMarks.append(mark)
+    }
 
     func seed(_ message: RemoteMessage) {
         if stored.contains(where: { $0.id == message.id }) { return }
@@ -228,7 +251,11 @@ final class MockChatService: ChatService {
     }
 
     func history(squadId: UUID) async throws -> [RemoteMessage] {
-        stored.filter { $0.squadId == squadId }
+        if historyDelay > 0 {
+            try await Task.sleep(nanoseconds: UInt64(historyDelay * 1_000_000_000))
+        }
+        if historyDown { throw BackendFailure.rejected(ChatHistoryState.failedText) }
+        return stored.filter { $0.squadId == squadId }.sorted { $0.sentAt < $1.sentAt }
     }
 
     func send(_ message: RemoteMessage) async throws -> SendReceipt {
@@ -242,6 +269,9 @@ final class MockChatService: ChatService {
                 && existing.senderId == message.senderId
                 && existing.body == message.body
             return matches ? .stored : .missing
+        }
+        if message.replyToId != nil, !replies {
+            throw BackendFailure.rejected("Could not find the 'reply_to_id' column of 'sq8_messages'")
         }
         stored.append(message)
         return .stored
@@ -464,5 +494,69 @@ final class MockInviteService: InviteServing {
         case "ALREADY2": .alreadyInASquad
         default: nil
         }
+    }
+}
+
+/// Mock thread for the message polish scenarios: two days, groups, reactions,
+/// a reply, an unread run, and read receipts on the latest message.
+enum ChatPolishSeed {
+    static func id(_ suffix: Int) -> UUID {
+        UUID(uuidString: String(format: "00000000-0000-0000-0000-%012X", 0x300 + suffix))!
+    }
+
+    /// Alex's "Who's on tonight?", with reactions and the reply's original.
+    static let question = id(0x21)
+    static let longMessage = id(0x24)
+    /// Jordan's "Lobby's up", the first message you haven't read.
+    static let firstUnread = id(0x25)
+    /// Sam's reply, the latest message.
+    static let reply = id(0x26)
+    static let warmUps = 10
+
+    struct Thread {
+        var messages: [RemoteMessage]
+        var reads: [MemberRead]
+        var reactions: [ReactionMark]
+    }
+
+    static func thread(viewerId: UUID, squadId: UUID, now: Date, calendar: Calendar = .current, replies: Bool = true) -> Thread {
+        let today = calendar.startOfDay(for: now)
+        let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today.addingTimeInterval(-86_400)
+        let evening = yesterday.addingTimeInterval(20 * 3600)
+        var messages: [RemoteMessage] = []
+        func add(_ suffix: Int, _ sender: UUID, _ body: String, _ at: Date, replyTo: UUID? = nil) {
+            messages.append(RemoteMessage(id: id(suffix), squadId: squadId, senderId: sender, body: body, sentAt: at, replyToId: replyTo))
+        }
+        let cycle = [SpotSeed.alex, SpotSeed.jordan, viewerId, SpotSeed.sam]
+        for index in 0..<warmUps {
+            add(index, cycle[index % cycle.count], "Warm-up \(index + 1)", evening.addingTimeInterval(Double(index) * 7 * 60))
+        }
+        add(0x11, SpotSeed.jordan, "GG last night", evening.addingTimeInterval(90 * 60))
+        add(0x12, SpotSeed.jordan, "Same time tomorrow?", evening.addingTimeInterval(91 * 60))
+        add(0x13, viewerId, "I'm in", evening.addingTimeInterval(100 * 60))
+
+        // Today's run fits between midnight and now, even just after midnight.
+        let start = max(now.addingTimeInterval(-30 * 60), today.addingTimeInterval(30))
+        let scale = max(now.addingTimeInterval(-30).timeIntervalSince(start), 0) / (30 * 60)
+        func at(_ minutes: Double) -> Date { start.addingTimeInterval(minutes * 60 * scale) }
+        add(0x21, SpotSeed.alex, "Who's on tonight?", at(0))
+        add(0x22, SpotSeed.alex, "I can do 9", at(1))
+        add(0x23, viewerId, "Count me in", at(10))
+        add(0x24, viewerId, "Bringing Jordan too, and this one is long on purpose so it has to wrap at large text instead of getting cut off", at(11))
+        add(0x25, SpotSeed.jordan, "Lobby's up", at(20))
+        add(0x26, SpotSeed.sam, "Me", at(21), replyTo: replies ? question : nil)
+
+        let reads = [
+            MemberRead(userId: viewerId, lastReadAt: at(12)),
+            MemberRead(userId: SpotSeed.alex, lastReadAt: at(21.5)),
+            MemberRead(userId: SpotSeed.jordan, lastReadAt: at(21.5)),
+            MemberRead(userId: SpotSeed.casey, lastReadAt: at(10))
+        ]
+        let reactions = [
+            ReactionMark(messageId: question, userId: viewerId, emoji: "👍"),
+            ReactionMark(messageId: question, userId: SpotSeed.jordan, emoji: "👍"),
+            ReactionMark(messageId: question, userId: SpotSeed.alex, emoji: "🔥")
+        ]
+        return Thread(messages: messages, reads: reads, reactions: reactions)
     }
 }

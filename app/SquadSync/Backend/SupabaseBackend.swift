@@ -587,6 +587,11 @@ enum RenameFailure {
 
 final class SupabaseChatService: ChatService {
     private let http: SupabaseHTTP
+    /// Set by `repliesAvailable()`. Reads only select `reply_to_id` once it is known to exist.
+    private var repliesSupported: Bool?
+
+    /// Newest messages a full history read returns.
+    static let historyLimit = 200
 
     init(
         config: BackendConfig,
@@ -749,12 +754,49 @@ final class SupabaseChatService: ChatService {
         return false
     }
 
+    func repliesAvailable() async -> Bool {
+        if let repliesSupported { return repliesSupported }
+        let present = await replyColumnExists()
+        repliesSupported = present
+        return present
+    }
+
+    private func replyColumnExists() async -> Bool {
+        do {
+            _ = try await http.send(
+                path: "rest/v1/sq8_messages",
+                method: "GET",
+                query: [
+                    URLQueryItem(name: "select", value: "reply_to_id"),
+                    URLQueryItem(name: "limit", value: "1")
+                ],
+                feature: .messages
+            )
+            return true
+        } catch let failure as BackendFailure {
+            if case .rejected(let message) = failure {
+                return SpotProbe.columnPresent(status: 400, body: message)
+            }
+            return false
+        } catch {
+            return false
+        }
+    }
+
+    private var messageColumns: String {
+        repliesSupported == true
+            ? "id,squad_id,sender_id,body,sent_at,reply_to_id"
+            : "id,squad_id,sender_id,body,sent_at"
+    }
+
+    /// A full read takes the newest `historyLimit` rows (it used to take the oldest)
+    /// and returns them oldest first. A catch-up read after a stamp stays ascending.
     private func fetch(squadId: UUID, after: Date?) async throws -> [RemoteMessage] {
         var query = [
             URLQueryItem(name: "squad_id", value: "eq.\(squadId.uuidString)"),
-            URLQueryItem(name: "select", value: "id,squad_id,sender_id,body,sent_at"),
-            URLQueryItem(name: "order", value: "sent_at.asc,id.asc"),
-            URLQueryItem(name: "limit", value: "200")
+            URLQueryItem(name: "select", value: messageColumns),
+            URLQueryItem(name: "order", value: after == nil ? "sent_at.desc,id.desc" : "sent_at.asc,id.asc"),
+            URLQueryItem(name: "limit", value: "\(Self.historyLimit)")
         ]
         if let after, let text = BackendJSON.parseStamp(after) {
             query.append(URLQueryItem(name: "sent_at", value: "gt.\(text)"))
@@ -765,7 +807,8 @@ final class SupabaseChatService: ChatService {
             query: query,
             feature: .messages
         )
-        return try BackendJSON.decoder.decode([RemoteMessage].self, from: data)
+        let rows = try BackendJSON.decoder.decode([RemoteMessage].self, from: data)
+        return after == nil ? rows.reversed() : rows
     }
 
     private struct ReactionRow: Decodable {

@@ -26,6 +26,18 @@ final class LiveSessionModel {
     var followSend: UUID?
     var selectedMessage: UUID?
     var reacting = false
+    /// History read for the open squad: loading, loaded, or why it failed.
+    var chatLoad = ChatHistoryState.idle
+    /// Where the unread divider sits. Settled on the squad's first load, cleared when you send.
+    var unreadMarker = ChatUnreadMarker()
+    /// What the server lets the chat do. Replies stay off until `reply_to_id` is found.
+    var chatCaps = ChatCapabilities.unknown
+    /// The message the composer is replying to.
+    var replyingTo: UUID?
+    /// A short confirmation, like "Copied".
+    var chatToast = ""
+    /// Copies text to the clipboard. Tests swap it out.
+    @ObservationIgnored var copyText: (String) -> Void = { UIPasteboard.general.string = $0 }
     var viewerId: UUID?
     var spot: SpotCall?
     var spotGame = "Warzone"
@@ -92,7 +104,11 @@ final class LiveSessionModel {
             )
             try? store.save(session)
             let squads = MockSquadService()
-            let chat = MockChatService()
+            let chat = MockChatService(
+                replies: scenario != .chatNoReplies,
+                historyDown: scenario == .chatHistoryFailed,
+                historyDelay: scenario == .chatHistorySlow ? 3 : 0
+            )
             self.sessionStore = store
             self.auth = MockAuthService(store: store)
             self.mockProfiles = MockProfileService()
@@ -117,6 +133,23 @@ final class LiveSessionModel {
                 }
                 self.spot = card
                 self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: card)
+            } else if scenario.isChatScenario {
+                // History comes from the mock server on the first load, so the
+                // loading, empty, error, and unread states run like they do live.
+                let seeded = squads.seedSpotSquad(ownerId: session.userId)
+                self.squad = seeded
+                self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: nil)
+                if scenario != .chatEmpty {
+                    let thread = ChatPolishSeed.thread(
+                        viewerId: session.userId,
+                        squadId: seeded.id,
+                        now: Date(),
+                        replies: scenario != .chatNoReplies
+                    )
+                    thread.messages.forEach(chat.seed)
+                    thread.reads.forEach { chat.seedRead(userId: $0.userId, at: $0.lastReadAt) }
+                    thread.reactions.forEach(chat.seedReaction)
+                }
             } else if scenario == .spotHistory || scenario == .spotServerMissing {
                 let seeded = squads.seedSpotSquad(ownerId: session.userId)
                 self.squad = seeded
@@ -665,13 +698,83 @@ final class LiveSessionModel {
         }
         let id = UUID()
         let now = Date()
-        log.beginSend(id: id, senderId: session.userId, body: text, now: now)
+        let reply = chatCaps.replies ? replyingTo : nil
+        log.beginSend(id: id, senderId: session.userId, body: text, now: now, replyToId: reply)
         followSend = id
         draft = ""
+        replyingTo = nil
+        unreadMarker.clear()
         await deliver(
-            RemoteMessage(id: id, squadId: squad.id, senderId: session.userId, body: text, sentAt: now),
+            RemoteMessage(id: id, squadId: squad.id, senderId: session.userId, body: text, sentAt: now, replyToId: reply),
             session: session
         )
+    }
+
+    /// Long-press Copy. Says so for a moment, since the clipboard shows nothing.
+    func copy(_ id: UUID) {
+        guard let entry = log.entries.first(where: { $0.id == id }) else { return }
+        copyText(entry.body)
+        showToast("Copied")
+    }
+
+    /// Long-press Reply. Only when the server has `reply_to_id`; otherwise it says why.
+    func startReply(_ id: UUID) {
+        guard chatCaps.replies else {
+            showToast(ChatCapabilities.repliesUnavailable)
+            return
+        }
+        guard log.entries.contains(where: { $0.id == id && $0.delivery == .sent }) else { return }
+        replyingTo = id
+    }
+
+    func cancelReply() {
+        replyingTo = nil
+    }
+
+    /// The quote for the reply banner, from the loaded thread.
+    var replyQuote: ChatReplyQuote? {
+        guard let replyingTo else { return nil }
+        let original = log.entries.first { $0.id == replyingTo }
+        return ChatReplyQuote(
+            id: replyingTo,
+            sender: original.map { senderName($0.senderId) },
+            body: original?.body
+        )
+    }
+
+    func senderName(_ id: UUID) -> String {
+        if id == (profile?.id ?? viewerId) { return ChatThread.you }
+        return squad?.members.first { $0.id == id }?.displayName ?? ChatThread.unknownSender
+    }
+
+    /// Display names by user id for the thread rows.
+    var memberNames: [UUID: String] {
+        Dictionary((squad?.members ?? []).map { ($0.id, $0.displayName) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    @ObservationIgnored private var toastTask: Task<Void, Never>?
+
+    func showToast(_ text: String) {
+        chatToast = text
+        toastTask?.cancel()
+        toastTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            guard !Task.isCancelled else { return }
+            if self?.chatToast == text { self?.chatToast = "" }
+        }
+    }
+
+    /// Retry on the history error row.
+    func retryChatLoad() async {
+        // The mock server comes back on Retry, so the UI test can see both states.
+        if let mock = mockChat as? MockChatService, mock.historyDown { mock.historyDown = false }
+        await reloadChat()
+    }
+
+    /// Reads the open squad's history, reactions, and receipts again.
+    func reloadChat() async {
+        guard let session = try? requiredSession() else { return }
+        await loadChat(session)
     }
 
     func retry(_ id: UUID) async {
@@ -684,7 +787,14 @@ final class LiveSessionModel {
             return
         }
         log.retry(id: id)
-        let message = RemoteMessage(id: id, squadId: squad.id, senderId: entry.senderId, body: entry.body, sentAt: entry.sentAt)
+        let message = RemoteMessage(
+            id: id,
+            squadId: squad.id,
+            senderId: entry.senderId,
+            body: entry.body,
+            sentAt: entry.sentAt,
+            replyToId: entry.replyToId
+        )
         await deliver(message, session: session)
     }
 
@@ -915,16 +1025,24 @@ final class LiveSessionModel {
             log = ChatLog()
             reads = []
             board = ReactionBoard()
+            unreadMarker.reset()
+            replyingTo = nil
+            chatCaps = .unknown
             loadedSquad = requested
         }
+        chatLoad = .loading
         do {
             let chat = chatService(session)
+            chatCaps = ChatCapabilities(replies: await chat.repliesAvailable())
+            // The cursor is read first, so nothing marks the chat read between the
+            // history landing and the unread divider settling.
+            let cursor = try? await chat.ownReadAt(squadId: requested, userId: session.userId)
             let rows = try await chat.history(squadId: requested)
             guard HistoryMerge.accepts(requestSquad: requested, loadedSquad: loadedSquad) else { return }
             log.adopt(replacingSquad: false, history: rows.map { $0.entry() })
-            if let cursor = try? await chat.ownReadAt(squadId: requested, userId: session.userId) {
-                log.markRead(at: cursor)
-            }
+            chatLoad = .loaded
+            if let cursor { log.markRead(at: cursor) }
+            unreadMarker.settle(log: log, viewerId: session.userId)
             guard HistoryMerge.accepts(requestSquad: requested, loadedSquad: loadedSquad) else { return }
             if let marks = try? await chat.reactions(squadId: squad.id) {
                 board.replace(with: marks)
@@ -933,6 +1051,9 @@ final class LiveSessionModel {
                 reads = remoteReads
             }
         } catch {
+            if !RequestNoise.isCancellation(error) {
+                chatLoad = ChatHistoryState.failure(error)
+            }
             handleSessionError(error)
         }
     }
@@ -1022,6 +1143,7 @@ final class LiveSessionModel {
             let rows = try await chatService(session).history(squadId: requested)
             guard HistoryMerge.accepts(requestSquad: requested, loadedSquad: loadedSquad) else { return }
             log.adopt(replacingSquad: false, history: rows.map { $0.entry() })
+            chatLoad = .loaded
             await loadSpot(session)
         } catch {
             if RequestNoise.isCancellation(error) { return }
@@ -1135,7 +1257,6 @@ final class LiveSessionModel {
 struct LiveSessionView: View {
     @State private var model: LiveSessionModel
     @State private var pinnedToBottom = true
-    @State private var showNewMessages = false
     @State private var wentToBackground = false
     @State private var confirmSignOut = false
     @State private var confirmEndSpot = false
@@ -1454,10 +1575,19 @@ struct LiveSessionView: View {
                         if !model.spotHistoryNote.isEmpty {
                             SpotStatusRow(text: model.spotHistoryNote, identifier: "spot-history-note")
                         }
-                        ForEach(threadItems) { item in
-                            switch item {
-                            case .message(let entry):
-                                messageRow(entry).id(entry.id)
+                        if let display = model.chatLoad.display(hasMessages: !model.log.entries.isEmpty) {
+                            ChatHistoryRow(display: display) {
+                                Task { await model.retryChatLoad() }
+                            }
+                        }
+                        ForEach(chatRows) { row in
+                            switch row {
+                            case .day(_, let label):
+                                ChatDaySeparator(label: label)
+                            case .unread(let count):
+                                ChatUnreadDivider(count: count)
+                            case .message(let bubble):
+                                messageRow(bubble).id(bubble.entry.id)
                             case .spot(let call):
                                 if let outcome = SpotThread.outcome(call, viewerId: spotViewer, now: Date()) {
                                     SpotHistoryCard(call: call, outcome: outcome)
@@ -1486,6 +1616,18 @@ struct LiveSessionView: View {
                         presenceRoster
                     }
                 }
+                .overlay(alignment: .bottomTrailing) {
+                    if ChatJump.shows(pinned: pinnedToBottom, hasMessages: !model.log.entries.isEmpty), !showsRoster {
+                        ChatJumpButton(newCount: unreadForViewer) {
+                            pinnedToBottom = true
+                            scrollChatToBottom(proxy)
+                            if ChatCatchUp.requests(becamePinned: false, tappedNewMessages: true) {
+                                Task { await model.catchUp(pinned: true) }
+                            }
+                        }
+                        .padding(SQSpace.s)
+                    }
+                }
                 composerBar(proxy)
             }
             .onAppear {
@@ -1504,9 +1646,6 @@ struct LiveSessionView: View {
                 proxy.scrollTo(id, anchor: .center)
             }
             .onChange(of: pinnedToBottom) { wasPinned, isPinned in
-                if ChatCatchUp.hidesNewMessages(pinned: isPinned) {
-                    showNewMessages = false
-                }
                 if ChatCatchUp.requests(becamePinned: isPinned && !wasPinned, tappedNewMessages: false) {
                     Task { await model.catchUp(pinned: true) }
                 }
@@ -1516,11 +1655,8 @@ struct LiveSessionView: View {
                 let own = model.followSend == id
                 if ChatFollow.scrolls(pinned: pinnedToBottom, ownSend: own) {
                     scrollChatToBottom(proxy)
-                    showNewMessages = false
                     if own { model.followSend = nil }
                     Task { await model.catchUp(pinned: true) }
-                } else {
-                    showNewMessages = true
                 }
             }
         }
@@ -1537,24 +1673,15 @@ struct LiveSessionView: View {
                 .frame(height: 1)
                 .accessibilityIdentifier("composer")
             VStack(alignment: .leading, spacing: SQSpace.xs) {
-                if showNewMessages {
-                    Button("New messages") {
-                        showNewMessages = false
-                        pinnedToBottom = true
-                        scrollChatToBottom(proxy)
-                        if ChatCatchUp.requests(becamePinned: false, tappedNewMessages: true) {
-                            Task { await model.catchUp(pinned: true) }
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .accessibilityIdentifier("new-messages")
+                if !model.chatToast.isEmpty {
+                    Text(model.chatToast)
+                        .font(SQType.caption)
+                        .foregroundStyle(SQColor.subtle)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("chat-toast")
                 }
-                let unread = model.log.unreadCount(viewerId: model.profile?.id ?? model.viewerId ?? UUID())
-                if unread > 0 {
-                    Text("Unread \(unread)")
-                    .accessibilityLabel("\(unread) unread")
-                        .font(.caption)
-                        .accessibilityIdentifier("unread-count")
+                if let quote = model.replyQuote {
+                    ChatReplyBanner(quote: quote) { model.cancelReply() }
                 }
                 composer
             }
@@ -1570,6 +1697,25 @@ struct LiveSessionView: View {
     }
 
     private var spotViewer: UUID? { model.viewerId ?? model.profile?.id }
+
+    private var unreadForViewer: Int {
+        model.log.unreadCount(viewerId: model.profile?.id ?? model.viewerId ?? UUID())
+    }
+
+    /// Thread rows with day separators, the unread divider, and message groups.
+    private var chatRows: [ChatRow] {
+        ChatThread.rows(
+            items: threadItems,
+            context: ChatThread.Context(
+                viewerId: model.profile?.id ?? model.viewerId,
+                names: model.memberNames,
+                reads: model.reads,
+                unreadAnchor: model.unreadMarker.anchor,
+                clock: .current,
+                now: Date()
+            )
+        )
+    }
 
     /// Messages with finished calls from the server between them. The current call
     /// stays out: it sits in the top slot, pinned or as history, until the next read.
@@ -2325,33 +2471,67 @@ struct LiveSessionView: View {
         }
     }
 
-    private func messageRow(_ entry: ChatEntry) -> some View {
-        let mine = entry.senderId == model.profile?.id
-        let lastMine = model.log.ordered.last { $0.senderId == model.profile?.id && $0.delivery == .sent }?.id
-        let names = seenNames(for: entry)
+    private var viewerForChat: UUID? { model.profile?.id ?? model.viewerId }
+
+    /// One message: group header, reply quote, bubble, reaction chips, then the
+    /// delivery caption or seen line. Long-press for React, Reply, Copy, and Retry.
+    private func messageRow(_ bubble: ChatBubble) -> some View {
+        let entry = bubble.entry
+        let chipsForRow = ChatReactions.chips(marks: model.board.marks, messageId: entry.id, viewerId: viewerForChat)
+        let actions = ChatAction.available(for: entry, repliesAvailable: model.chatCaps.replies)
         return VStack(alignment: .leading, spacing: 2) {
+            if bubble.startsGroup {
+                ChatGroupHeader(name: bubble.senderName, time: bubble.time, mine: bubble.mine)
+            }
+            if let reply = bubble.reply {
+                ChatReplyQuoteView(quote: reply)
+            }
             Button {
                 model.selectedMessage = entry.id
             } label: {
                 Text(entry.body)
+                    .font(SQType.body)
+                    .foregroundStyle(entry.delivery == .failed ? SQColor.muted : SQColor.ink)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
             }
-            .accessibilityLabel(MessageSpeech.row(body: entry.body, delivery: entry.delivery))
+            .accessibilityLabel(ChatSpeech.bubble(bubble))
+            .accessibilityActions {
+                ForEach(actions, id: \.title) { action in
+                    Button(action.title) { run(action, on: entry.id) }
+                }
+            }
             .buttonStyle(WideRowButtonStyle())
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-            Text(label(for: entry))
-                .font(.caption)
-                .foregroundStyle(SQColor.muted)
-            chips(for: entry)
-            if mine, entry.id == lastMine, !names.isEmpty {
-                Text("Seen by \(names.joined(separator: ", "))")
-                    .font(.caption2)
-                    .foregroundStyle(SQColor.muted)
+            if !chipsForRow.isEmpty {
+                ChipFlow(spacing: SQSpace.xs) {
+                    ForEach(chipsForRow) { chip in
+                        ChatReactionChipButton(chip: chip) {
+                            Task { await model.tap(chip.tapback, on: entry.id) }
+                        }
+                    }
+                }
+                .padding(.top, 2)
             }
-            if model.selectedMessage == entry.id {
+            if let caption = bubble.caption {
+                Text(caption)
+                    .font(SQType.micro)
+                    .foregroundStyle(entry.delivery == .failed ? SQColor.danger : SQColor.subtle)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("delivery-caption")
+            }
+            if let seen = bubble.seen {
+                Text(seen)
+                    .font(SQType.micro)
+                    .foregroundStyle(SQColor.subtle)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("seen-by")
+            }
+            if model.selectedMessage == entry.id, actions.contains(.react) {
                 Button("React") { model.reacting = true }
+                    .frame(minHeight: 44)
                     .accessibilityIdentifier("react")
             }
             if model.reacting, model.selectedMessage == entry.id {
@@ -2359,80 +2539,72 @@ struct LiveSessionView: View {
             }
             if entry.delivery == .failed {
                 Button("Retry") { Task { await model.retry(entry.id) } }
+                    .frame(minHeight: 44)
                     .accessibilityIdentifier("retry-send")
                     .accessibilityLabel("Retry sending")
             }
         }
-        .padding(.vertical, SQSpace.xs)
+        .padding(.top, bubble.startsGroup ? SQSpace.s : 0)
+        .padding(.bottom, bubble.endsGroup ? SQSpace.xs : 0)
         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
         .contentShape(Rectangle())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(ChatSeed.rowIdentifier(for: entry.id))
         .onTapGesture(count: 2) {
-            model.selectedMessage = entry.id
-            model.reacting = true
-        }
-        .accessibilityAction(named: Text("React")) {
+            guard actions.contains(.react) else { return }
             model.selectedMessage = entry.id
             model.reacting = true
         }
         .contextMenu {
-            ForEach(Tapback.allCases) { reaction in
-                Button(reaction.spoken) { Task { await model.tap(reaction, on: entry.id) } }
-            }
-        }
-    }
-
-    private func reactionChoices(_ id: UUID) -> some View {
-        VStack(alignment: .leading, spacing: SQSpace.xs) {
-            ForEach(Tapback.allCases) { reaction in
-                Button(reaction.spoken) { Task { await model.tap(reaction, on: id) } }
-                    .accessibilityIdentifier("tapback-\(reaction.rawValue)")
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func chips(for entry: ChatEntry) -> some View {
-        let rows = Tapback.allCases.compactMap { reaction -> (Tapback, Int)? in
-            let emoji = SquadReaction.emoji(for: reaction)
-            let count = model.board.marks.filter { $0.messageId == entry.id && $0.emoji == emoji }.count
-            guard count > 0 else { return nil }
-            return (reaction, count)
-        }
-        if !rows.isEmpty {
-            HStack(spacing: 4) {
-                ForEach(rows, id: \.0.id) { reaction, count in
-                    HStack(spacing: 3) {
-                        Image(systemName: reaction.rawValue)
-                            .accessibilityHidden(true)
-                        Text("\(count)")
-                            .accessibilityIdentifier("reaction-count")
+            if actions.contains(.react) {
+                Section {
+                    ForEach(Tapback.allCases) { reaction in
+                        Button(reaction.spoken) { Task { await model.tap(reaction, on: entry.id) } }
                     }
-                    .font(.caption2.weight(.semibold))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(SQColor.card, in: Capsule())
+                }
+            }
+            Section {
+                if actions.contains(.reply) {
+                    Button { run(.reply, on: entry.id) } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
+                }
+                Button { run(.copy, on: entry.id) } label: { Label("Copy", systemImage: "doc.on.doc") }
+                if actions.contains(.retry) {
+                    Button { run(.retry, on: entry.id) } label: { Label("Retry sending", systemImage: "arrow.clockwise") }
                 }
             }
         }
     }
 
-    private func seenNames(for entry: ChatEntry) -> [String] {
-        let people = model.reads.map { read in
-            let name = model.squad?.members.first { $0.id == read.userId }?.displayName ?? "Player"
-            return (id: read.userId, name: name, at: read.lastReadAt)
+    private func run(_ action: ChatAction, on id: UUID) {
+        switch action {
+        case .react:
+            model.selectedMessage = id
+            model.reacting = true
+        case .reply:
+            model.startReply(id)
+            composerFocused = true
+        case .copy:
+            model.copy(id)
+        case .retry:
+            Task { await model.retry(id) }
         }
-        return Receipts.seenNames(messageSentAt: entry.sentAt, reads: people, viewerId: model.profile?.id ?? UUID())
     }
 
-    private func label(for entry: ChatEntry) -> String {
-        switch entry.delivery {
-        case .sending: "Sending"
-        case .sent: "Sent"
-        case .failed: "Failed"
+    private func reactionChoices(_ id: UUID) -> some View {
+        VStack(alignment: .leading, spacing: SQSpace.xs) {
+            ForEach(ChatReactions.order) { reaction in
+                Button { Task { await model.tap(reaction, on: id) } } label: {
+                    Text("\(SquadReaction.emoji(for: reaction))  \(reaction.spoken)")
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel(reaction.spoken)
+                .accessibilityIdentifier("tapback-\(reaction.rawValue)")
+            }
         }
     }
+
 }
 
 private struct ChipFlow: Layout {

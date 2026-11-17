@@ -228,9 +228,11 @@ struct RemoteMessage: Equatable, Identifiable, Codable {
     let senderId: UUID
     var body: String
     var sentAt: Date
+    /// 0014 `reply_to_id`. Encoded only when set, so a plain send never names the column.
+    var replyToId: UUID? = nil
 
     func entry() -> ChatEntry {
-        ChatEntry(id: id, senderId: senderId, body: body, sentAt: sentAt, delivery: .sent)
+        ChatEntry(id: id, senderId: senderId, body: body, sentAt: sentAt, delivery: .sent, replyToId: replyToId)
     }
 
     enum CodingKeys: String, CodingKey {
@@ -239,6 +241,7 @@ struct RemoteMessage: Equatable, Identifiable, Codable {
         case senderId = "sender_id"
         case body
         case sentAt = "sent_at"
+        case replyToId = "reply_to_id"
     }
 }
 
@@ -338,4 +341,6 @@ protocol ChatService: AnyObject {
     func setReaction(squadId: UUID, messageId: UUID, userId: UUID, emoji: String, active: Bool) async throws
     func reads(squadId: UUID) async throws -> [MemberRead]
     func ownReadAt(squadId: UUID, userId: UUID) async throws -> Date?
+    /// Read-only probe for 0014's `reply_to_id`. False when the column is missing or the probe fails.
+    func repliesAvailable() async -> Bool
 }

@@ -12,6 +12,8 @@ struct ChatEntry: Equatable, Identifiable {
     var body: String
     var sentAt: Date
     var delivery: Delivery
+    /// The message this one replies to (0014 `reply_to_id`). Nil when it isn't a reply.
+    var replyToId: UUID? = nil
 }
 
 struct ChatLog: Equatable {
@@ -31,12 +33,12 @@ struct ChatLog: Equatable {
         }.count
     }
 
-    mutating func beginSend(id: UUID, senderId: UUID, body: String, now: Date) {
+    mutating func beginSend(id: UUID, senderId: UUID, body: String, now: Date, replyToId: UUID? = nil) {
         if let index = entries.firstIndex(where: { $0.id == id }) {
             entries[index].delivery = .sending
             return
         }
-        entries.append(ChatEntry(id: id, senderId: senderId, body: body, sentAt: now, delivery: .sending))
+        entries.append(ChatEntry(id: id, senderId: senderId, body: body, sentAt: now, delivery: .sending, replyToId: replyToId))
     }
 
     mutating func markSent(id: UUID) {
@@ -62,6 +64,7 @@ struct ChatLog: Equatable {
                 entries[index].body = item.body
                 entries[index].sentAt = item.sentAt
                 entries[index].delivery = .sent
+                if let reply = item.replyToId { entries[index].replyToId = reply }
             } else {
                 var stored = item
                 stored.delivery = .sent

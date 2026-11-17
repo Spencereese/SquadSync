@@ -3,7 +3,7 @@ import XCTest
 final class AccessibilityUITests: XCTestCase {
     func testTabsAndThreadButtonsAreExposed() {
         let app = XCUIApplication()
-        app.launchArguments = ["-screen", "inbox", "-scenario", "seated"]
+        app.launchArguments = ["-backend", "mock", "-screen", "inbox", "-scenario", "seated"]
         app.launch()
 
         let inbox = app.descendants(matching: .any)["tab-inbox"]
@@ -12,7 +12,7 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(space.exists, "Space tab was not in the accessibility tree")
 
         app.terminate()
-        app.launchArguments = ["-screen", "thread-general", "-scenario", "seated"]
+        app.launchArguments = ["-backend", "mock", "-screen", "thread-general", "-scenario", "seated"]
         app.launch()
 
         let voice = app.descendants(matching: .any)["voice-room"]
@@ -23,7 +23,7 @@ final class AccessibilityUITests: XCTestCase {
 
     func testSpaceMemberRowClearsTheTabBarAtLargeText() {
         let app = XCUIApplication()
-        app.launchArguments = ["-screen", "space", "-uitest-largeText"]
+        app.launchArguments = ["-backend", "mock", "-screen", "space", "-uitest-largeText"]
         app.launch()
 
         let row = app.descendants(matching: .any)["member-sam"]
@@ -39,7 +39,7 @@ final class AccessibilityUITests: XCTestCase {
 
     func testInboxLastRowClearsTheTabBarAtLargeText() {
         let app = XCUIApplication()
-        app.launchArguments = ["-screen", "inbox", "-uitest-largeText"]
+        app.launchArguments = ["-backend", "mock", "-screen", "inbox", "-uitest-largeText"]
         app.launch()
 
         let row = app.descendants(matching: .any)["inbox-friday"]
@@ -55,7 +55,7 @@ final class AccessibilityUITests: XCTestCase {
 
     func testPartySheetDetailsClearTheActionBarAtLargeText() {
         let app = XCUIApplication()
-        app.launchArguments = ["-screen", "thread-general", "-uitest-largeText"]
+        app.launchArguments = ["-backend", "mock", "-screen", "thread-general", "-uitest-largeText"]
         app.launch()
 
         let summary = app.descendants(matching: .any)["party-summary"]

@@ -20,7 +20,8 @@ struct LaunchOptions {
     var screen: LaunchScreen = .inbox
     var scenario: LaunchScenario = .seated
     var largeText = false
-    var backend: BackendMode = .mock
+    /// Live unless the launch asks for mock (see `LaunchBackend.choose`).
+    var backend: LaunchBackend = .mock
 
     var path: [String] {
         switch screen {
@@ -33,7 +34,12 @@ struct LaunchOptions {
         }
     }
 
-    static func current(_ arguments: [String] = ProcessInfo.processInfo.arguments) -> LaunchOptions {
+    static func current(
+        _ arguments: [String] = ProcessInfo.processInfo.arguments,
+        config: BackendConfig = .fromBundle(),
+        isRelease: Bool = BuildFlavor.isRelease,
+        hostingUnitTests: Bool = BuildFlavor.hostingUnitTests()
+    ) -> LaunchOptions {
         var options = LaunchOptions()
         if let value = flag("-screen", in: arguments), let screen = LaunchScreen(rawValue: value) {
             options.screen = screen
@@ -42,9 +48,12 @@ struct LaunchOptions {
             options.scenario = scenario
         }
         options.largeText = arguments.contains("-uitest-largeText")
-        if let value = flag("-backend", in: arguments), let backend = BackendMode(rawValue: value) {
-            options.backend = backend
-        }
+        options.backend = LaunchBackend.choose(
+            arguments: arguments,
+            config: config,
+            isRelease: isRelease,
+            hostingUnitTests: hostingUnitTests
+        )
         return options
     }
 
@@ -71,22 +80,63 @@ struct SquadSyncApp: App {
 
     var body: some Scene {
         WindowGroup {
-            if launch.scenario == .spotCall || launch.scenario == .spotCallMine || launch.scenario == .spotCallNearlyFull || launch.scenario == .spotCallExpired {
-                LiveSessionView(backend: .mock, scenario: launch.scenario)
-                    .modifier(LargeTextLaunch(enabled: launch.largeText))
-            } else if launch.scenario == .invite || launch.scenario == .almostFull || launch.scenario == .spotHistory || launch.scenario == .spotServerMissing || launch.scenario.isChatScenario || launch.scenario.isWhosInScenario || launch.scenario.isOnboardingScenario {
-                LiveSessionView(backend: .mock, scenario: launch.scenario)
-                    .modifier(LargeTextLaunch(enabled: launch.largeText))
-            } else if launch.scenario == .noSquad {
-                LiveSessionView(backend: .mock)
-                    .modifier(LargeTextLaunch(enabled: launch.largeText))
-            } else if launch.backend == .live {
+            switch launch.backend {
+            case .live:
                 LiveSessionView()
                     .modifier(LargeTextLaunch(enabled: launch.largeText))
-            } else {
-                RootView(store: store, launch: launch)
+            case .notConfigured(let missing):
+                NotConfiguredView(missing: missing)
+                    .modifier(LargeTextLaunch(enabled: launch.largeText))
+            case .mock:
+                mockRoot
             }
         }
+    }
+
+    /// Mock only: `-backend mock`, or a Debug UI-test `-scenario` launch.
+    @ViewBuilder
+    private var mockRoot: some View {
+        if launch.scenario == .spotCall || launch.scenario == .spotCallMine || launch.scenario == .spotCallNearlyFull || launch.scenario == .spotCallExpired {
+            LiveSessionView(backend: .mock, scenario: launch.scenario)
+                .modifier(LargeTextLaunch(enabled: launch.largeText))
+        } else if launch.scenario == .invite || launch.scenario == .almostFull || launch.scenario == .spotHistory || launch.scenario == .spotServerMissing || launch.scenario.isChatScenario || launch.scenario.isWhosInScenario || launch.scenario.isOnboardingScenario {
+            LiveSessionView(backend: .mock, scenario: launch.scenario)
+                .modifier(LargeTextLaunch(enabled: launch.largeText))
+        } else if launch.scenario == .noSquad {
+            LiveSessionView(backend: .mock)
+                .modifier(LargeTextLaunch(enabled: launch.largeText))
+        } else {
+            RootView(store: store, launch: launch)
+        }
+    }
+}
+
+/// A build without server settings. Says so plainly instead of showing sample data.
+struct NotConfiguredView: View {
+    let missing: [String]
+
+    var body: some View {
+        ZStack {
+            SQColor.surface0.ignoresSafeArea()
+            ScrollView {
+                VStack(alignment: .leading, spacing: SQSpace.m) {
+                    Text(LaunchBackend.notConfiguredTitle)
+                        .font(SQType.title)
+                        .foregroundStyle(SQColor.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("not-configured-title")
+                    Text(LaunchBackend.notConfiguredDetail(missing: missing))
+                        .font(SQType.body)
+                        .foregroundStyle(SQColor.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("not-configured-detail")
+                }
+                .padding(SQSpace.l)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .preferredColorScheme(.dark)
     }
 }
 

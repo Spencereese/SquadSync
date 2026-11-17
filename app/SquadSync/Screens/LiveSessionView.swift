@@ -69,6 +69,18 @@ final class LiveSessionModel {
     var voicePill = VoicePillState()
     /// The status line the last failed send wrote, so a later success can clear exactly that.
     var sendFailureStatus: String?
+    // Who's in (S4): check-ins, what the server supports, and Steam when it's deployed.
+    var checkIns: [CheckInRecord] = []
+    var checkInCaps = CheckInCapabilities.unknown
+    var steam = SteamRead.notChecked
+    var whosInLoad = WhosInLoad.idle
+    var whosInOpen = false
+    /// The game and console typed into your own check-in. Only sent once the server has 0022's columns.
+    var checkInGame = ""
+    var checkInPlatform: CheckInPlatform?
+    var checkInBusy = false
+    /// Why the last check-in didn't save, in plain words. Cleared by the next success.
+    var checkInError = ""
 
     private let config: BackendConfig
     private let voiceRoom: VoiceRoomService = InMemoryVoiceRoomService()
@@ -79,6 +91,8 @@ final class LiveSessionModel {
     private let mockChat: ChatService?
     private let mockInvites: InviteServing?
     private let mockSpots: SpotServing?
+    /// Internal so model tests can change what the mock server holds.
+    let mockCheckIns: MockCheckInService?
     private var liveSpotService: SupabaseSpotService?
     private var liveSpotToken: String?
     private var realtime: RealtimeClient?
@@ -111,6 +125,7 @@ final class LiveSessionModel {
             )
             self.sessionStore = store
             self.auth = MockAuthService(store: store)
+            self.mockCheckIns = Self.mockCheckIns(for: scenario, viewerId: session.userId)
             self.mockProfiles = MockProfileService()
             self.mockSquads = squads
             self.mockChat = chat
@@ -181,6 +196,10 @@ final class LiveSessionModel {
                 self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: nil)
                 if scenario == .almostFull {
                     self.squad = squads.seedAlmostFull(ownerId: session.userId)
+                } else if scenario == .whosInEmpty {
+                    self.squad = squads.seed(ownerId: session.userId, name: "Friday")
+                } else if scenario.isWhosInScenario {
+                    self.squad = squads.seedSpotSquad(ownerId: session.userId)
                 } else if scenario == .invite {
                     var seeded = squads.seed(ownerId: session.userId, name: "Friday")
                     squads.addMember(id: ChatSeed.otherId, name: "Riley")
@@ -217,6 +236,32 @@ final class LiveSessionModel {
             self.mockChat = nil
             self.mockInvites = nil
             self.mockSpots = nil
+            self.mockCheckIns = nil
+        }
+    }
+
+    /// Mock check-in servers. Every mock scenario has check-ins like live (0006) with
+    /// no game or console columns and Steam not set up; the who's-in scenarios vary that.
+    private static func mockCheckIns(for scenario: LaunchScenario, viewerId: UUID) -> MockCheckInService {
+        let squad = ChatSeed.squadId
+        let now = Date()
+        switch scenario {
+        case .whosIn:
+            return MockCheckInService(
+                caps: CheckInCapabilities(table: true, details: true),
+                rows: WhosInSeed.rows(viewerId: viewerId, squadId: squad, now: now, details: true),
+                steam: WhosInSeed.steam
+            )
+        case .whosInBasic:
+            return MockCheckInService(rows: WhosInSeed.rows(viewerId: viewerId, squadId: squad, now: now, details: false))
+        case .whosInFailed:
+            return MockCheckInService(rows: WhosInSeed.rows(viewerId: viewerId, squadId: squad, now: now, details: false), readsDown: true)
+        case .whosInSlow:
+            return MockCheckInService(rows: WhosInSeed.rows(viewerId: viewerId, squadId: squad, now: now, details: false), readDelay: 9, waitsForSheet: true)
+        case .whosInNoServer:
+            return MockCheckInService(caps: .unknown)
+        default:
+            return MockCheckInService()
         }
     }
 
@@ -799,7 +844,8 @@ final class LiveSessionModel {
         await deliver(message, session: session)
     }
 
-    /// Presence strip rows for the home header. Only real signals: spot seats and the viewer.
+    /// Presence strip rows for the home header. Only real signals: spot seats,
+    /// check-ins once the server is known to have them, and the viewer.
     func presenceEntries(now: Date) -> [SquadPresenceEntry] {
         guard let squad else { return [] }
         return SquadPresence.entries(
@@ -807,8 +853,151 @@ final class LiveSessionModel {
             ownerId: squad.ownerId,
             viewerId: viewerId ?? profile?.id,
             spot: spot,
+            now: now,
+            availability: WhosIn.availabilityByMember(checkIns: checkIns, squadId: squad.id, caps: checkInCaps, now: now)
+        )
+    }
+
+    /// Rows for the who's-in sheet.
+    func whosInEntries(now: Date) -> [WhosInEntry] {
+        guard let squad else { return [] }
+        return WhosIn.entries(
+            members: squad.members,
+            squadId: squad.id,
+            ownerId: squad.ownerId,
+            viewerId: viewerId ?? profile?.id,
+            spot: spot,
+            checkIns: checkIns,
+            caps: checkInCaps,
+            steam: steam,
             now: now
         )
+    }
+
+    /// Your own check-in as it reads now.
+    func myAvailability(now: Date) -> WhosInAvailability {
+        guard checkInCaps.table else { return .untracked }
+        guard let me = viewerId ?? profile?.id else { return .notCheckedIn }
+        return CheckInRules.availability(WhosIn.newest(checkIns, squadId: squad?.id)[me], now: now)
+    }
+
+    func openWhosIn() {
+        whosInOpen = true
+        checkInError = ""
+        Task { await loadWhosIn(includeSteam: true) }
+    }
+
+    /// Reads capabilities (once), the squad's check-ins, and, when asked, Steam.
+    /// A failure keeps earlier rows and says so instead of emptying the sheet.
+    func loadWhosIn(includeSteam: Bool = false) async {
+        guard let squad, let session = try? requiredSession() else { return }
+        let service = checkInService(session)
+        await readCheckIns(service, squadId: squad.id)
+        // Steam is its own source: it's read even when check-ins aren't on the server.
+        if includeSteam {
+            steam = await service.steam()
+        }
+    }
+
+    private func readCheckIns(_ service: CheckInServing, squadId requested: UUID) async {
+        whosInLoad = .loading
+        do {
+            if !checkInCaps.table {
+                checkInCaps = try await service.capabilities()
+            }
+            guard checkInCaps.table else {
+                checkIns = []
+                whosInLoad = .loaded
+                return
+            }
+            let rows = try await service.checkIns(squadId: requested)
+            guard squad?.id == requested else { return }
+            checkIns = rows
+            whosInLoad = .loaded
+            seedCheckInDraft()
+        } catch CheckInProblem.unavailable {
+            checkInCaps = .unknown
+            checkIns = []
+            whosInLoad = .loaded
+        } catch {
+            if RequestNoise.isCancellation(error) { return }
+            whosInLoad = WhosInLoad.failure(error)
+        }
+    }
+
+    /// A realtime check-in delete. Every squad's deletes arrive, so this rereads
+    /// only when the delete could be someone this squad shows.
+    func checkInRemoved(userId: UUID?) async {
+        guard let squad else { return }
+        let members = Set(squad.members.map(\.id))
+        guard CheckInChange.rereads(afterRemoving: userId, memberIds: members, loaded: checkIns) else { return }
+        await loadWhosIn()
+    }
+
+    /// Retry from the sheet's error row. The mock server comes back so both states can be seen.
+    func retryWhosIn() async {
+        mockCheckIns?.recover()
+        await loadWhosIn(includeSteam: steam == .notChecked || steam == .failed)
+    }
+
+    /// Fills the game and console fields from your saved check-in, once.
+    private func seedCheckInDraft() {
+        guard checkInGame.isEmpty, checkInPlatform == nil,
+              let me = viewerId ?? profile?.id,
+              let mine = WhosIn.newest(checkIns, squadId: squad?.id)[me] else { return }
+        checkInGame = mine.game ?? ""
+        checkInPlatform = mine.platform
+    }
+
+    /// Saves your check-in. "On now" gets its 60 minutes from the server clock.
+    func checkIn(_ kind: CheckInKind, laterAt: Date? = nil) async {
+        guard checkInCaps.table, let squad, let session = try? requiredSession() else { return }
+        if kind == .availableLater, laterAt == nil { return }
+        checkInBusy = true
+        defer { checkInBusy = false }
+        let write = CheckInWrite(
+            userId: session.userId,
+            squadId: squad.id,
+            kind: kind,
+            untilAt: laterAt,
+            game: CheckInRules.normalizedGame(checkInGame),
+            platform: checkInPlatform,
+            includesDetails: checkInCaps.details
+        )
+        do {
+            if let saved = try await checkInService(session).save(write) {
+                checkIns.removeAll { $0.userId == saved.userId }
+                checkIns.append(saved)
+            } else {
+                await loadWhosIn()
+            }
+            checkInError = ""
+            SQHaptics.play(.success)
+        } catch let problem as CheckInProblem {
+            checkInError = problem.message
+            if problem == .unavailable { checkInCaps = .unknown }
+        } catch {
+            if RequestNoise.isCancellation(error) { return }
+            checkInError = CheckInRules.message(for: "")
+            report(error)
+        }
+    }
+
+    /// Removes your check-in, so you read as not checked in.
+    func clearCheckIn() async {
+        guard checkInCaps.table, let squad, let session = try? requiredSession() else { return }
+        checkInBusy = true
+        defer { checkInBusy = false }
+        do {
+            try await checkInService(session).clear(userId: session.userId, squadId: squad.id)
+            checkIns.removeAll { $0.userId == session.userId }
+            checkInError = ""
+        } catch let problem as CheckInProblem {
+            checkInError = problem.message
+        } catch {
+            if RequestNoise.isCancellation(error) { return }
+            checkInError = "Couldn't clear your check-in. Try again."
+        }
     }
 
     /// Joins or leaves the in-memory voice room. Nothing goes over the network.
@@ -948,6 +1137,8 @@ final class LiveSessionModel {
             reconnecting = false
             await loadChat(session)
             await loadSpot(session)
+            // The slow mock skips this so the sheet's own read is the one that loads.
+            if mockCheckIns?.waitsForSheet != true { await loadWhosIn() }
             settlePush(signedIn: true)
         } catch {
             handleSessionError(error)
@@ -1107,6 +1298,10 @@ final class LiveSessionModel {
             if removed { board.remove(mark) } else { board.add(mark) }
         case .spots:
             await loadSpot(session)
+        case .checkIns:
+            await loadWhosIn()
+        case .checkInRemoved(let user):
+            await checkInRemoved(userId: user)
         case .read(let read):
             var book = ReceiptBook(reads: reads)
             book.apply(read)
@@ -1146,6 +1341,8 @@ final class LiveSessionModel {
             log.adopt(replacingSquad: false, history: rows.map { $0.entry() })
             chatLoad = .loaded
             await loadSpot(session)
+            // Without the socket, check-ins only refresh while someone is looking at them.
+            if whosInOpen { await loadWhosIn() }
         } catch {
             if RequestNoise.isCancellation(error) { return }
             report(error)
@@ -1172,6 +1369,15 @@ final class LiveSessionModel {
 
     private func squadService(_ session: AuthSession) -> SquadService {
         mockSquads ?? SupabaseSquadService(config: config, accessToken: session.accessToken, refresher: tokenRefresher)
+    }
+
+    private func checkInService(_ session: AuthSession) -> CheckInServing {
+        mockCheckIns ?? SupabaseCheckInService(
+            config: config,
+            accessToken: session.accessToken,
+            refresher: tokenRefresher,
+            knownDetails: checkInCaps.table ? checkInCaps.details : nil
+        )
     }
 
     private func chatService(_ session: AuthSession) -> ChatService {
@@ -1318,6 +1524,11 @@ struct LiveSessionView: View {
         }
         .sheet(isPresented: $showMembers) {
             membershipSheet
+                .adoptingLaunchDynamicType()
+        }
+        .sheet(isPresented: Binding(get: { model.whosInOpen }, set: { model.whosInOpen = $0 })) {
+            // The launch Dynamic Type override sits outside, so the sheet reads AX5 for its detents.
+            WhosInSheet(model: model)
                 .adoptingLaunchDynamicType()
         }
         .task { await model.restore() }
@@ -1528,6 +1739,7 @@ struct LiveSessionView: View {
                 onOpenPanel: { showMembers = true },
                 onAccount: { confirmSignOut = true },
                 onVoice: { Task { await model.toggleVoice() } },
+                onOpenWhosIn: { model.openWhosIn() },
                 rosterOpen: $rosterOpen
             )
         }
@@ -1545,9 +1757,9 @@ struct LiveSessionView: View {
             SquadPresenceRoster(
                 entries: model.presenceEntries(now: now),
                 voice: model.voicePill,
-                onOpenPanel: {
+                onOpenWhosIn: {
                     rosterOpen = false
-                    showMembers = true
+                    model.openWhosIn()
                 },
                 onVoice: { Task { await model.toggleVoice() } }
             )
@@ -2118,6 +2330,13 @@ struct LiveSessionView: View {
                 Text("Call spots")
             }
             .accessibilityIdentifier("composer-call-spots")
+            Button {
+                SQHaptics.play(.tap)
+                model.openWhosIn()
+            } label: {
+                Text("Who's in")
+            }
+            .accessibilityIdentifier("composer-whos-in")
         } label: {
             Image(systemName: "plus.circle.fill")
                 .font(.title2.weight(.semibold))
@@ -2127,7 +2346,7 @@ struct LiveSessionView: View {
                 .contentShape(Rectangle())
         }
         .accessibilityLabel("More")
-        .accessibilityHint("Call spots for the squad")
+        .accessibilityHint("Call spots, or see who's in")
         .accessibilityIdentifier("composer-plus")
     }
 

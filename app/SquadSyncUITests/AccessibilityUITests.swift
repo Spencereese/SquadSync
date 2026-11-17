@@ -699,14 +699,14 @@ final class AccessibilityUITests: XCTestCase {
         let riley = app.buttons["presence-Riley"]
         XCTAssertTrue(riley.waitForExistence(timeout: 5), "Riley was not in the presence strip")
         XCTAssertTrue(riley.isHittable, "Riley's avatar was not hittable, frame \(riley.frame)")
-        XCTAssertTrue(riley.label.contains("presence isn't tracked yet"), "Mock presence claimed a status it does not have: \(riley.label)")
+        XCTAssertTrue(waitForLabel(riley, "label CONTAINS \"hasn't checked in\""), "Without a check-in Riley should read as not checked in: \(riley.label)")
         XCTAssertFalse(riley.label.lowercased().contains("online"))
         let me = app.buttons["presence-You"]
         XCTAssertTrue(me.exists, "The viewer was not in the presence strip")
         XCTAssertTrue(me.isHittable)
 
         riley.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["squad-count"].waitForExistence(timeout: 5), "An avatar did not open the squad panel")
+        XCTAssertTrue(element("whos-in-sheet", in: app).waitForExistence(timeout: 5), "An avatar did not open Who's in")
     }
 
     func testPresenceStripShowsSpotSeats() {
@@ -762,10 +762,13 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(app.buttons["members"].isHittable, "Members was squeezed out of the header at large text")
         let window = app.windows.firstMatch.frame
         XCTAssertLessThanOrEqual(riley.frame.maxX, window.maxX + 1, "Riley's row runs off the right edge")
-        let note = app.descendants(matching: .any)["presence-untracked"]
-        XCTAssertTrue(note.waitForExistence(timeout: 5), "The untracked-presence line was missing at large text")
-        XCTAssertEqual(note.label, "Presence isn't live yet")
-        XCTAssertLessThanOrEqual(note.frame.maxX, window.maxX + 1, "The untracked-presence line is cut off at the right")
+        // Check-ins are on the (mock) server, so the roster offers Who's in instead of "not live".
+        let whosIn = app.buttons["whos-in-open"]
+        XCTAssertTrue(whosIn.waitForExistence(timeout: 5), "Who's in was missing from the large-text roster")
+        XCTAssertTrue(whosIn.isHittable)
+        XCTAssertGreaterThanOrEqual(whosIn.frame.height, 44)
+        XCTAssertLessThanOrEqual(whosIn.frame.maxX, window.maxX + 1, "Who's in is cut off at the right")
+        XCTAssertFalse(app.descendants(matching: .any)["presence-untracked"].exists, "Presence is tracked by check-ins here")
         toggle.tap()
         XCTAssertTrue(riley.waitForNonExistence(timeout: 5), "The roster did not fold again")
     }
@@ -840,12 +843,12 @@ final class AccessibilityUITests: XCTestCase {
         app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
         app.launch()
 
-        let note = app.descendants(matching: .any)["presence-untracked"]
-        XCTAssertTrue(note.waitForExistence(timeout: 15), "The untracked-presence pill was missing")
-        XCTAssertEqual(note.label, "Presence isn't live yet")
-        XCTAssertTrue(note.isHittable || note.frame.width > 0)
-        XCTAssertLessThanOrEqual(note.frame.maxX, app.windows.firstMatch.frame.maxX + 1, "The untracked pill is cut off at the right")
-        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "presence-untracked").count, 1, "The pill's symbol is a second element")
+        let pill = app.buttons["whos-in-open"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 15), "The Who's in pill was missing")
+        XCTAssertEqual(pill.label, "Who's in")
+        XCTAssertTrue(pill.isHittable || pill.frame.width > 0)
+        XCTAssertLessThanOrEqual(pill.frame.maxX, app.windows.firstMatch.frame.maxX + 1, "The Who's in pill is cut off at the right")
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "whos-in-open").count, 1, "The pill's symbol is a second element")
         let symbolNames = ["antenna", "radiowaves", "mic.slash", "waveform", "gamecontroller", "checkmark", "lock.fill", "chevron", "person.3", "person.2", "ellipsis"]
         let format = symbolNames.map { "label CONTAINS[c] '\($0)'" }.joined(separator: " OR ")
         let leaked = app.descendants(matching: .any).matching(NSPredicate(format: format))
@@ -1071,7 +1074,8 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(toggle.waitForExistence(timeout: 15))
         toggle.tap()
         let roster = app.descendants(matching: .any)["presence-strip"]
-        let note = app.descendants(matching: .any)["presence-untracked"]
+        // With check-ins on the server the last row is Who's in, not the untracked line.
+        let note = app.buttons["whos-in-open"]
         XCTAssertTrue(note.waitForExistence(timeout: 5), "The roster's last row was missing")
         XCTAssertLessThanOrEqual(note.frame.maxY, roster.frame.maxY + 1, "The last row is cut off by the roster. note \(note.frame) roster \(roster.frame)")
         let list = app.scrollViews["message-list"]
@@ -1142,6 +1146,7 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(app.buttons["react"].waitForExistence(timeout: 3), "The tap on the roster's empty area at \(pick.point) did not reach '\(pick.label)' under it")
         XCTAssertTrue(roster.exists, "The tap closed the roster, so it hit a roster control")
         XCTAssertFalse(app.descendants(matching: .any)["squad-count"].exists, "The tap opened the squad panel, so it hit a roster row or 'more'")
+        XCTAssertFalse(app.descendants(matching: .any)["whos-in-sheet"].exists, "The tap opened Who's in, so it hit a roster row, 'more', or Who's in")
         if let voiceLabel {
             XCTAssertEqual(app.buttons["voice-room-pill"].label, voiceLabel, "The tap toggled the voice room")
         }
@@ -1660,5 +1665,265 @@ final class AccessibilityUITests: XCTestCase {
 
     func testCallSheetButtonClearsTheKeyboardBarAtDefaultSize() {
         assertCallSheetClearsTheKeyboardBar(largeText: false)
+    }
+
+    // MARK: Who's in (redesign S4)
+
+    /// Opens Who's in from the composer's + menu, which is there at every text size.
+    /// `waitForSheet: false` returns right after the tap, for checks that can't wait.
+    private func openWhosInFromMenu(_ app: XCUIApplication, waitForSheet: Bool = true, file: StaticString = #filePath, line: UInt = #line) {
+        let plus = app.buttons["composer-plus"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 15), "The composer's + menu was missing", file: file, line: line)
+        plus.tap()
+        let item = app.buttons["composer-whos-in"]
+        if item.waitForExistence(timeout: 3) {
+            item.tap()
+        } else {
+            let fallback = app.collectionViews.buttons["Who's in"]
+            XCTAssertTrue(fallback.waitForExistence(timeout: 3), "Who's in was not in the + menu", file: file, line: line)
+            fallback.tap()
+        }
+        guard waitForSheet else { return }
+        XCTAssertTrue(element("whos-in-sheet", in: app).waitForExistence(timeout: 5), "Who's in didn't open", file: file, line: line)
+    }
+
+    /// Floating point puts a 44pt frame at 43.99999999999994, so size checks allow 0.5pt.
+    private func assertHitTarget(_ target: XCUIElement, _ what: String, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertGreaterThanOrEqual(target.frame.height, 43.5, "\(what) is too short to hit: \(target.frame)", file: file, line: line)
+    }
+
+    /// Drags Who's in up to its large detent. iOS 26 draws a medium sheet's content
+    /// at about 96% scale (342/354), so a real 44pt button measures 42.25 there;
+    /// at the large detent it measures true. Sizes are checked after this.
+    private func expandWhosIn(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let sheet = element("whos-in-sheet", in: app)
+        let window = app.windows.firstMatch
+        let tall = { sheet.frame.height >= window.frame.height * 0.7 }
+        for _ in 0..<3 where !tall() {
+            // Grab just inside the sheet's top. Never above it: that's the dimmed
+            // background, and a tap there dismisses the sheet. Pulling up on the
+            // content at its top resizes a medium sheet before it scrolls.
+            let origin = window.coordinate(withNormalizedOffset: .zero)
+            let grab = origin.withOffset(CGVector(dx: window.frame.midX, dy: sheet.frame.minY + 8))
+            let top = origin.withOffset(CGVector(dx: window.frame.midX, dy: 60))
+            grab.press(forDuration: 0.05, thenDragTo: top, withVelocity: .fast, thenHoldForDuration: 0.2)
+            _ = waitUntil(timeout: 2, tall)
+        }
+        XCTAssertTrue(tall(), "Who's in didn't reach its large detent: \(sheet.frame)", file: file, line: line)
+    }
+
+    private func whosInRow(_ name: String, in app: XCUIApplication) -> XCUIElement {
+        element("whos-in-row-\(name)", in: app)
+    }
+
+    /// Short slow drags inside the sheet until the element is hittable. Bounded.
+    @discardableResult
+    private func scrollSheet(to target: XCUIElement, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) -> Bool {
+        let sheet = element("whos-in-sheet", in: app)
+        for step in 0..<16 {
+            if target.exists && target.isHittable { return true }
+            let towardTop = step >= 10
+            let upper = sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.35))
+            let lower = sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.7))
+            let (from, to) = towardTop ? (upper, lower) : (lower, upper)
+            from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.1)
+        }
+        let found = target.exists && target.isHittable
+        XCTAssertTrue(found, "Couldn't scroll the sheet to \(target)", file: file, line: line)
+        return found
+    }
+
+    func testWhosInShowsEachSourceWithItsLabel() {
+        let app = launchChat("whosIn")
+        let pill = app.buttons["whos-in-open"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 15), "No Who's in pill in the strip")
+        XCTAssertTrue(waitForLabel(pill, "label == \"Who's in, 2 on\""), "The pill should count who's on: \(pill.label)")
+        pill.tap()
+        XCTAssertTrue(element("whos-in-sheet", in: app).waitForExistence(timeout: 5))
+        XCTAssertTrue(element("whos-in-section-now", in: app).waitForExistence(timeout: 5), "No On now section")
+        XCTAssertEqual(element("whos-in-section-now", in: app).label, "On now · 2")
+
+        let alex = whosInRow("Alex", in: app)
+        guard scrollSheet(to: alex, in: app) else { return }
+        XCTAssertTrue(alex.label.contains("on now until"), alex.label)
+        XCTAssertTrue(alex.label.contains("says Halo Infinite on Xbox, from their check-in"), "A typed console must say it's a check-in: \(alex.label)")
+        let jordan = whosInRow("Jordan", in: app)
+        guard scrollSheet(to: jordan, in: app) else { return }
+        XCTAssertTrue(jordan.label.contains("playing Counter-Strike 2 on Steam"), jordan.label)
+        let sam = whosInRow("Sam", in: app)
+        guard scrollSheet(to: sam, in: app) else { return }
+        XCTAssertTrue(sam.label.contains("on later, around"), sam.label)
+        let casey = whosInRow("Casey", in: app)
+        guard scrollSheet(to: casey, in: app) else { return }
+        XCTAssertTrue(casey.label.contains("can't play"), casey.label)
+        XCTAssertTrue(casey.label.contains("Steam profile private"), casey.label)
+
+        let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'whos-in-row-'"))
+        XCTAssertEqual(rows.count, 4, "Everyone but you gets one row, each one element")
+        for row in rows.allElementsBoundByIndex {
+            XCTAssertFalse(row.label.lowercased().contains("online"), "Who's in claimed online: \(row.label)")
+        }
+        let steamLine = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Steam: '")).firstMatch
+        guard scrollSheet(to: steamLine, in: app) else { return }
+        XCTAssertEqual(steamLine.label, "Steam: the game on linked public profiles. PC only.")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Xbox and PlayStation: no presence'")).firstMatch.exists)
+        app.buttons["whos-in-done"].tap()
+        XCTAssertTrue(element("whos-in-sheet", in: app).waitForNonExistence(timeout: 5))
+    }
+
+    func testCheckInNowOnALiveLikeServer() {
+        let app = launchChat("whosInBasic")
+        openWhosInFromMenu(app)
+        let status = element("check-in-status", in: app)
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "You haven't checked in.")
+        expandWhosIn(app)
+        XCTAssertTrue(element("check-in-details-missing", in: app).exists, "This server can't keep a game; the sheet should say so")
+        XCTAssertFalse(app.textFields["check-in-game"].exists, "No game field without 0022")
+        XCTAssertTrue(element("check-in-honor", in: app).exists, "The honor-system note is missing")
+        let now = app.buttons["check-in-now"]
+        XCTAssertTrue(now.isHittable)
+        assertHitTarget(now, "I'm on now")
+        now.tap()
+        XCTAssertTrue(waitForLabel(status, "label BEGINSWITH \"You're on until\""), "Checking in didn't update your status: \(status.label)")
+        let clear = app.buttons["check-in-clear"]
+        XCTAssertTrue(clear.waitForExistence(timeout: 5), "No Clear after checking in")
+        XCTAssertTrue(element("whos-in-sources", in: app).exists)
+        app.buttons["whos-in-done"].tap()
+        let pill = app.buttons["whos-in-open"]
+        XCTAssertTrue(waitForLabel(pill, "label == \"Who's in, 3 on\""), "Your check-in didn't reach the strip: \(pill.label)")
+        let me = app.buttons["presence-You"]
+        XCTAssertTrue(me.label.contains("on now, from their check-in"), me.label)
+        pill.tap()
+        XCTAssertTrue(clear.waitForExistence(timeout: 5))
+        clear.tap()
+        XCTAssertTrue(waitForLabel(status, "label == \"You haven't checked in.\""), "Clear didn't remove your check-in")
+    }
+
+    func testCheckInLaterWithGameAndConsole() {
+        let app = launchChat("whosIn")
+        openWhosInFromMenu(app)
+        let game = app.textFields["check-in-game"]
+        XCTAssertTrue(game.waitForExistence(timeout: 5), "No game field on a server with 0022")
+        expandWhosIn(app)
+        game.tap()
+        game.typeText("Apex")
+        app.buttons["check-in-later"].tap()
+        let options = app.buttons.matching(identifier: "check-in-later-option")
+        XCTAssertTrue(options.firstMatch.waitForExistence(timeout: 5), "Later didn't offer times")
+        XCTAssertGreaterThanOrEqual(options.count, 3)
+        for option in options.allElementsBoundByIndex where option.isHittable {
+            assertHitTarget(option, "A later time")
+        }
+        let first = options.firstMatch
+        XCTAssertTrue(first.label.hasPrefix("In 30 min, around "), first.label)
+        first.tap()
+        let status = element("check-in-status", in: app)
+        XCTAssertTrue(waitForLabel(status, "label BEGINSWITH \"You said around\""), "Later didn't save: \(status.label)")
+        XCTAssertEqual((game.value as? String) ?? "", "Apex", "The typed game should stay in the field")
+    }
+
+    func testWhosInLoadingThenRows() {
+        // The mock's read takes 9s (whosInSlow), so the loading row is up well past
+        // the first look. Look straight after the tap, not after waiting for the sheet.
+        let app = launchChat("whosInSlow")
+        openWhosInFromMenu(app, waitForSheet: false)
+        let loading = element("whos-in-loading", in: app)
+        XCTAssertTrue(loading.waitForExistence(timeout: 5), "No loading row")
+        XCTAssertTrue(loading.label.contains("Loading who's in"), loading.label)
+        XCTAssertFalse(element("whos-in-section-none", in: app).exists, "Loading must not claim nobody checked in")
+        XCTAssertTrue(element("whos-in-section-now", in: app).waitForExistence(timeout: 20), "Check-ins never arrived")
+        XCTAssertTrue(loading.waitForNonExistence(timeout: 5))
+    }
+
+    func testWhosInErrorOffersRetryThenLoads() {
+        let app = launchChat("whosInFailed")
+        openWhosInFromMenu(app)
+        let error = element("whos-in-error", in: app)
+        XCTAssertTrue(error.waitForExistence(timeout: 5), "No error row")
+        XCTAssertEqual(error.label, "Who's in couldn't load. The server didn't answer.")
+        XCTAssertFalse(element("whos-in-section-none", in: app).exists, "A failed read must not look like nobody checked in")
+        expandWhosIn(app)
+        let retry = app.buttons["whos-in-retry"]
+        XCTAssertTrue(waitUntil(timeout: 5) { retry.isHittable }, "Retry isn't on screen: \(retry.frame)")
+        assertHitTarget(retry, "Retry")
+        retry.tap()
+        XCTAssertTrue(element("whos-in-section-now", in: app).waitForExistence(timeout: 5), "Retry didn't load")
+        XCTAssertTrue(error.waitForNonExistence(timeout: 5))
+    }
+
+    func testWhosInSquadOfOneSaysSo() {
+        let app = launchChat("whosInEmpty")
+        openWhosInFromMenu(app)
+        let empty = element("whos-in-empty", in: app)
+        XCTAssertTrue(empty.waitForExistence(timeout: 5), "No empty state")
+        XCTAssertEqual(empty.label, "Just you so far. Invite the squad from the squad panel.")
+        XCTAssertTrue(app.buttons["check-in-now"].exists, "You can still check in alone")
+    }
+
+    func testWithoutCheckInsOnTheServerNothingIsClaimed() {
+        let app = launchChat("whosInNoServer")
+        let note = element("presence-untracked", in: app)
+        XCTAssertTrue(note.waitForExistence(timeout: 15), "The untracked pill should stay without check-ins")
+        XCTAssertEqual(note.label, "Presence isn't live yet")
+        openWhosInFromMenu(app)
+        let unavailable = element("check-in-unavailable", in: app)
+        XCTAssertTrue(unavailable.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["check-in-now"].exists, "No check-in buttons without the table")
+        let line = app.staticTexts["Check-ins: not set up on this server."]
+        XCTAssertTrue(scrollSheet(to: line, in: app))
+    }
+
+    func testWhosInStaysUsableAtLargeText() {
+        let app = launchChat("whosIn", largeText: true)
+        let toggle = app.buttons["presence-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 15))
+        toggle.tap()
+        let open = app.buttons["whos-in-open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5), "No Who's in in the large-text roster")
+        open.tap()
+        XCTAssertTrue(element("whos-in-sheet", in: app).waitForExistence(timeout: 5))
+        let width = app.windows.firstMatch.frame.width
+        let now = app.buttons["check-in-now"]
+        guard scrollSheet(to: now, in: app) else { return }
+        assertHitTarget(now, "I'm on now")
+        XCTAssertLessThanOrEqual(now.frame.maxX, width + 1, "I'm on now runs off screen at AX5: \(now.frame)")
+        let cant = app.buttons["check-in-cant"]
+        guard scrollSheet(to: cant, in: app) else { return }
+        XCTAssertLessThanOrEqual(cant.frame.maxX, width + 1, "Can't play runs off screen at AX5: \(cant.frame)")
+        let alex = whosInRow("Alex", in: app)
+        guard scrollSheet(to: alex, in: app) else { return }
+        XCTAssertLessThanOrEqual(alex.frame.maxX, width + 1, "Alex's row runs off screen: \(alex.frame)")
+        XCTAssertGreaterThan(alex.frame.height, 60, "Alex's row didn't wrap at AX5: \(alex.frame)")
+        XCTAssertTrue(alex.label.contains("from their check-in"), alex.label)
+        let jordan = whosInRow("Jordan", in: app)
+        guard scrollSheet(to: jordan, in: app) else { return }
+        XCTAssertLessThanOrEqual(jordan.frame.maxX, width + 1)
+        let done = app.buttons["whos-in-done"]
+        XCTAssertTrue(done.isHittable, "Done isn't reachable at AX5")
+        done.tap()
+        XCTAssertTrue(element("whos-in-sheet", in: app).waitForNonExistence(timeout: 5))
+    }
+
+    func testWhosInCheckInWorksAtLargeText() {
+        let app = launchChat("whosInBasic", largeText: true)
+        openWhosInFromMenu(app)
+        let now = app.buttons["check-in-now"]
+        guard scrollSheet(to: now, in: app) else { return }
+        now.tap()
+        let status = element("check-in-status", in: app)
+        guard scrollSheet(to: status, in: app) else { return }
+        XCTAssertTrue(waitForLabel(status, "label BEGINSWITH \"You're on until\""), status.label)
+        XCTAssertLessThanOrEqual(status.frame.maxX, app.windows.firstMatch.frame.width + 1)
+    }
+
+    func testWhosInErrorRetryIsInViewAtLargeText() {
+        let app = launchChat("whosInFailed", largeText: true)
+        openWhosInFromMenu(app)
+        let retry = app.buttons["whos-in-retry"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        XCTAssertTrue(waitUntil(timeout: 5) { retry.isHittable }, "Retry starts off screen at AX5: \(retry.frame)")
+        assertHitTarget(retry, "Retry")
+        XCTAssertLessThanOrEqual(retry.frame.maxX, app.windows.firstMatch.frame.width + 1)
     }
 }

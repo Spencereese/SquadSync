@@ -20,6 +20,8 @@ struct SquadHomeHeader: View {
     let onOpenPanel: () -> Void
     let onAccount: () -> Void
     let onVoice: () -> Void
+    /// Opens the who's-in sheet: avatars and the "Who's in" pill.
+    let onOpenWhosIn: () -> Void
     /// Large-text roster state. The roster itself is drawn by the session screen.
     @Binding var rosterOpen: Bool
 
@@ -150,6 +152,9 @@ struct SquadHomeHeader: View {
     private var presenceStrip: some View {
         ScrollView(.horizontal) {
             HStack(alignment: .top, spacing: SQSpace.s) {
+                // First, so it's on screen however many avatars follow.
+                whosInPill
+                    .padding(.top, SQSpace.s)
                 ForEach(entries) { entry in
                     avatarButton(entry)
                 }
@@ -166,6 +171,28 @@ struct SquadHomeHeader: View {
         .accessibilityIdentifier("presence-strip")
     }
 
+    private var whosInPill: some View {
+        Button {
+            SQHaptics.play(.tap)
+            onOpenWhosIn()
+        } label: {
+            // A drawn dot, not an SF Symbol: the symbol's name leaked to VoiceOver
+            // here ("person.2.wave.2"). A shape has no label to leak.
+            PresencePill(
+                text: SquadPresence.whosInPill(entries),
+                tint: SQColor.signal,
+                spoken: SquadPresence.whosInSpoken(entries),
+                dotMark: true
+            )
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(SquadPresence.whosInSpoken(entries))
+        .accessibilityHint("Opens Who's in: check in and see who can play")
+        .accessibilityIdentifier("whos-in-open")
+    }
+
     private var untrackedPill: some View {
         PresencePill(
             text: SquadPresence.untrackedShort,
@@ -180,7 +207,7 @@ struct SquadHomeHeader: View {
     private func avatarButton(_ entry: SquadPresenceEntry) -> some View {
         Button {
             SQHaptics.play(.tap)
-            onOpenPanel()
+            onOpenWhosIn()
         } label: {
             VStack(spacing: 2) {
                 SQAvatar(initial: entry.initial, status: entry.status)
@@ -192,7 +219,7 @@ struct SquadHomeHeader: View {
                 if typeSize <= .xLarge, let caption = presenceCaption(entry) {
                     Text(caption)
                         .font(SQType.micro)
-                        .italic(entry.status == .unknown || entry.status == .you)
+                        .italic(entry.status == .unknown || entry.status == .you || entry.status == .notCheckedIn)
                         .foregroundStyle(presenceCaptionColor(entry))
                         .lineLimit(1)
                         .minimumScaleFactor(0.75)
@@ -203,7 +230,7 @@ struct SquadHomeHeader: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(entry.spokenLabel)
-        .accessibilityHint("Opens the squad panel")
+        .accessibilityHint("Opens Who's in")
         .accessibilityIdentifier("presence-\(entry.name)")
     }
 }
@@ -213,17 +240,18 @@ struct SquadHomeHeader: View {
 /// Seated status wins; otherwise the game; nothing at all beats a guess.
 private func presenceCaption(_ entry: SquadPresenceEntry) -> String? {
     switch entry.status {
-    case .locked, .ready, .inSpot:
+    case .locked, .ready, .inSpot, .availableNow, .later, .cantPlay:
         return entry.status.shortLabel
-    case .you, .unknown:
+    case .you, .unknown, .notCheckedIn:
         return entry.gameCaption
     }
 }
 
 private func presenceCaptionColor(_ entry: SquadPresenceEntry) -> Color {
     switch entry.status {
-    case .locked, .ready, .inSpot: SQColor.signal
-    case .you, .unknown: SQColor.subtle
+    case .locked, .ready, .inSpot, .availableNow: SQColor.signal
+    case .later: SQColor.warning
+    case .cantPlay, .you, .unknown, .notCheckedIn: SQColor.subtle
     }
 }
 
@@ -261,7 +289,8 @@ struct VoiceRoomPillButton: View {
 struct SquadPresenceRoster: View {
     let entries: [SquadPresenceEntry]
     let voice: VoicePillState
-    let onOpenPanel: () -> Void
+    /// Rows, "N more", and the Who's in button open the who's-in sheet.
+    let onOpenWhosIn: () -> Void
     let onVoice: () -> Void
 
     var body: some View {
@@ -289,7 +318,7 @@ struct SquadPresenceRoster: View {
             if hidden > 0 {
                 Button {
                     SQHaptics.play(.tap)
-                    onOpenPanel()
+                    onOpenWhosIn()
                 } label: {
                     Text(SquadPresence.moreLabel(hidden))
                         .font(SQType.detail.weight(.semibold))
@@ -297,9 +326,23 @@ struct SquadPresenceRoster: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint("Opens the squad panel")
+                .accessibilityHint("Opens Who's in")
                 .accessibilityIdentifier("presence-more")
             }
+            Button {
+                SQHaptics.play(.tap)
+                onOpenWhosIn()
+            } label: {
+                Text(SquadPresence.whosInPill(entries))
+                    .font(SQType.detail.weight(.semibold))
+                    .foregroundStyle(SQColor.signal)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityHint("Opens Who's in: check in and see who can play")
+            .accessibilityIdentifier("whos-in-open")
             if SquadPresence.hasUntracked(entries) {
                 Text(SquadPresence.untrackedSpoken)
                     .font(SQType.caption)
@@ -328,7 +371,7 @@ struct SquadPresenceRoster: View {
     private func row(_ entry: SquadPresenceEntry) -> some View {
         Button {
             SQHaptics.play(.tap)
-            onOpenPanel()
+            onOpenWhosIn()
         } label: {
             HStack(alignment: .center, spacing: SQSpace.s) {
                 SQAvatar(initial: entry.initial, status: entry.status, size: 32)
@@ -349,7 +392,7 @@ struct SquadPresenceRoster: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(entry.spokenLabel)
-        .accessibilityHint("Opens the squad panel")
+        .accessibilityHint("Opens Who's in")
         .accessibilityIdentifier("presence-\(entry.name)")
     }
 }

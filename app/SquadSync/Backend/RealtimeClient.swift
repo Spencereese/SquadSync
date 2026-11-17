@@ -9,6 +9,11 @@ final class RealtimeClient {
         case reaction(ReactionMark, removed: Bool)
         case read(MemberRead)
         case spots
+        /// 0009 publishes `sq8_check_ins`; an insert or update in this squad rereads its rows.
+        case checkIns
+        /// A check-in was deleted (Clear, or the trigger when someone leaves). It may
+        /// carry only the user id; the model decides whether it touches this squad.
+        case checkInRemoved(UUID?)
         case phase(RealtimeLink)
     }
 
@@ -96,7 +101,11 @@ final class RealtimeClient {
             change("sq8_message_reads", filter: "squad_id=eq.\(squad)"),
             change("sq8_message_reactions", filter: nil),
             change("sq8_spot_calls", filter: "squad_id=eq.\(squad)"),
-            change("sq8_spot_rsvps", filter: nil)
+            change("sq8_spot_rsvps", filter: nil),
+            change("sq8_check_ins", filter: "squad_id=eq.\(squad)"),
+            // Supabase doesn't deliver DELETEs to a filtered subscription, so Clear
+            // would never reach the others. Listen to every check-in delete instead.
+            change("sq8_check_ins", filter: nil, event: "DELETE")
         ]
         let payload: [String: Any] = [
             "access_token": accessToken,
@@ -110,9 +119,9 @@ final class RealtimeClient {
         await send(topic: "\(topicPrefix):\(squad)", event: "phx_join", payload: payload, ref: "1")
     }
 
-    private func change(_ table: String, filter: String?) -> [String: Any] {
+    private func change(_ table: String, filter: String?, event: String = "*") -> [String: Any] {
         var row: [String: Any] = [
-            "event": "*",
+            "event": event,
             "schema": "public",
             "table": table
         ]
@@ -239,6 +248,12 @@ final class RealtimeClient {
             onEvent(.reaction(ReactionMark(messageId: message, userId: user, emoji: emoji), removed: removed))
         case "sq8_spot_calls", "sq8_spot_rsvps":
             onEvent(.spots)
+        case "sq8_check_ins":
+            switch CheckInChange.parse(kind: kind, record: record, previous: previous, squadId: squadId) {
+            case .changed: onEvent(.checkIns)
+            case .removed(let user): onEvent(.checkInRemoved(user))
+            case nil: break
+            }
         default:
             break
         }

@@ -318,6 +318,27 @@ enum LaunchScenario: String {
     case chatHistoryFailed
     /// The history read takes a few seconds, so the loading row shows.
     case chatHistorySlow
+    /// Who's in with every source: check-ins with game and console (proposed 0022),
+    /// Steam deployed, and a mix of on now, later, and can't play.
+    case whosIn
+    /// Who's in the way live is today: check-ins (0006) without game or console,
+    /// and Steam not set up.
+    case whosInBasic
+    /// A squad of one, so Who's in has nobody else to show.
+    case whosInEmpty
+    /// The check-in read fails until Retry.
+    case whosInFailed
+    /// The check-in read takes 9 seconds, so the loading row shows long enough to see.
+    case whosInSlow
+    /// The server has no `sq8_check_ins`, so presence stays untracked.
+    case whosInNoServer
+
+    var isWhosInScenario: Bool {
+        switch self {
+        case .whosIn, .whosInBasic, .whosInEmpty, .whosInFailed, .whosInSlow, .whosInNoServer: true
+        default: false
+        }
+    }
 
     var isChatScenario: Bool {
         switch self {
@@ -369,7 +390,8 @@ enum Seed {
                 Seat(userId: "quinn", status: .ready)
             ]
         case .noSquad, .invite, .spotCall, .spotCallMine, .spotCallNearlyFull, .spotCallExpired, .almostFull, .spotHistory, .spotServerMissing,
-             .chatPolish, .chatNoReplies, .chatEmpty, .chatHistoryFailed, .chatHistorySlow:
+             .chatPolish, .chatNoReplies, .chatEmpty, .chatHistoryFailed, .chatHistorySlow,
+             .whosIn, .whosInBasic, .whosInEmpty, .whosInFailed, .whosInSlow, .whosInNoServer:
             seats = []
         }
         return Party(

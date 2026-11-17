@@ -2,11 +2,12 @@ import Foundation
 
 /// What the presence strip can honestly say about one member.
 ///
-/// There is no live presence feed yet (no heartbeat table, no realtime
-/// presence channel). The only real signals are the open spot call's seats
-/// and the fact that the viewer has the app open. Everyone else is
-/// `.unknown`, which the UI draws as a neutral ring and speaks as
-/// "presence isn't tracked yet". Nothing here ever claims "online".
+/// There is no heartbeat or "online" feed. The real signals are the open spot
+/// call's seats, the member's own check-in (`sq8_check_ins`, honor system; see
+/// `WhosIn.swift`), and the fact that the viewer has the app open. Without
+/// check-ins on the server everyone else is `.unknown` ("presence isn't tracked
+/// yet"); with them, a member who hasn't checked in is `.notCheckedIn`.
+/// Nothing here ever claims "online".
 enum SquadPresenceStatus: Equatable, CaseIterable {
     /// Seated on a locked spot call: the squad locked in for this game.
     case locked
@@ -14,8 +15,16 @@ enum SquadPresenceStatus: Equatable, CaseIterable {
     case ready
     /// Seated on the open spot call, not Ready yet.
     case inSpot
+    /// Checked in as on now, inside the 60-minute window.
+    case availableNow
+    /// Checked in for a later time.
+    case later
+    /// Checked in as can't play.
+    case cantPlay
     /// The viewer. Their app is open, so this one is known.
     case you
+    /// Check-ins are on the server, and this member hasn't checked in.
+    case notCheckedIn
     /// No signal. Presence isn't tracked yet.
     case unknown
 
@@ -25,8 +34,12 @@ enum SquadPresenceStatus: Equatable, CaseIterable {
         case .locked: 0
         case .ready: 1
         case .inSpot: 2
-        case .you: 3
-        case .unknown: 4
+        case .availableNow: 3
+        case .later: 4
+        case .you: 5
+        case .notCheckedIn: 6
+        case .unknown: 7
+        case .cantPlay: 8
         }
     }
 
@@ -36,8 +49,11 @@ enum SquadPresenceStatus: Equatable, CaseIterable {
         case .locked: "Locked in"
         case .ready: "Ready"
         case .inSpot: "In spot"
+        case .availableNow: "On now"
+        case .later: "Later"
+        case .cantPlay: "Can't play"
         case .you: "You"
-        case .unknown: ""
+        case .notCheckedIn, .unknown: ""
         }
     }
 
@@ -47,7 +63,11 @@ enum SquadPresenceStatus: Equatable, CaseIterable {
         case .locked: "locked in"
         case .ready: "ready"
         case .inSpot: "in the spot call"
+        case .availableNow: "on now, from their check-in"
+        case .later: "on later, from their check-in"
+        case .cantPlay: "can't play, from their check-in"
         case .you: "you"
+        case .notCheckedIn: "hasn't checked in"
         case .unknown: "presence isn't tracked yet"
         }
     }
@@ -100,15 +120,34 @@ struct SquadPresenceEntry: Identifiable, Equatable {
 
 enum SquadPresence {
     /// A seat only counts while the call is open and not past its window, or once it is locked.
-    static func status(memberId: UUID, viewerId: UUID?, spot: SpotCall?, now: Date) -> SquadPresenceStatus {
+    /// After the seat, the check-in decides, when the server has check-ins.
+    static func status(
+        memberId: UUID,
+        viewerId: UUID?,
+        spot: SpotCall?,
+        now: Date,
+        availability: WhosInAvailability? = nil
+    ) -> SquadPresenceStatus {
         if let spot, let seat = spot.seat(for: memberId), seat.isIn {
             if spot.status == .locked { return .locked }
             if spot.status == .open, spot.closedAt == nil, !SpotCallRules.showsExpired(spot, now: now) {
                 return seat.ready ? .ready : .inSpot
             }
         }
-        if let viewerId, viewerId == memberId { return .you }
-        return .unknown
+        let isViewer = viewerId != nil && viewerId == memberId
+        if let availability { return status(for: availability, isViewer: isViewer) }
+        return isViewer ? .you : .unknown
+    }
+
+    /// A check-in's status. The viewer without a check-in stays "you".
+    static func status(for availability: WhosInAvailability, isViewer: Bool) -> SquadPresenceStatus {
+        switch availability {
+        case .now: return .availableNow
+        case .later: return .later
+        case .cantPlay: return .cantPlay
+        case .notCheckedIn: return isViewer ? .you : .notCheckedIn
+        case .untracked: return isViewer ? .you : .unknown
+        }
     }
 
     /// Strip order: status rank (locked, ready, in spot, you, unknown), then the
@@ -118,10 +157,13 @@ enum SquadPresence {
         ownerId: UUID?,
         viewerId: UUID?,
         spot: SpotCall?,
-        now: Date
+        now: Date,
+        availability: [UUID: WhosInAvailability]? = nil
     ) -> [SquadPresenceEntry] {
         let built = members.map { member -> SquadPresenceEntry in
-            let state = Self.status(memberId: member.id, viewerId: viewerId, spot: spot, now: now)
+            // nil map: the server has no check-ins. A map: a missing member hasn't checked in.
+            let checkIn = availability.map { $0[member.id] ?? .notCheckedIn }
+            let state = Self.status(memberId: member.id, viewerId: viewerId, spot: spot, now: now, availability: checkIn)
             let seated = state == .locked || state == .ready || state == .inSpot
             let fallback = member.defaultGame.trimmingCharacters(in: .whitespacesAndNewlines)
             let game: String?
@@ -166,6 +208,22 @@ enum SquadPresence {
         entries.contains { $0.status == .unknown }
     }
 
+    /// Members who are on: checked in as on now, or seated on the spot call.
+    static func onCount(_ entries: [SquadPresenceEntry]) -> Int {
+        entries.filter { [.availableNow, .ready, .inSpot, .locked].contains($0.status) }.count
+    }
+
+    /// The strip's entry to the who's-in sheet: a count when anyone is on.
+    static func whosInPill(_ entries: [SquadPresenceEntry]) -> String {
+        let on = onCount(entries)
+        return on > 0 ? "Who's in · \(on)" : "Who's in"
+    }
+
+    static func whosInSpoken(_ entries: [SquadPresenceEntry]) -> String {
+        let on = onCount(entries)
+        return on > 0 ? "Who's in, \(on) on" : "Who's in"
+    }
+
     /// Row counts the large-text roster tries, longest first: everyone, then 4, 2, 1,
     /// and 0 (voice pill, "N more", and the untracked line). It shows the first that
     /// fits and folds the rest into "N more", so it never needs to scroll.
@@ -176,7 +234,7 @@ enum SquadPresence {
     }
 
     static func moreLabel(_ hidden: Int) -> String {
-        hidden == 1 ? "1 more in the squad panel" : "\(hidden) more in the squad panel"
+        hidden == 1 ? "1 more in Who's in" : "\(hidden) more in Who's in"
     }
 }
 

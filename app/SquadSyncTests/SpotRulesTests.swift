@@ -310,6 +310,7 @@ final class SpotCallRulesTests: XCTestCase {
         XCTAssertEqual(ran, 2)
     }
 
+    @MainActor
     func testReadyTogglePersistsAndASecondTapKeepsTheStoredValue() async throws {
         let squad = ChatSeed.squadId
         let card = SpotSeed.calledByViewer(ownerId: owner, squadId: squad, now: start)
@@ -325,6 +326,7 @@ final class SpotCallRulesTests: XCTestCase {
         XCTAssertEqual(again, false)
     }
 
+    @MainActor
     func testReadyResetsWhenOutIsFollowedByIn() async throws {
         let squad = ChatSeed.squadId
         let card = SpotSeed.calledByViewer(ownerId: owner, squadId: squad, now: start)
@@ -343,6 +345,7 @@ final class SpotCallRulesTests: XCTestCase {
         XCTAssertEqual(ready, false)
     }
 
+    @MainActor
     func testAnExpiredUnlockedSpotStillOffersAnotherCall() async throws {
         let now = start
         let squad = ChatSeed.squadId
@@ -393,6 +396,7 @@ final class SpotCallRulesTests: XCTestCase {
         XCTAssertEqual(model.spot?.id, open?.id)
     }
 
+    @MainActor
     func testOnlyTheCallerOrOwnerCanEndALockedSpot() async throws {
         let locked = call(status: .locked)
         XCTAssertTrue(SpotCallRules.canEnd(locked, actorId: caller, ownerId: owner))

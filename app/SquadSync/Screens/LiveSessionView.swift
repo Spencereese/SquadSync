@@ -45,8 +45,13 @@ final class LiveSessionModel {
         LiveShellCopy.footer
     ]
     var busy = false
+    /// Voice is a mock on the home header. The pill drives the in-memory room only.
+    var voicePill = VoicePillState()
+    /// The status line the last failed send wrote, so a later success can clear exactly that.
+    var sendFailureStatus: String?
 
     private let config: BackendConfig
+    private let voiceRoom: VoiceRoomService = InMemoryVoiceRoomService()
     private let sessionStore: SessionStoring
     private var auth: AuthService
     private let mockProfiles: ProfileService?
@@ -579,7 +584,34 @@ final class LiveSessionModel {
         await deliver(message, session: session)
     }
 
+    /// Presence strip rows for the home header. Only real signals: spot seats and the viewer.
+    func presenceEntries(now: Date) -> [SquadPresenceEntry] {
+        guard let squad else { return [] }
+        return SquadPresence.entries(
+            members: squad.members,
+            ownerId: squad.ownerId,
+            viewerId: viewerId ?? profile?.id,
+            spot: spot,
+            now: now
+        )
+    }
+
+    /// Joins or leaves the in-memory voice room. Nothing goes over the network.
+    func toggleVoice() async {
+        let user = (viewerId ?? profile?.id)?.uuidString ?? "viewer"
+        if voicePill.joined {
+            await voiceRoom.leave(userId: user)
+        } else {
+            voicePill.connection = .connecting
+            await voiceRoom.join(userId: user)
+        }
+        voicePill.joined = voiceRoom.participants.contains { $0.id == user }
+        voicePill.count = voiceRoom.participants.count
+        voicePill.connection = voiceRoom.connection
+    }
+
     func signOut() async {
+        if voicePill.joined { await toggleVoice() }
         realtime?.stop()
         realtime = nil
         poll?.cancel()
@@ -642,12 +674,23 @@ final class LiveSessionModel {
         switch OutboundSend.result(receipt: receipt, error: error) {
         case .sent:
             log.markSent(id: message.id)
+            recoverAfterSend()
         case .staySending:
             break
         case .failed:
             log.markFailed(id: message.id)
-            if let error { report(error) }
+            if let error {
+                report(error)
+                sendFailureStatus = status
+            }
         }
+    }
+
+    /// A delivered message clears "Reconnecting…" and the failed-send line it replaced.
+    func recoverAfterSend() {
+        status = SendRecovery.status(afterSuccess: status, sendFailure: sendFailureStatus)
+        sendFailureStatus = nil
+        reconnecting = false
     }
 
     func becameActive() async {
@@ -993,9 +1036,13 @@ struct LiveSessionView: View {
     @State private var confirmSignOut = false
     @State private var confirmEndSpot = false
     @State private var showMembers = false
+    /// Large-text presence roster, floated over the chat instead of pushing it down.
+    @State private var rosterOpen = false
     @State private var confirmLeave = false
     @ScaledMetric(relativeTo: .body) private var composerLine: CGFloat = 22
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var typeSize
+    @FocusState private var composerFocused: Bool
 
     init(config: BackendConfig = .fromBundle(), backend: BackendMode = .live, scenario: LaunchScenario = .seated) {
         _model = State(initialValue: LiveSessionModel(config: config, backend: backend, scenario: scenario))
@@ -1003,59 +1050,34 @@ struct LiveSessionView: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if model.phase == .ready {
-                    ready
-                } else {
-                    signIn
+            ZStack {
+                SQColor.surface0
+                    .ignoresSafeArea()
+                Group {
+                    if model.phase == .ready {
+                        ready
+                    } else {
+                        signIn
+                    }
                 }
-            }
-            .padding(SQSpace.l)
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if pushToastText != nil {
-                    pushToast
-                        .padding(.top, SQSpace.s)
-                        .padding(.bottom, SQSpace.xs)
+                .padding(.horizontal, model.phase == .ready ? SQSpace.m : SQSpace.l)
+                .padding(.vertical, model.phase == .ready ? SQSpace.s : SQSpace.l)
+                .safeAreaInset(edge: .top, spacing: 0) {
+                    if pushToastText != nil {
+                        pushToast
+                            .padding(.top, SQSpace.s)
+                            .padding(.bottom, SQSpace.xs)
+                    }
                 }
             }
             .navigationTitle(squadTitle ?? "SquadSync")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
-            .toolbar {
-                if model.phase == .ready {
-                    ToolbarItem(placement: .topBarLeading) {
-                        Button {
-                            showMembers = true
-                        } label: {
-                            Image(systemName: "person.3")
-                        }
-                        .accessibilityLabel("Members")
-                        .accessibilityHint("Opens invite, join, and remove")
-                        .accessibilityIdentifier("members")
-                    }
-                }
-                if let squadTitle {
-                    ToolbarItem(placement: .principal) {
-                        Text(squadTitle)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.65)
-                            .accessibilityIdentifier("squad-title")
-                            .accessibilityLabel(squadTitle)
-                            .accessibilityAddTraits(.isHeader)
-                    }
-                }
-                if model.phase == .ready {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button {
-                            confirmSignOut = true
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
-                        }
-                        .accessibilityLabel("Account")
-                    }
-                }
-            }
+            // Chat-first: once signed in, the squad header replaces the navigation bar.
+            // Sign-in keeps the system bar and its "SquadSync" title.
+            .toolbar(model.phase == .ready ? .hidden : .visible, for: .navigationBar)
         }
+        .preferredColorScheme(.dark)
         .sheet(isPresented: $confirmSignOut) {
             signOutSheet
                 .adoptingLaunchDynamicType()
@@ -1188,8 +1210,38 @@ struct LiveSessionView: View {
         return SquadTitle.line(name: squad.name, memberCount: squad.members.count)
     }
 
+    /// Chat-first home: header, pinned spot bar, then the chat fills the rest.
+    /// Profile, members, rename, invite, and leave live in the squad panel.
     private var ready: some View {
-        VStack(alignment: .leading, spacing: SQSpace.m) {
+        VStack(alignment: .leading, spacing: rowGap) {
+            homeHeader
+            readyBody
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                .overlay(alignment: .top) {
+                    if showsRoster {
+                        presenceRoster
+                    }
+                }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// Accessibility sizes trim the gaps between header, status, bar, and chat.
+    private var rowGap: CGFloat {
+        typeSize.isAccessibilitySize ? SQSpace.xs : SQSpace.s
+    }
+
+    private var readyBody: some View {
+        VStack(alignment: .leading, spacing: rowGap) {
+            if model.squad != nil, !model.status.isEmpty {
+                Text(model.status)
+                    .font(SQType.caption)
+                    .foregroundStyle(SQColor.subtle)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, SQSpace.xs)
+                    .accessibilityIdentifier("home-status")
+            }
             if let spot = model.spot {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
@@ -1198,51 +1250,80 @@ struct LiveSessionView: View {
                     }
                 }
             }
-            ScrollView {
-                VStack(alignment: .leading, spacing: SQSpace.m) {
-                    if model.profile != nil {
-                        TextField("Display name", text: Binding(get: { model.displayName }, set: { model.displayName = $0 }))
-                            .textFieldStyle(.roundedBorder)
-                        TextField("Default game", text: Binding(get: { model.defaultGame }, set: { model.defaultGame = $0 }))
-                            .textFieldStyle(.roundedBorder)
-                        Button("Save profile") { Task { await model.saveProfile() } }
-                            .disabled(model.busy)
-                    }
-                    if model.squad != nil {
-                        if let notice = liveNotice {
-                            Text(notice).font(.caption).foregroundStyle(SQColor.muted)
-                        }
-                    } else if model.reconnecting {
-                        Text("Reconnecting…")
-                            .accessibilityIdentifier("reconnecting")
-                    } else {
-                        joinControls
-                        Text("You're not in a squad yet.")
-                        TextField("Squad name", text: Binding(get: { model.squadName }, set: { model.squadName = $0 }))
-                            .textFieldStyle(.roundedBorder)
-                            .accessibilityIdentifier("squad-name")
-                        if !model.squadNameError.isEmpty {
-                            Text(model.squadNameError)
-                                .font(.footnote)
-                                .foregroundStyle(SQColor.danger)
-                        }
-                        Button("Create squad") { Task { await model.createSquad() } }
-                            .buttonStyle(.borderedProminent)
-                            .disabled(model.busy)
-                    }
-                    if !model.status.isEmpty {
-                        Text(model.status).font(.footnote).foregroundStyle(SQColor.muted)
-                    }
-                    notes
-                }
-            }
             if model.squad != nil {
                 chatList
-                    .frame(minHeight: 180, maxHeight: .infinity, alignment: .top)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .layoutPriority(1)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: SQSpace.m) {
+                        if model.reconnecting {
+                            Text("Reconnecting…")
+                                .accessibilityIdentifier("reconnecting")
+                        } else {
+                            joinControls
+                            Text("You're not in a squad yet.")
+                            TextField("Squad name", text: Binding(get: { model.squadName }, set: { model.squadName = $0 }))
+                                .textFieldStyle(.roundedBorder)
+                                .accessibilityIdentifier("squad-name")
+                            if !model.squadNameError.isEmpty {
+                                Text(model.squadNameError)
+                                    .font(.footnote)
+                                    .foregroundStyle(SQColor.danger)
+                            }
+                            Button("Create squad") { Task { await model.createSquad() } }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(model.busy)
+                        }
+                        if !model.status.isEmpty {
+                            Text(model.status).font(.footnote).foregroundStyle(SQColor.muted)
+                        }
+                        notes
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var homeHeader: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
+            SquadHomeHeader(
+                squad: model.squad,
+                entries: model.presenceEntries(now: now),
+                compact: typeSize.isAccessibilitySize && composerFocused,
+                voice: model.voicePill,
+                linkNote: model.squad == nil ? nil : liveNotice,
+                onOpenPanel: { showMembers = true },
+                onAccount: { confirmSignOut = true },
+                onVoice: { Task { await model.toggleVoice() } },
+                rosterOpen: $rosterOpen
+            )
+        }
+    }
+
+    private var showsRoster: Bool {
+        rosterOpen && typeSize.isAccessibilitySize && !composerFocused && model.squad != nil
+    }
+
+    /// Floats under the header over the chat. The chat keeps its full height, and
+    /// the roster never takes more than about 40% of an AX5 screen.
+    private var presenceRoster: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { context in
+            let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
+            SquadPresenceRoster(
+                entries: model.presenceEntries(now: now),
+                voice: model.voicePill,
+                onOpenPanel: {
+                    rosterOpen = false
+                    showMembers = true
+                },
+                onVoice: { Task { await model.toggleVoice() } }
+            )
+        }
+        .frame(maxHeight: 360, alignment: .top)
     }
 
     private var notes: some View {
@@ -1363,11 +1444,11 @@ struct LiveSessionView: View {
                 }
                 composer
             }
-            .padding(.top, SQSpace.m)
-            .padding(.bottom, SQSpace.s)
+            .padding(.top, typeSize.isAccessibilitySize ? SQSpace.s : SQSpace.m)
+            .padding(.bottom, typeSize.isAccessibilitySize ? SQSpace.xs : SQSpace.s)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(SQColor.canvas)
+        .background(SQColor.surface0)
     }
 
     private func scrollChatToBottom(_ proxy: ScrollViewProxy) {
@@ -1585,34 +1666,70 @@ struct LiveSessionView: View {
         application.open(url)
     }
 
+    /// Pinned spot bar. One row when it fits: game, countdown, and seats beside the
+    /// action. At large text it drops the game (the card and VoiceOver still name it)
+    /// and caps its text at AX1, so it stays one thin row and the chat keeps the screen.
     private func activeCallBar(_ spot: SpotCall, now: Date) -> some View {
         let viewer = model.viewerId ?? model.profile?.id
         let action = viewer.flatMap {
             SpotCallRules.barAction(spot, viewerId: $0, ownerId: model.squad?.ownerId ?? $0, now: now)
         }
-        return VStack(alignment: .leading, spacing: SQSpace.xs) {
-            Text(spot.game)
-                .font(.headline)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("\(spot.filled) of \(spot.seatTotal)")
-                .font(.subheadline)
-                .lineLimit(1)
-            Text(SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now))
-                .font(.subheadline.monospacedDigit())
-                .lineLimit(1)
-                .accessibilityIdentifier("active-call-countdown")
-            if let action { barButton(action) }
+        let countdown = SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now)
+        let seats = "\(spot.filled)/\(spot.seatTotal)"
+        return ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: SQSpace.s) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(spot.game)
+                        .font(SQType.section)
+                        .lineLimit(1)
+                    HStack(spacing: SQSpace.s) {
+                        barCountdown(countdown)
+                        barSeats(seats)
+                    }
+                }
+                .fixedSize()
+                Spacer(minLength: SQSpace.s)
+                if let action { barButton(action).fixedSize() }
+            }
+            HStack(alignment: .center, spacing: SQSpace.s) {
+                barCountdown(countdown)
+                barSeats(seats)
+                Spacer(minLength: SQSpace.s)
+                if let action { barButton(action).fixedSize() }
+            }
+            VStack(alignment: .leading, spacing: SQSpace.xs) {
+                HStack(spacing: SQSpace.s) {
+                    barCountdown(countdown)
+                    barSeats(seats)
+                }
+                if let action { barButton(action) }
+            }
         }
-        .padding(SQSpace.s)
+        // The bar is a thin pinned strip: its text stops growing at AX1 so the
+        // countdown, seats, and action stay on one row at AX5 and the chat keeps
+        // its room. The card in the chat shows the same call at full size, and
+        // the bar's VoiceOver label still reads the whole call.
+        .dynamicTypeSize(...DynamicTypeSize.accessibility1)
+        .padding(.horizontal, SQSpace.m)
+        .padding(.vertical, typeSize.isAccessibilitySize ? SQSpace.xs : SQSpace.s)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(SQColor.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(SQColor.line, lineWidth: 1)
-        )
+        .sqSurface(.card, radius: SQRadius.m)
         .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(spot.game), \(spot.filled) of \(spot.seatTotal), \(countdown) left")
         .accessibilityIdentifier("active-call-bar")
+    }
+
+    private func barCountdown(_ text: String) -> some View {
+        Text(text)
+            .sqTimerStyle(compact: true)
+            .accessibilityIdentifier("active-call-countdown")
+    }
+
+    private func barSeats(_ text: String) -> some View {
+        Text(text)
+            .font(SQType.timerSmall)
+            .foregroundStyle(SQColor.subtle)
+            .lineLimit(1)
     }
 
     private func barButton(_ action: SpotBarAction) -> some View {
@@ -1649,8 +1766,12 @@ struct LiveSessionView: View {
         HStack(alignment: .center) {
             TextField("Message", text: Binding(get: { model.draft }, set: { model.draft = $0 }))
                 .textFieldStyle(.roundedBorder)
-            Button("Send") { Task { await model.send() } }
-                .accessibilityIdentifier("send-message")
+                .focused($composerFocused)
+            Button("Send") {
+                SQHaptics.play(.tap)
+                Task { await model.send() }
+            }
+            .accessibilityIdentifier("send-message")
         }
         .frame(maxHeight: composerLine * 3)
     }
@@ -1660,10 +1781,16 @@ struct LiveSessionView: View {
         let isOwner = model.squad?.ownerId == ownerId
         return ScrollView {
             VStack(alignment: .leading, spacing: SQSpace.m) {
-                Text("Members")
-                    .font(.title2.weight(.semibold))
-                Text(model.squad.map { SquadTitle.line(name: $0.name, memberCount: $0.members.count) } ?? "You're not in a squad yet.")
-                    .accessibilityIdentifier("squad-count")
+                VStack(alignment: .leading, spacing: SQSpace.xs) {
+                    Text("Members")
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(SQColor.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    Text(model.squad.map { SquadTitle.line(name: $0.name, memberCount: $0.members.count) } ?? "You're not in a squad yet.")
+                        .font(SQType.detail)
+                        .foregroundStyle(SQColor.subtle)
+                        .accessibilityIdentifier("squad-count")
+                }
                 if !model.status.isEmpty {
                     Text(model.status)
                         .font(.footnote)
@@ -1671,41 +1798,71 @@ struct LiveSessionView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("membership-status")
                 }
-                joinControls
-                if model.squad?.members.isEmpty != false && model.squad != nil {
-                    Text("No members yet.")
-                        .accessibilityIdentifier("members-empty")
+                SQCardSurface {
+                    VStack(alignment: .leading, spacing: SQSpace.s) {
+                        panelHeading("Join with a code")
+                        joinControls
+                    }
                 }
                 if let squad = model.squad {
-                    ForEach(squad.members) { member in
-                        memberRow(member, isOwner: isOwner)
-                    }
-                    if model.leaveAvailable {
-                        leaveControls(squad: squad, isOwner: isOwner)
-                    }
-                    if let line = LeaveAvailabilityCopy.line(isOwner: isOwner, leaveShown: model.leaveAvailable) {
-                        Text(line)
-                            .font(.footnote)
-                            .foregroundStyle(SQColor.muted)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("leave-unavailable")
+                    SQCardSurface {
+                        VStack(alignment: .leading, spacing: SQSpace.s) {
+                            panelHeading("In this squad")
+                            if squad.members.isEmpty {
+                                Text("No members yet.")
+                                    .accessibilityIdentifier("members-empty")
+                            }
+                            ForEach(squad.members) { member in
+                                memberRow(member, isOwner: isOwner)
+                                    .padding(.vertical, SQSpace.xs)
+                            }
+                            if model.leaveAvailable {
+                                Divider()
+                                leaveControls(squad: squad, isOwner: isOwner)
+                            }
+                            if let line = LeaveAvailabilityCopy.line(isOwner: isOwner, leaveShown: model.leaveAvailable) {
+                                Text(line)
+                                    .font(.footnote)
+                                    .foregroundStyle(SQColor.muted)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .accessibilityIdentifier("leave-unavailable")
+                            }
+                        }
                     }
                 }
                 if isOwner {
-                    renameControls
-                    inviteControls
-                    if model.inviteCode.isEmpty {
-                        Text("No invite yet.")
-                            .font(.footnote)
-                            .foregroundStyle(SQColor.muted)
-                            .accessibilityIdentifier("invite-empty")
+                    SQCardSurface {
+                        VStack(alignment: .leading, spacing: SQSpace.s) {
+                            panelHeading("Rename")
+                            renameControls
+                        }
                     }
+                    SQCardSurface {
+                        VStack(alignment: .leading, spacing: SQSpace.s) {
+                            panelHeading("Invite")
+                            inviteControls
+                            if model.inviteCode.isEmpty {
+                                Text("No invite yet.")
+                                    .font(.footnote)
+                                    .foregroundStyle(SQColor.muted)
+                                    .accessibilityIdentifier("invite-empty")
+                            }
+                        }
+                    }
+                }
+                profileSection
+                if !model.notes.isEmpty {
+                    notes
+                        .padding(.horizontal, SQSpace.xs)
+                        .accessibilityIdentifier("panel-notes")
                 }
             }
             .padding(SQSpace.l)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollDismissesKeyboard(.interactively)
+        .background(SQColor.surface0)
+        .presentationBackground(SQColor.surface0)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .adoptingLaunchDynamicType()
@@ -1827,6 +1984,38 @@ struct LiveSessionView: View {
                 }
             }
         }
+    }
+
+    /// Profile moved off the home screen into the squad panel.
+    @ViewBuilder
+    private var profileSection: some View {
+        if model.profile != nil {
+            SQCardSurface {
+                VStack(alignment: .leading, spacing: SQSpace.s) {
+                    Text("Your profile")
+                        .font(SQType.section)
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("profile-heading")
+                    TextField("Display name", text: Binding(get: { model.displayName }, set: { model.displayName = $0 }))
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("profile-name")
+                    TextField("Default game", text: Binding(get: { model.defaultGame }, set: { model.defaultGame = $0 }))
+                        .textFieldStyle(.roundedBorder)
+                        .accessibilityIdentifier("profile-game")
+                    Button("Save profile") { Task { await model.saveProfile() } }
+                        .disabled(model.busy)
+                        .accessibilityIdentifier("save-profile")
+                }
+            }
+        }
+    }
+
+    private func panelHeading(_ title: String) -> some View {
+        Text(title)
+            .font(SQType.section)
+            .foregroundStyle(SQColor.ink)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private var renameControls: some View {
@@ -1963,6 +2152,7 @@ struct LiveSessionView: View {
                 ForEach(rows, id: \.0.id) { reaction, count in
                     HStack(spacing: 3) {
                         Image(systemName: reaction.rawValue)
+                            .accessibilityHidden(true)
                         Text("\(count)")
                             .accessibilityIdentifier("reaction-count")
                     }

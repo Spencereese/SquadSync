@@ -151,6 +151,7 @@ final class SquadNameTests: XCTestCase {
         )
     }
 
+    @MainActor
     func testCreateSquadKeepsTheTrimmedName() async throws {
         let service = MockSquadService()
         let squad = try await service.createSquad(ownerId: UUID(), name: "  Friday  ")
@@ -272,6 +273,7 @@ final class SquadNameTests: XCTestCase {
         XCTAssertFalse(RequestNoise.isCancellation(BackendFailure.rejected("Squad is full.")))
     }
 
+    @MainActor
     func testMockSendAppendsTheRow() async throws {
         let chat = MockChatService()
         let id = UUID()
@@ -1048,6 +1050,7 @@ final class InviteFlowTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testMockJoinFillsToEightThenRejectsTheNinth() async throws {
         let squads = MockSquadService()
         let owner = UUID()
@@ -1135,6 +1138,7 @@ final class InviteFlowTests: XCTestCase {
         XCTAssertEqual(InviteProblem.signedOut.message, "Sign in again before leaving.")
     }
 
+    @MainActor
     func testMockLeaveThenRejoinRestoresTheRoster() async throws {
         let squads = MockSquadService()
         let owner = UUID()

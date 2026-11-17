@@ -1623,34 +1623,65 @@ struct LiveSessionView: View {
         application.open(url)
     }
 
+    /// Pinned spot bar. One row when it fits: game, countdown, and seats beside the
+    /// action. At large text it drops the game (the card and VoiceOver still name it)
+    /// and then stacks the action under one countdown line, so the chat keeps the screen.
     private func activeCallBar(_ spot: SpotCall, now: Date) -> some View {
         let viewer = model.viewerId ?? model.profile?.id
         let action = viewer.flatMap {
             SpotCallRules.barAction(spot, viewerId: $0, ownerId: model.squad?.ownerId ?? $0, now: now)
         }
-        return VStack(alignment: .leading, spacing: SQSpace.xs) {
-            Text(spot.game)
-                .font(.headline)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-            Text("\(spot.filled) of \(spot.seatTotal)")
-                .font(.subheadline)
-                .lineLimit(1)
-            Text(SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now))
-                .font(.subheadline.monospacedDigit())
-                .lineLimit(1)
-                .accessibilityIdentifier("active-call-countdown")
-            if let action { barButton(action) }
+        let countdown = SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now)
+        let seats = "\(spot.filled)/\(spot.seatTotal)"
+        return ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: SQSpace.s) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(spot.game)
+                        .font(SQType.section)
+                        .lineLimit(1)
+                    HStack(spacing: SQSpace.s) {
+                        barCountdown(countdown)
+                        barSeats(seats)
+                    }
+                }
+                .fixedSize()
+                Spacer(minLength: SQSpace.s)
+                if let action { barButton(action).fixedSize() }
+            }
+            HStack(alignment: .center, spacing: SQSpace.s) {
+                barCountdown(countdown)
+                barSeats(seats)
+                Spacer(minLength: SQSpace.s)
+                if let action { barButton(action).fixedSize() }
+            }
+            VStack(alignment: .leading, spacing: SQSpace.xs) {
+                HStack(spacing: SQSpace.s) {
+                    barCountdown(countdown)
+                    barSeats(seats)
+                }
+                if let action { barButton(action) }
+            }
         }
-        .padding(SQSpace.s)
+        .padding(.horizontal, SQSpace.m)
+        .padding(.vertical, SQSpace.s)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(SQColor.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .stroke(SQColor.line, lineWidth: 1)
-        )
+        .sqSurface(.card, radius: SQRadius.m)
         .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(spot.game), \(spot.filled) of \(spot.seatTotal), \(countdown) left")
         .accessibilityIdentifier("active-call-bar")
+    }
+
+    private func barCountdown(_ text: String) -> some View {
+        Text(text)
+            .sqTimerStyle(compact: true)
+            .accessibilityIdentifier("active-call-countdown")
+    }
+
+    private func barSeats(_ text: String) -> some View {
+        Text(text)
+            .font(SQType.timerSmall)
+            .foregroundStyle(SQColor.subtle)
+            .lineLimit(1)
     }
 
     private func barButton(_ action: SpotBarAction) -> some View {

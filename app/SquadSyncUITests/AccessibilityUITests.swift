@@ -302,10 +302,15 @@ final class AccessibilityUITests: XCTestCase {
         }
     }
 
+    /// Scrolls until the element is hittable and, when the chat composer is on screen,
+    /// sits fully above it with the 8-point gap the assertions check. A control whose
+    /// center has just crossed the list's bottom edge is hittable but still clipped,
+    /// so hittable alone is not "revealed".
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
         let list = app.scrollViews["message-list"]
+        let composer = app.descendants(matching: .any)["composer"]
         var moves = 0
-        while !element.isHittable, moves < 24 {
+        while !revealed(element, above: composer), moves < 24 {
             if list.exists {
                 let start = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72))
                 let end = list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.58))
@@ -315,6 +320,12 @@ final class AccessibilityUITests: XCTestCase {
             }
             moves += 1
         }
+    }
+
+    private func revealed(_ element: XCUIElement, above composer: XCUIElement) -> Bool {
+        guard element.isHittable else { return false }
+        guard composer.exists else { return true }
+        return element.frame.maxY + 8 <= composer.frame.minY
     }
 
     private func assertListClearsComposer(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
@@ -730,12 +741,71 @@ final class AccessibilityUITests: XCTestCase {
         let title = app.descendants(matching: .any)["squad-title"]
         XCTAssertTrue(title.waitForExistence(timeout: 15), "The squad header was missing at large text")
         XCTAssertGreaterThan(title.frame.height, 1)
+        XCTAssertFalse(app.buttons["presence-Riley"].exists, "At large text presence starts folded so the chat keeps the screen")
+        let toggle = app.buttons["presence-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 5), "Presence toggle was not in the large-text header")
+        XCTAssertTrue(toggle.isHittable)
+        XCTAssertEqual(toggle.label, "Show squad presence")
+        toggle.tap()
+        XCTAssertEqual(toggle.label, "Hide squad presence")
         let riley = app.buttons["presence-Riley"]
-        XCTAssertTrue(riley.waitForExistence(timeout: 5), "Riley was not in the presence strip at large text")
+        XCTAssertTrue(riley.waitForExistence(timeout: 5), "Riley was not in the presence roster at large text")
         XCTAssertTrue(riley.isHittable, "Riley's avatar was not hittable at large text, frame \(riley.frame)")
         let composer = app.descendants(matching: .any)["composer"]
         XCTAssertTrue(composer.waitForExistence(timeout: 5))
         XCTAssertLessThan(riley.frame.maxY, composer.frame.minY, "The presence strip runs into the composer")
         XCTAssertTrue(app.buttons["members"].isHittable, "Members was squeezed out of the header at large text")
+        let window = app.windows.firstMatch.frame
+        XCTAssertLessThanOrEqual(riley.frame.maxX, window.maxX + 1, "Riley's row runs off the right edge")
+        let note = app.descendants(matching: .any)["presence-untracked"]
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "The untracked-presence line was missing at large text")
+        XCTAssertEqual(note.label, "Presence isn't live yet")
+        XCTAssertLessThanOrEqual(note.frame.maxX, window.maxX + 1, "The untracked-presence line is cut off at the right")
+        toggle.tap()
+        XCTAssertTrue(riley.waitForNonExistence(timeout: 5), "The roster did not fold again")
+    }
+
+    func testHeaderIsOneRowAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall", "-uitest-largeText"]
+        app.launch()
+
+        let title = app.descendants(matching: .any)["squad-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "The squad header was missing at large text")
+        let members = app.buttons["members"]
+        let account = app.buttons["account"]
+        XCTAssertTrue(members.waitForExistence(timeout: 5))
+        XCTAssertTrue(members.isHittable, "Members was not hittable in the one-row header")
+        XCTAssertTrue(account.isHittable, "Account was not hittable in the one-row header")
+        XCTAssertLessThan(abs(members.frame.midY - title.frame.midY), title.frame.height, "Members dropped to a second header row, members \(members.frame) title \(title.frame)")
+        XCTAssertLessThan(abs(account.frame.midY - title.frame.midY), title.frame.height, "Account dropped to a second header row")
+        let window = app.windows.firstMatch.frame
+        XCTAssertLessThan(title.frame.maxY, window.height * 0.22, "The header takes too much of the screen at large text, title \(title.frame)")
+        let bar = app.descendants(matching: .any)["active-call-bar"]
+        XCTAssertTrue(bar.waitForExistence(timeout: 5), "The pinned spot bar was missing")
+        XCTAssertLessThan(bar.frame.height, window.height * 0.22, "The pinned spot bar is not compact at large text, frame \(bar.frame)")
+        let list = app.scrollViews["message-list"]
+        XCTAssertTrue(list.exists)
+        XCTAssertGreaterThan(list.frame.height, window.height * 0.4, "The chat keeps less than 40% of the screen at large text, list \(list.frame)")
+    }
+
+    func testPresenceDecorationsAreNotReadAloud() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
+        app.launch()
+
+        let note = app.descendants(matching: .any)["presence-untracked"]
+        XCTAssertTrue(note.waitForExistence(timeout: 15), "The untracked-presence pill was missing")
+        XCTAssertEqual(note.label, "Presence isn't live yet")
+        XCTAssertTrue(note.isHittable || note.frame.width > 0)
+        XCTAssertLessThanOrEqual(note.frame.maxX, app.windows.firstMatch.frame.maxX + 1, "The untracked pill is cut off at the right")
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "presence-untracked").count, 1, "The pill's symbol is a second element")
+        let symbolNames = ["antenna", "radiowaves", "mic.slash", "waveform", "gamecontroller", "checkmark", "lock.fill", "chevron", "person.3", "person.2", "ellipsis"]
+        let format = symbolNames.map { "label CONTAINS[c] '\($0)'" }.joined(separator: " OR ")
+        let leaked = app.descendants(matching: .any).matching(NSPredicate(format: format))
+        XCTAssertEqual(leaked.count, 0, "An SF Symbol name is exposed to VoiceOver: \(leaked.allElementsBoundByIndex.map(\.label))")
+        let me = app.buttons["presence-You"]
+        XCTAssertTrue(me.exists)
+        XCTAssertTrue(me.label.hasPrefix("You"), "The viewer's avatar does not identify you: \(me.label)")
     }
 }

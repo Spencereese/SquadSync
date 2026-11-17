@@ -74,21 +74,20 @@ struct SquadPresenceEntry: Identifiable, Equatable {
         return String(first).uppercased()
     }
 
-    /// The visible game caption. A profile default reads as "Usually …".
-    var gameCaption: String? {
-        guard let game else { return nil }
-        switch gameSource {
-        case .some(.spot): return game
-        case .some(.profileDefault): return "Usually \(game)"
-        case .none: return game
-        }
-    }
+    /// The visible game caption: just the game, so it fits under a 72-point avatar.
+    /// A profile default is drawn muted (`gameIsGuess`) and spoken as "usually plays",
+    /// so the short caption still never claims they are playing it now.
+    var gameCaption: String? { game }
 
+    /// True when the game line is only the profile default, not a live seat.
+    var gameIsGuess: Bool { gameSource != .some(.spot) }
+
+    /// Always identifies the viewer, seated or not. A display name of "You" is not repeated.
     var spokenLabel: String {
         var bits = [name]
+        if isViewer && name.lowercased() != "you" { bits.append("you") }
         if isOwner { bits.append("owner") }
         if status != .you { bits.append(status.spoken) }
-        if isViewer && status != .you { bits.append("you") }
         if let game {
             switch gameSource {
             case .some(.spot): bits.append("spot game \(game)")
@@ -156,6 +155,11 @@ enum SquadPresence {
             return lhs.id.uuidString < rhs.id.uuidString
         }
     }
+
+    /// Visible pill text. Short so it fits beside two avatars at the default size.
+    static let untrackedShort = "Presence not live"
+    /// Spoken and the full-width line in the large-text roster.
+    static let untrackedSpoken = "Presence isn't live yet"
 
     /// True when at least one member's presence is a guess the app refuses to make.
     static func hasUntracked(_ entries: [SquadPresenceEntry]) -> Bool {

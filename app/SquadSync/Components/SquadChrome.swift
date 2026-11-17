@@ -26,6 +26,7 @@ struct SQAvatar: View {
         .overlay(alignment: .bottomTrailing) {
             if let symbol = badgeSymbol {
                 Image(systemName: symbol)
+                    .accessibilityHidden(true)
                     .font(.system(size: 8, weight: .heavy))
                     .dynamicTypeSize(.large)
                     .foregroundStyle(SQColor.onSignal)
@@ -79,16 +80,20 @@ struct PresencePill: View {
     var systemImage: String?
     var tint: Color = SQColor.subtle
     var filled = false
+    /// What VoiceOver reads. The symbol is decoration and is never read.
+    var spoken: String? = nil
 
     var body: some View {
         HStack(spacing: SQSpace.xs) {
             if let systemImage {
                 Image(systemName: systemImage)
                     .imageScale(.small)
+                    .accessibilityHidden(true)
             }
             Text(text)
                 .lineLimit(1)
         }
+        .fixedSize()
         .font(SQType.label)
         .foregroundStyle(filled ? SQColor.onSignal : tint)
         .padding(.horizontal, SQSpace.s + 2)
@@ -100,6 +105,8 @@ struct PresencePill: View {
         .overlay {
             Capsule().stroke(filled ? Color.clear : tint.opacity(0.35), lineWidth: 1)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken ?? text)
     }
 }
 

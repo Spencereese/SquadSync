@@ -144,9 +144,11 @@ final class SquadHomeTests: XCTestCase {
         XCTAssertEqual(byName["Alex"]?.game, "Warzone")
         XCTAssertEqual(byName["Alex"]?.gameSource, .spot)
         XCTAssertEqual(byName["Alex"]?.gameCaption, "Warzone")
+        XCTAssertEqual(byName["Alex"]?.gameIsGuess, false)
         XCTAssertEqual(byName["Riley"]?.game, "Halo")
         XCTAssertEqual(byName["Riley"]?.gameSource, .profileDefault)
-        XCTAssertEqual(byName["Riley"]?.gameCaption, "Usually Halo")
+        XCTAssertEqual(byName["Riley"]?.gameCaption, "Halo", "The visible caption is just the game so it fits")
+        XCTAssertEqual(byName["Riley"]?.gameIsGuess, true)
         XCTAssertNil(byName["Sam"]?.game)
         XCTAssertNil(byName["Sam"]?.gameCaption)
     }
@@ -164,8 +166,27 @@ final class SquadHomeTests: XCTestCase {
         XCTAssertEqual(entries.first?.spokenLabel, "Riley, presence isn't tracked yet, usually plays Halo")
         XCTAssertTrue(SquadPresence.hasUntracked(entries))
         let mine = SquadPresence.entries(members: [member(viewer, "You", owner: true)], ownerId: viewer, viewerId: viewer, spot: nil, now: now)
-        XCTAssertEqual(mine.first?.spokenLabel, "You, owner")
+        XCTAssertEqual(mine.first?.spokenLabel, "You, owner", "A display name of You is not repeated")
         XCTAssertFalse(SquadPresence.hasUntracked(mine))
+    }
+
+    func testViewerIsIdentifiedWhetherSeatedOrNot() {
+        let members = [member(viewer, "Grok Test", game: "Call of Duty", owner: true)]
+        let idle = SquadPresence.entries(members: members, ownerId: viewer, viewerId: viewer, spot: nil, now: now)
+        XCTAssertEqual(idle.first?.status, .you)
+        XCTAssertEqual(idle.first?.spokenLabel, "Grok Test, you, owner, usually plays Call of Duty")
+        let call = spot(seats: [seat(viewer, "Grok Test", ready: true)])
+        let seated = SquadPresence.entries(members: members, ownerId: viewer, viewerId: viewer, spot: call, now: now)
+        XCTAssertEqual(seated.first?.status, .ready)
+        XCTAssertEqual(seated.first?.spokenLabel, "Grok Test, you, owner, ready, spot game Warzone")
+        let other = SquadPresence.entries(members: [member(riley, "Riley")], ownerId: nil, viewerId: viewer, spot: nil, now: now)
+        XCTAssertFalse(other.first?.spokenLabel.contains("you") ?? true)
+    }
+
+    func testUntrackedCopyIsShortOnScreenAndFullForVoiceOver() {
+        XCTAssertEqual(SquadPresence.untrackedShort, "Presence not live")
+        XCTAssertEqual(SquadPresence.untrackedSpoken, "Presence isn't live yet")
+        XCTAssertLessThan(SquadPresence.untrackedShort.count, SquadPresence.untrackedSpoken.count)
     }
 
     // MARK: Send recovery

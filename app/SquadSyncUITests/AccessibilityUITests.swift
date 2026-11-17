@@ -475,6 +475,10 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(sent.firstMatch.waitForExistence(timeout: 5), "Sent bubble did not appear")
         XCTAssertEqual(sent.count, 1)
         XCTAssertFalse(app.buttons["retry-send"].waitForExistence(timeout: 2))
+        XCTAssertTrue(
+            app.descendants(matching: .any)["home-status"].waitForNonExistence(timeout: 3),
+            "The failed-send line stayed after the retry went through"
+        )
     }
 
     func testMockEighthJoinFillsAndNinthIsRejected() {

@@ -168,6 +168,50 @@ final class SquadHomeTests: XCTestCase {
         XCTAssertFalse(SquadPresence.hasUntracked(mine))
     }
 
+    // MARK: Send recovery
+
+    func testSuccessfulSendClearsReconnectingAndTheFailedSendLine() {
+        XCTAssertEqual(SendRecovery.status(afterSuccess: SessionFailurePolicy.reconnecting, sendFailure: nil), "")
+        XCTAssertEqual(SendRecovery.status(afterSuccess: "Debug send failed.", sendFailure: "Debug send failed."), "")
+        XCTAssertEqual(SendRecovery.status(afterSuccess: "Renamed.", sendFailure: "Debug send failed."), "Renamed.", "Unrelated lines stay")
+        XCTAssertEqual(SendRecovery.status(afterSuccess: "Renamed.", sendFailure: nil), "Renamed.")
+        XCTAssertEqual(SendRecovery.status(afterSuccess: "", sendFailure: ""), "")
+    }
+
+    func testMockSendAfterReconnectingClearsTheBanner() async {
+        let model = LiveSessionModel(
+            config: BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test"),
+            backend: .mock,
+            scenario: .invite
+        )
+        model.reconnecting = true
+        model.status = SessionFailurePolicy.reconnecting
+        model.draft = "back"
+        await model.send()
+        let status = model.status
+        let reconnecting = model.reconnecting
+        XCTAssertEqual(status, "", "Reconnecting… stayed after a send went through")
+        XCTAssertFalse(reconnecting)
+        XCTAssertEqual(model.log.ordered.last?.body, "back")
+        XCTAssertEqual(model.log.ordered.last?.delivery, .sent)
+    }
+
+    func testRecoverAfterSendKeepsAnUnrelatedLine() {
+        let model = LiveSessionModel(
+            config: BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test"),
+            backend: .mock,
+            scenario: .invite
+        )
+        model.sendFailureStatus = "Debug send failed."
+        model.status = "Debug send failed."
+        model.recoverAfterSend()
+        XCTAssertEqual(model.status, "")
+        XCTAssertNil(model.sendFailureStatus)
+        model.status = "Renamed."
+        model.recoverAfterSend()
+        XCTAssertEqual(model.status, "Renamed.")
+    }
+
     // MARK: Header title
 
     func testHeaderTitleFallsBackWhenTheNameIsNullOrBlank() {

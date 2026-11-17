@@ -47,6 +47,8 @@ final class LiveSessionModel {
     var busy = false
     /// Voice is a mock on the home header. The pill drives the in-memory room only.
     var voicePill = VoicePillState()
+    /// The status line the last failed send wrote, so a later success can clear exactly that.
+    var sendFailureStatus: String?
 
     private let config: BackendConfig
     private let voiceRoom: VoiceRoomService = InMemoryVoiceRoomService()
@@ -672,12 +674,23 @@ final class LiveSessionModel {
         switch OutboundSend.result(receipt: receipt, error: error) {
         case .sent:
             log.markSent(id: message.id)
+            recoverAfterSend()
         case .staySending:
             break
         case .failed:
             log.markFailed(id: message.id)
-            if let error { report(error) }
+            if let error {
+                report(error)
+                sendFailureStatus = status
+            }
         }
+    }
+
+    /// A delivered message clears "Reconnecting…" and the failed-send line it replaced.
+    func recoverAfterSend() {
+        status = SendRecovery.status(afterSuccess: status, sendFailure: sendFailureStatus)
+        sendFailureStatus = nil
+        reconnecting = false
     }
 
     func becameActive() async {

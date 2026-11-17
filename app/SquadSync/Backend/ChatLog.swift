@@ -215,6 +215,17 @@ enum OutboundSend {
     }
 }
 
+/// A send that goes through proves the connection and the session work again.
+/// The line a failed send left behind (or the session-level "Reconnecting…")
+/// clears; anything else the user is reading stays.
+enum SendRecovery {
+    static func status(afterSuccess current: String, sendFailure: String?) -> String {
+        if current == SessionFailurePolicy.reconnecting { return "" }
+        if let sendFailure, !sendFailure.isEmpty, current == sendFailure { return "" }
+        return current
+    }
+}
+
 enum HistoryMerge {
     /// A fetch for a squad we have already left must not be written into the new thread.
     static func accepts(requestSquad: UUID, loadedSquad: UUID?) -> Bool {

@@ -81,6 +81,35 @@ final class LiveSessionModel {
     var checkInBusy = false
     /// Why the last check-in didn't save, in plain words. Cleared by the next success.
     var checkInError = ""
+    // Onboarding (S5): sign-in, the first profile, and the first squad.
+    /// Why the last send or verify failed, in plain words.
+    var signInError = ""
+    /// "We sent a new code to …" after a resend.
+    var resentNote = ""
+    var resend = ResendClock()
+    var onboardingAction: OnboardingAction?
+    /// False until the profile step is done once on this phone (or a squad exists).
+    var profileConfirmed = true
+    var profileDraft = ProfileDraft(name: "", defaultGame: "Call of Duty")
+    var profileLoad = OnboardingLoad.idle
+    var showProfileErrors = false
+    var profileError = ""
+    var gameEntry = ""
+    var gamesError = ""
+    var gamesHome: GamesHome?
+    /// Set when the profile step was finished in this launch, so the squad step
+    /// counts "Step 4 of 4". Someone who left a squad later sees no count.
+    var onboardedThisSession = false
+
+    /// Which onboarding step the screen shows.
+    var onboardingStep: OnboardingStep {
+        OnboardingStep.current(
+            signedIn: phase == .ready,
+            codeSent: phase == .code,
+            profileConfirmed: profileConfirmed,
+            hasSquad: squad != nil
+        )
+    }
 
     private let config: BackendConfig
     private let voiceRoom: VoiceRoomService = InMemoryVoiceRoomService()
@@ -93,6 +122,11 @@ final class LiveSessionModel {
     private let mockSpots: SpotServing?
     /// Internal so model tests can change what the mock server holds.
     let mockCheckIns: MockCheckInService?
+    /// Internal so model tests can read what the mock auth and games servers saw.
+    let mockAuth: MockAuthService?
+    let mockGames: MockProfileGames?
+    /// Live only: remembers the finished profile step per account.
+    private let marks: OnboardingMarks?
     private var liveSpotService: SupabaseSpotService?
     private var liveSpotToken: String?
     private var realtime: RealtimeClient?
@@ -116,7 +150,10 @@ final class LiveSessionModel {
                 userId: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
                 email: "spencer@squadsync.app"
             )
-            try? store.save(session)
+            // Onboarding scenarios start signed out (or, for the profile one, signed in
+            // before the profile step), so the mock session is only saved for the rest.
+            let signedOut = scenario.startsSignedOut
+            if !signedOut { try? store.save(session) }
             let squads = MockSquadService()
             let chat = MockChatService(
                 replies: scenario != .chatNoReplies,
@@ -124,15 +161,30 @@ final class LiveSessionModel {
                 historyDelay: scenario == .chatHistorySlow ? 3 : 0
             )
             self.sessionStore = store
-            self.auth = MockAuthService(store: store)
+            let mockAuth = MockAuthService(
+                store: store,
+                acceptedCode: scenario.isOnboardingScenario ? MockAuthService.onboardingCode : nil,
+                sendFailure: scenario == .onboardingOffline ? .reconnecting : nil,
+                delay: scenario == .onboardingSlow ? 2 : 0
+            )
+            self.auth = mockAuth
+            self.mockAuth = mockAuth
+            self.mockGames = MockProfileGames(home: .phone)
+            self.marks = nil
+            if scenario.isOnboardingScenario {
+                self.profileConfirmed = false
+                self.resend = ResendClock(cooldown: 5)
+            }
             self.mockCheckIns = Self.mockCheckIns(for: scenario, viewerId: session.userId)
             self.mockProfiles = MockProfileService()
             self.mockSquads = squads
             self.mockChat = chat
             self.mockInvites = MockInviteService(squads: squads)
-            self.phase = .ready
-            self.email = session.email
-            self.viewerId = session.userId
+            if !signedOut {
+                self.phase = .ready
+                self.email = session.email
+                self.viewerId = session.userId
+            }
             if scenario == .spotCall || scenario == .spotCallMine || scenario == .spotCallNearlyFull || scenario == .spotCallExpired {
                 let seeded = squads.seedSpotSquad(ownerId: session.userId)
                 self.squad = seeded
@@ -237,6 +289,9 @@ final class LiveSessionModel {
             self.mockInvites = nil
             self.mockSpots = nil
             self.mockCheckIns = nil
+            self.mockAuth = nil
+            self.mockGames = nil
+            self.marks = OnboardingMarks()
         }
     }
 
@@ -300,27 +355,195 @@ final class LiveSessionModel {
     }
 
     func sendCode() async {
-        await run {
-            try await auth.sendCode(to: email)
+        guard SignInEmail.isValid(email) else {
+            signInError = SignInEmail.invalidMessage
+            return
+        }
+        let address = SignInEmail.normalized(email)
+        signInError = ""
+        status = ""
+        onboardingAction = .sending
+        defer { onboardingAction = nil }
+        do {
+            try await auth.sendCode(to: address)
+            email = address
+            code = ""
+            resentNote = ""
+            resend.sentAt = Date()
+            resend.serverWaitUntil = nil
             phase = .code
-            status = "Check \(email). Enter the code from your email."
+        } catch {
+            noteSignInFailure(error, stage: .send)
+        }
+    }
+
+    /// "Send a new code", once the cooldown (and any server wait) is over.
+    func resendCode() async {
+        guard resend.canResend(now: Date()) else { return }
+        signInError = ""
+        resentNote = ""
+        onboardingAction = .resending
+        defer { onboardingAction = nil }
+        do {
+            try await auth.sendCode(to: email)
+            code = ""
+            resend.sentAt = Date()
+            resend.serverWaitUntil = nil
+            resentNote = "We sent a new code to \(email). Use the newest one."
+        } catch {
+            noteSignInFailure(error, stage: .send)
+        }
+    }
+
+    /// Back to the email step, keeping what was typed.
+    func changeEmail() {
+        phase = .email
+        code = ""
+        signInError = ""
+        resentNote = ""
+        resend = ResendClock(cooldown: resend.cooldown)
+    }
+
+    /// The code field keeps digits only. The sixth digit checks the code on its own.
+    func codeChanged(_ raw: String) {
+        let digits = OTPEntry.digits(raw)
+        let before = code.count
+        guard digits != code else { return }
+        code = digits
+        if !digits.isEmpty { signInError = "" }
+        if digits.count == OTPEntry.length, before < OTPEntry.length, onboardingAction == nil {
+            Task { await verify() }
         }
     }
 
     func verify() async {
-        let trimmed = SignInCode.normalized(code)
-        guard SignInCode.isValid(trimmed) else {
-            status = "Enter the code from your email."
+        let digits = OTPEntry.digits(code)
+        guard OTPEntry.isComplete(digits) else {
+            signInError = "Enter the 6-digit code from your email."
             return
         }
-        code = trimmed
-        await run {
-            let session = try await auth.verify(email: email, code: code)
-            phase = .ready
+        code = digits
+        signInError = ""
+        onboardingAction = .verifying
+        defer { onboardingAction = nil }
+        do {
+            let session = try await auth.verify(email: email, code: digits)
+            viewerId = session.userId
             status = ""
+            resentNote = ""
+            // Load the profile and squad before leaving the code step, so the next
+            // step is the right one instead of flashing the squad form first.
             await refresh(session)
+            // A refresh that ended the session already moved back to the email step.
+            if phase == .email { return }
+            phase = .ready
             startLive(session)
+        } catch {
+            noteSignInFailure(error, stage: .verify)
+            if case .wrongCode = SignInProblem.from(error, stage: .verify).kind { code = "" }
         }
+    }
+
+    private func noteSignInFailure(_ error: Error, stage: SignInStage) {
+        if RequestNoise.isCancellation(error) { return }
+        let problem = SignInProblem.from(error, stage: stage)
+        signInError = problem.message
+        if let wait = problem.retryAfter {
+            resend.serverWaitUntil = Date().addingTimeInterval(wait)
+        }
+    }
+
+    /// The offline panel's Try again.
+    func retryConnection() async {
+        await restore()
+    }
+
+    // MARK: Onboarding profile
+
+    /// Seeds the profile step from the server: name, default game, and the games list
+    /// (from the server once 0023 is applied, from this phone until then).
+    func loadOnboardingProfile() async {
+        guard let session = try? requiredSession() else { return }
+        profileLoad = .loading
+        do {
+            let loaded: UserProfile
+            if let profile {
+                loaded = profile
+            } else {
+                loaded = try await profileService(session).loadOrCreate(userId: session.userId, email: session.email)
+                profile = loaded
+            }
+            let games = try await gamesService(session).load(userId: session.userId)
+            profileDraft = ProfileDraft(name: loaded.displayName, defaultGame: loaded.defaultGame, games: games.games)
+            gamesHome = games.home
+            profileLoad = .loaded
+        } catch {
+            if RequestNoise.isCancellation(error) { return }
+            profileLoad = .failed(Self.offline(error)
+                ? "You're offline. Your profile will load when you're back online."
+                : "Your profile didn't load. Try again.")
+        }
+    }
+
+    func addGameFromEntry() {
+        if let problem = profileDraft.addGame(gameEntry) {
+            gamesError = problem
+        } else {
+            gamesError = ""
+            gameEntry = ""
+        }
+    }
+
+    func addSuggestedGame(_ game: String) {
+        gamesError = profileDraft.addGame(game) ?? ""
+    }
+
+    func removeGame(_ game: String) {
+        profileDraft.removeGame(game)
+        gamesError = ""
+    }
+
+    /// Continue on the profile step: saves name and default game to the server, then
+    /// the games list wherever it lives, then moves on to the squad step.
+    func saveOnboardingProfile() async {
+        showProfileErrors = true
+        profileError = ""
+        guard profileDraft.isValid, var current = profile, let session = try? requiredSession() else { return }
+        let saved = profileDraft.saved
+        onboardingAction = .savingProfile
+        defer { onboardingAction = nil }
+        do {
+            current.displayName = saved.name
+            current.defaultGame = saved.defaultGame
+            try await profileService(session).save(current)
+            profile = current
+            displayName = saved.name
+            defaultGame = saved.defaultGame
+            gamesHome = try await gamesService(session).save(userId: session.userId, games: saved.games)
+            profileDraft.games = saved.games
+            marks?.confirmProfile(session.userId)
+            showProfileErrors = false
+            onboardedThisSession = true
+            profileConfirmed = true
+        } catch {
+            if RequestNoise.isCancellation(error) { return }
+            if let failure = error as? BackendFailure, case .signIn = SessionFailurePolicy.surface(failure) {
+                handleSessionError(error)
+                return
+            }
+            profileError = Self.offline(error)
+                ? "You're offline. Your profile wasn't saved. Try again."
+                : "Your profile didn't save. Try again."
+        }
+    }
+
+    private static func offline(_ error: Error) -> Bool {
+        if case .reconnecting = error as? BackendFailure { return true }
+        return false
+    }
+
+    private func gamesService(_ session: AuthSession) -> ProfileGamesServing {
+        mockGames ?? SupabaseProfileGames(config: config, accessToken: session.accessToken, refresher: tokenRefresher)
     }
 
     func saveProfile() async {
@@ -342,6 +565,8 @@ final class LiveSessionModel {
         }
         squadNameError = ""
         let name = SquadName.normalized(squadName)
+        onboardingAction = .creating
+        defer { onboardingAction = nil }
         await run {
             let session = try requiredSession()
             let service = squadService(session)
@@ -379,6 +604,8 @@ final class LiveSessionModel {
         }
         membershipIsError = false
         status = "Joining…"
+        onboardingAction = .joining
+        defer { onboardingAction = nil }
         await run {
             let session = try requiredSession()
             let beforeId = squad?.id
@@ -1039,6 +1266,15 @@ final class LiveSessionModel {
         squadName = ""
         squadNameError = ""
         log = ChatLog()
+        code = ""
+        signInError = ""
+        resentNote = ""
+        resend = ResendClock(cooldown: resend.cooldown)
+        profileLoad = .idle
+        profileError = ""
+        showProfileErrors = false
+        gamesHome = nil
+        if marks != nil { profileConfirmed = true }
         phase = .email
         settlePush(signedIn: false)
     }
@@ -1135,6 +1371,12 @@ final class LiveSessionModel {
             let squads = squadService(session)
             squad = try await squads.currentSquad(userId: session.userId)
             reconnecting = false
+            if let marks {
+                // Someone already in a squad never sees the profile step.
+                if squad != nil { marks.confirmProfile(session.userId) }
+                profileConfirmed = squad != nil || marks.profileConfirmed(session.userId)
+            }
+            if !profileConfirmed && squad == nil { await loadOnboardingProfile() }
             await loadChat(session)
             await loadSpot(session)
             // The slow mock skips this so the sheet's own read is the one that loads.
@@ -1479,6 +1721,7 @@ struct LiveSessionView: View {
     @ScaledMetric(relativeTo: .body) private var composerLine: CGFloat = 22
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @FocusState private var composerFocused: Bool
 
     init(config: BackendConfig = .fromBundle(), backend: BackendMode = .live, scenario: LaunchScenario = .seated) {
@@ -1491,14 +1734,14 @@ struct LiveSessionView: View {
                 SQColor.surface0
                     .ignoresSafeArea()
                 Group {
-                    if model.phase == .ready {
-                        ready
+                    if showsOnboarding {
+                        OnboardingView(model: model, step: model.onboardingStep)
                     } else {
-                        signIn
+                        ready
                     }
                 }
-                .padding(.horizontal, model.phase == .ready ? SQSpace.m : SQSpace.l)
-                .padding(.vertical, model.phase == .ready ? SQSpace.s : SQSpace.l)
+                .padding(.horizontal, showsOnboarding ? SQSpace.l : SQSpace.m)
+                .padding(.vertical, showsOnboarding ? 0 : SQSpace.s)
                 .safeAreaInset(edge: .top, spacing: 0) {
                     if pushToastText != nil {
                         pushToast
@@ -1511,8 +1754,8 @@ struct LiveSessionView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
             // Chat-first: once signed in, the squad header replaces the navigation bar.
-            // Sign-in keeps the system bar and its "SquadSync" title.
-            .toolbar(model.phase == .ready ? .hidden : .visible, for: .navigationBar)
+            // Onboarding draws its own step title, so the bar stays hidden there too.
+            .toolbar(.hidden, for: .navigationBar)
         }
         .preferredColorScheme(.dark)
         .sheet(isPresented: $confirmSignOut) {
@@ -1578,33 +1821,13 @@ struct LiveSessionView: View {
         .presentationDragIndicator(.visible)
     }
 
-    private var signIn: some View {
-        VStack(alignment: .leading, spacing: SQSpace.m) {
-            Text("Email code")
-                .font(.title2.weight(.semibold))
-            TextField("Email", text: Binding(get: { model.email }, set: { model.email = $0 }))
-                .textFieldStyle(.roundedBorder)
-                .textInputAutocapitalization(.never)
-                .keyboardType(.emailAddress)
-            if model.phase == .code {
-                TextField("Code", text: Binding(get: { model.code }, set: { model.code = $0 }))
-                    .textFieldStyle(.roundedBorder)
-                    .keyboardType(.numberPad)
-                Text("Enter the code from your email.")
-                    .font(.footnote)
-                    .foregroundStyle(SQColor.muted)
-                Button("Verify") { Task { await model.verify() } }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.busy)
-            } else {
-                Button("Send code") { Task { await model.sendCode() } }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(model.busy)
-            }
-            if !model.status.isEmpty {
-                Text(model.status).font(.footnote).foregroundStyle(SQColor.muted)
-            }
-            notes
+    /// Email, code, and profile take the whole screen. The squad step sits under
+    /// the home header (for the account menu); offline always shows the reconnect panel.
+    private var showsOnboarding: Bool {
+        switch model.onboardingStep {
+        case .email, .code: true
+        case .profile: !model.reconnecting
+        case .squad, .home: false
         }
     }
 
@@ -1695,33 +1918,7 @@ struct LiveSessionView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     .layoutPriority(1)
             } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: SQSpace.m) {
-                        if model.reconnecting {
-                            Text("Reconnecting…")
-                                .accessibilityIdentifier("reconnecting")
-                        } else {
-                            joinControls
-                            Text("You're not in a squad yet.")
-                            TextField("Squad name", text: Binding(get: { model.squadName }, set: { model.squadName = $0 }))
-                                .textFieldStyle(.roundedBorder)
-                                .accessibilityIdentifier("squad-name")
-                            if !model.squadNameError.isEmpty {
-                                Text(model.squadNameError)
-                                    .font(.footnote)
-                                    .foregroundStyle(SQColor.danger)
-                            }
-                            Button("Create squad") { Task { await model.createSquad() } }
-                                .buttonStyle(.borderedProminent)
-                                .disabled(model.busy)
-                        }
-                        if !model.status.isEmpty {
-                            Text(model.status).font(.footnote).foregroundStyle(SQColor.muted)
-                        }
-                        notes
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                OnboardingSquadStep(model: model)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -1868,7 +2065,9 @@ struct LiveSessionView: View {
             .onChange(of: historyFailedWithoutMessages, initial: true) { _, failed in
                 guard failed else { return }
                 Task { @MainActor in
-                    withAnimation { proxy.scrollTo(ChatHistoryRow.anchor, anchor: .bottom) }
+                    withMotion(.current(systemReduceMotion: systemReduceMotion), .scroll) {
+                        proxy.scrollTo(ChatHistoryRow.anchor, anchor: .bottom)
+                    }
                 }
             }
             .onChange(of: model.followSend) { _, id in

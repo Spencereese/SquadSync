@@ -21,39 +21,40 @@ enum SQRadius {
 }
 
 enum SQColor {
-    static let canvas = adaptive(light: 0xF4F6FB, dark: 0x07090F)
-    static let card = adaptive(light: 0xFFFFFF, dark: 0x121722)
-    static let ink = adaptive(light: 0x10141C, dark: 0xF2F5FB)
-    static let muted = adaptive(light: 0x5C677A, dark: 0x9AA6BD)
-    static let line = adaptive(light: 0xD7DEEA, dark: 0x243044)
-    static let accent = adaptive(light: 0x2F6BFF, dark: 0x7AA2FF)
-    static let mine = adaptive(light: 0x2F6BFF, dark: 0x3D7EFF)
-    static let theirs = adaptive(light: 0xE7ECF5, dark: 0x1C2433)
-    static let online = Color(red: 0.24, green: 0.86, blue: 0.55)
-    static let warning = Color(red: 1.0, green: 0.72, blue: 0.28)
-    static let danger = Color(red: 1.0, green: 0.38, blue: 0.42)
+    static let canvas = adaptive(SQPalette.canvas)
+    static let card = adaptive(SQPalette.card)
+    static let ink = adaptive(SQPalette.ink)
+    static let muted = adaptive(SQPalette.muted)
+    static let line = adaptive(SQPalette.line)
+    static let accent = adaptive(SQPalette.accent)
+    static let mine = adaptive(SQPalette.mine)
+    static let theirs = adaptive(SQPalette.theirs)
+    static let online = adaptive(SQPalette.online)
+    static let warning = adaptive(SQPalette.warning)
+    static let danger = adaptive(SQPalette.danger)
 
     // MARK: Redesign tokens (dark-first)
     //
     // The chat-first shell renders in dark mode. Light values exist so a
     // preview or a future light theme still reads, but dark is the design.
+    // Hex values live in `SQPalette`, where the contrast tests check them.
 
     /// Layer 0: the window behind everything.
-    static let surface0 = adaptive(light: 0xF2F4F8, dark: 0x05070B)
+    static let surface0 = adaptive(SQPalette.surface0)
     /// Layer 1: header bar and composer tray.
-    static let surface1 = adaptive(light: 0xFFFFFF, dark: 0x0C1018)
+    static let surface1 = adaptive(SQPalette.surface1)
     /// Layer 2: cards and bubbles from other people.
-    static let surface2 = adaptive(light: 0xEEF1F6, dark: 0x141A25)
+    static let surface2 = adaptive(SQPalette.surface2)
     /// Layer 3: raised controls inside a card.
-    static let surface3 = adaptive(light: 0xE2E7EF, dark: 0x1D2533)
+    static let surface3 = adaptive(SQPalette.surface3)
     /// Hairline between layers.
-    static let hairline = adaptive(light: 0xD5DCE7, dark: 0x232C3B)
+    static let hairline = adaptive(SQPalette.hairline)
     /// The one sharp accent: an electric mint used for live, ready, and primary actions.
-    static let signal = adaptive(light: 0x00A884, dark: 0x2BF0C4)
+    static let signal = adaptive(SQPalette.signal)
     /// Text drawn on top of `signal`.
-    static let onSignal = adaptive(light: 0xFFFFFF, dark: 0x02130E)
+    static let onSignal = adaptive(SQPalette.onSignal)
     /// Secondary text on dark surfaces.
-    static let subtle = adaptive(light: 0x6A7487, dark: 0x7D889C)
+    static let subtle = adaptive(SQPalette.subtle)
 
     static func role(_ role: Role) -> Color {
         switch role {
@@ -64,9 +65,9 @@ enum SQColor {
         }
     }
 
-    private static func adaptive(light: UInt32, dark: UInt32) -> Color {
+    private static func adaptive(_ pair: SQPalette.Pair) -> Color {
         Color(uiColor: UIColor { trait in
-            trait.userInterfaceStyle == .dark ? ui(dark) : ui(light)
+            trait.userInterfaceStyle == .dark ? ui(pair.dark) : ui(pair.light)
         })
     }
 

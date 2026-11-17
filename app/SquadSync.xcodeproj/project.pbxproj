@@ -6,6 +6,12 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A10000000000000000000995 /* OnboardingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000985 /* OnboardingTests.swift */; };
+		A10000000000000000000994 /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000984 /* OnboardingView.swift */; };
+		A10000000000000000000993 /* ProfileGames.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000983 /* ProfileGames.swift */; };
+		A10000000000000000000992 /* Motion.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000982 /* Motion.swift */; };
+		A10000000000000000000991 /* Palette.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000981 /* Palette.swift */; };
+		A10000000000000000000990 /* Onboarding.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000980 /* Onboarding.swift */; };
 		A10000000000000000000977 /* WhosInTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000973 /* WhosInTests.swift */; };
 		A10000000000000000000976 /* WhosInSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000972 /* WhosInSheet.swift */; };
 		A10000000000000000000975 /* CheckInService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000971 /* CheckInService.swift */; };
@@ -56,6 +62,12 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A10000000000000000000985 /* OnboardingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingTests.swift; sourceTree = "<group>"; };
+		A10000000000000000000984 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		A10000000000000000000983 /* ProfileGames.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileGames.swift; sourceTree = "<group>"; };
+		A10000000000000000000982 /* Motion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Motion.swift; sourceTree = "<group>"; };
+		A10000000000000000000981 /* Palette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Palette.swift; sourceTree = "<group>"; };
+		A10000000000000000000980 /* Onboarding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Onboarding.swift; sourceTree = "<group>"; };
 		A10000000000000000000973 /* WhosInTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhosInTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000972 /* WhosInSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhosInSheet.swift; sourceTree = "<group>"; };
 		A10000000000000000000971 /* CheckInService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CheckInService.swift; sourceTree = "<group>"; };
@@ -145,6 +157,8 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000002 /* Theme.swift */,
+				A10000000000000000000982 /* Motion.swift */,
+				A10000000000000000000981 /* Palette.swift */,
 				A10000000000000000000070 /* Typography.swift */,
 				A10000000000000000000071 /* Surfaces.swift */,
 				A10000000000000000000072 /* Haptics.swift */,
@@ -160,6 +174,7 @@
 				A10000000000000000000060 /* PushRoute.swift */,
 				A10000000000000000000074 /* SquadPresence.swift */,
 				A10000000000000000000970 /* WhosIn.swift */,
+				A10000000000000000000980 /* Onboarding.swift */,
 				A10000000000000000000077 /* SpotThread.swift */,
 				A1000000000000000000007A /* ChatThread.swift */,
 			);
@@ -178,6 +193,7 @@
 				A10000000000000000000056 /* LiveSessionView.swift */,
 				A10000000000000000000075 /* SquadHomeHeader.swift */,
 				A10000000000000000000972 /* WhosInSheet.swift */,
+				A10000000000000000000984 /* OnboardingView.swift */,
 				A10000000000000000000078 /* SpotCardViews.swift */,
 				A1000000000000000000007B /* ChatRows.swift */,
 			);
@@ -198,6 +214,7 @@
 			children = (
 				A10000000000000000000050 /* ChatLog.swift */,
 				A10000000000000000000971 /* CheckInService.swift */,
+				A10000000000000000000983 /* ProfileGames.swift */,
 				A10000000000000000000051 /* Services.swift */,
 				A10000000000000000000052 /* MockBackend.swift */,
 				A10000000000000000000053 /* SessionStore.swift */,
@@ -219,6 +236,7 @@
 				A10000000000000000000062 /* PushRouteTests.swift */,
 				A10000000000000000000076 /* SquadHomeTests.swift */,
 				A10000000000000000000973 /* WhosInTests.swift */,
+				A10000000000000000000985 /* OnboardingTests.swift */,
 				A10000000000000000000079 /* SpotThreadTests.swift */,
 				A1000000000000000000007D /* ChatModelTests.swift */,
 				A1000000000000000000007C /* ChatThreadTests.swift */,
@@ -375,6 +393,11 @@
 				A10000000000000000000976 /* WhosInSheet.swift in Sources */,
 				A10000000000000000000975 /* CheckInService.swift in Sources */,
 				A10000000000000000000974 /* WhosIn.swift in Sources */,
+				A10000000000000000000994 /* OnboardingView.swift in Sources */,
+				A10000000000000000000993 /* ProfileGames.swift in Sources */,
+				A10000000000000000000992 /* Motion.swift in Sources */,
+				A10000000000000000000991 /* Palette.swift in Sources */,
+				A10000000000000000000990 /* Onboarding.swift in Sources */,
 				A10000000000000000000087 /* SpotThread.swift in Sources */,
 				A1000000000000000000008A /* ChatThread.swift in Sources */,
 				A10000000000000000000085 /* SquadHomeHeader.swift in Sources */,
@@ -394,6 +417,7 @@
 				A10000000000000000000063 /* PushRouteTests.swift in Sources */,
 				A10000000000000000000086 /* SquadHomeTests.swift in Sources */,
 				A10000000000000000000977 /* WhosInTests.swift in Sources */,
+				A10000000000000000000995 /* OnboardingTests.swift in Sources */,
 				A10000000000000000000089 /* SpotThreadTests.swift in Sources */,
 				A1000000000000000000008D /* ChatModelTests.swift in Sources */,
 				A1000000000000000000008C /* ChatThreadTests.swift in Sources */,

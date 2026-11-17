@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ThreadView: View {
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Bindable var store: MockStore
     let conversation: Conversation
     @State private var draft = ""
@@ -66,7 +67,7 @@ struct ThreadView: View {
                 }
                 .onChange(of: store.showsVoicePill) { _, showing in
                     if showing {
-                        withAnimation { proxy.scrollTo("thread-bottom", anchor: .bottom) }
+                        withMotion(.current(systemReduceMotion: systemReduceMotion), .scroll) { proxy.scrollTo("thread-bottom", anchor: .bottom) }
                     }
                 }
             }

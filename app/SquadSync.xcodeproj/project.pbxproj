@@ -35,6 +35,12 @@
 		A10000000000000000000065 /* PushCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000064 /* PushCoordinator.swift */; };
 		A10000000000000000000063 /* PushRouteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000062 /* PushRouteTests.swift */; };
 		A10000000000000000000047 /* ChatLogTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000057 /* ChatLogTests.swift */; };
+		A10000000000000000000080 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000070 /* Typography.swift */; };
+		A10000000000000000000081 /* Surfaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000071 /* Surfaces.swift */; };
+		A10000000000000000000082 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000072 /* Haptics.swift */; };
+		A10000000000000000000083 /* SquadChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000073 /* SquadChrome.swift */; };
+		A10000000000000000000084 /* SquadPresence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000074 /* SquadPresence.swift */; };
+		A10000000000000000000085 /* SquadHomeHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000075 /* SquadHomeHeader.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -73,6 +79,12 @@
 		A10000000000000000000015 /* StoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000930 /* SquadSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SquadSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000931 /* SquadSyncTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SquadSyncTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000070 /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
+		A10000000000000000000071 /* Surfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Surfaces.swift; sourceTree = "<group>"; };
+		A10000000000000000000072 /* Haptics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Haptics.swift; sourceTree = "<group>"; };
+		A10000000000000000000073 /* SquadChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadChrome.swift; sourceTree = "<group>"; };
+		A10000000000000000000074 /* SquadPresence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadPresence.swift; sourceTree = "<group>"; };
+		A10000000000000000000075 /* SquadHomeHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadHomeHeader.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -100,6 +112,7 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000001 /* Chrome.swift */,
+				A10000000000000000000073 /* SquadChrome.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -108,6 +121,9 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000002 /* Theme.swift */,
+				A10000000000000000000070 /* Typography.swift */,
+				A10000000000000000000071 /* Surfaces.swift */,
+				A10000000000000000000072 /* Haptics.swift */,
 			);
 			path = Design;
 			sourceTree = "<group>";
@@ -118,6 +134,7 @@
 				A10000000000000000000004 /* Models.swift */,
 				A10000000000000000000005 /* SpotRules.swift */,
 				A10000000000000000000060 /* PushRoute.swift */,
+				A10000000000000000000074 /* SquadPresence.swift */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -132,6 +149,7 @@
 				A10000000000000000000010 /* ThreadView.swift */,
 				A10000000000000000000011 /* VoiceRoomView.swift */,
 				A10000000000000000000056 /* LiveSessionView.swift */,
+				A10000000000000000000075 /* SquadHomeHeader.swift */,
 			);
 			path = Screens;
 			sourceTree = "<group>";
@@ -313,6 +331,12 @@
 				A10000000000000000000046 /* LiveSessionView.swift in Sources */,
 				A10000000000000000000061 /* PushRoute.swift in Sources */,
 				A10000000000000000000065 /* PushCoordinator.swift in Sources */,
+				A10000000000000000000080 /* Typography.swift in Sources */,
+				A10000000000000000000081 /* Surfaces.swift in Sources */,
+				A10000000000000000000082 /* Haptics.swift in Sources */,
+				A10000000000000000000083 /* SquadChrome.swift in Sources */,
+				A10000000000000000000084 /* SquadPresence.swift in Sources */,
+				A10000000000000000000085 /* SquadHomeHeader.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

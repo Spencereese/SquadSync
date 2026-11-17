@@ -7,6 +7,17 @@ enum SQSpace {
     static let l: CGFloat = 16
     static let xl: CGFloat = 24
     static let xxl: CGFloat = 32
+    static let xxxl: CGFloat = 48
+}
+
+/// Corner radii. Cards and sheets use continuous corners.
+enum SQRadius {
+    static let s: CGFloat = 8
+    static let m: CGFloat = 12
+    static let l: CGFloat = 16
+    static let xl: CGFloat = 22
+    /// Capsules. SwiftUI clamps an oversized radius to half the height.
+    static let pill: CGFloat = 999
 }
 
 enum SQColor {
@@ -21,6 +32,28 @@ enum SQColor {
     static let online = Color(red: 0.24, green: 0.86, blue: 0.55)
     static let warning = Color(red: 1.0, green: 0.72, blue: 0.28)
     static let danger = Color(red: 1.0, green: 0.38, blue: 0.42)
+
+    // MARK: Redesign tokens (dark-first)
+    //
+    // The chat-first shell renders in dark mode. Light values exist so a
+    // preview or a future light theme still reads, but dark is the design.
+
+    /// Layer 0: the window behind everything.
+    static let surface0 = adaptive(light: 0xF2F4F8, dark: 0x05070B)
+    /// Layer 1: header bar and composer tray.
+    static let surface1 = adaptive(light: 0xFFFFFF, dark: 0x0C1018)
+    /// Layer 2: cards and bubbles from other people.
+    static let surface2 = adaptive(light: 0xEEF1F6, dark: 0x141A25)
+    /// Layer 3: raised controls inside a card.
+    static let surface3 = adaptive(light: 0xE2E7EF, dark: 0x1D2533)
+    /// Hairline between layers.
+    static let hairline = adaptive(light: 0xD5DCE7, dark: 0x232C3B)
+    /// The one sharp accent: an electric mint used for live, ready, and primary actions.
+    static let signal = adaptive(light: 0x00A884, dark: 0x2BF0C4)
+    /// Text drawn on top of `signal`.
+    static let onSignal = adaptive(light: 0xFFFFFF, dark: 0x02130E)
+    /// Secondary text on dark surfaces.
+    static let subtle = adaptive(light: 0x6A7487, dark: 0x7D889C)
 
     static func role(_ role: Role) -> Color {
         switch role {

@@ -41,6 +41,7 @@
 		A10000000000000000000083 /* SquadChrome.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000073 /* SquadChrome.swift */; };
 		A10000000000000000000084 /* SquadPresence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000074 /* SquadPresence.swift */; };
 		A10000000000000000000085 /* SquadHomeHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000075 /* SquadHomeHeader.swift */; };
+		A10000000000000000000086 /* SquadHomeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000076 /* SquadHomeTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -85,6 +86,7 @@
 		A10000000000000000000073 /* SquadChrome.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadChrome.swift; sourceTree = "<group>"; };
 		A10000000000000000000074 /* SquadPresence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadPresence.swift; sourceTree = "<group>"; };
 		A10000000000000000000075 /* SquadHomeHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadHomeHeader.swift; sourceTree = "<group>"; };
+		A10000000000000000000076 /* SquadHomeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadHomeTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -186,6 +188,7 @@
 				A10000000000000000000031 /* VoiceRoomServiceTests.swift */,
 				A10000000000000000000057 /* ChatLogTests.swift */,
 				A10000000000000000000062 /* PushRouteTests.swift */,
+				A10000000000000000000076 /* SquadHomeTests.swift */,
 			);
 			path = SquadSyncTests;
 			sourceTree = "<group>";
@@ -349,6 +352,7 @@
 				A10000000000000000000033 /* VoiceRoomServiceTests.swift in Sources */,
 				A10000000000000000000047 /* ChatLogTests.swift in Sources */,
 				A10000000000000000000063 /* PushRouteTests.swift in Sources */,
+				A10000000000000000000086 /* SquadHomeTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

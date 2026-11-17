@@ -627,4 +627,111 @@ final class AccessibilityUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(sent.waitForExistence(timeout: 5), "Sent message did not appear")
     }
+
+    // MARK: Chat-first home (redesign S1)
+
+    func testSignedInMockOpensStraightIntoTheChat() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
+        app.launch()
+
+        let list = app.scrollViews["message-list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 15), "The home screen was not the squad chat")
+        XCTAssertTrue(app.descendants(matching: .any)["message-row-seed-1"].waitForExistence(timeout: 5), "Riley's message was not in the home chat")
+        XCTAssertTrue(app.textFields["Message"].exists, "The composer was not on the home screen")
+        let title = app.descendants(matching: .any)["squad-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5), "The squad header was missing")
+        XCTAssertTrue(title.isHittable, "The squad header was not tappable, frame \(title.frame)")
+        XCTAssertLessThanOrEqual(title.frame.maxY, list.frame.minY + 1, "The header overlaps the chat")
+        XCTAssertFalse(app.textFields["profile-name"].exists, "Profile fields are still on the home screen")
+        XCTAssertFalse(app.textFields["Display name"].exists, "Profile fields are still on the home screen")
+    }
+
+    func testHeaderOpensTheSquadPanel() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
+        app.launch()
+
+        let title = app.descendants(matching: .any)["squad-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "The squad header was missing")
+        XCTAssertEqual(title.label, "Friday · 2 of 8")
+        title.tap()
+
+        let count = app.descendants(matching: .any)["squad-count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 5), "Tapping the squad name did not open the squad panel")
+        XCTAssertEqual(count.label, "Friday · 2 of 8")
+        XCTAssertTrue(app.buttons["remove-Riley"].waitForExistence(timeout: 5), "Members were not in the squad panel")
+        XCTAssertTrue(app.textFields["rename-field"].waitForExistence(timeout: 5), "Rename was not in the squad panel")
+        let profile = app.textFields["profile-name"]
+        XCTAssertTrue(profile.waitForExistence(timeout: 5), "Profile did not move into the squad panel")
+        XCTAssertTrue(app.textFields["profile-game"].exists, "Default game did not move into the squad panel")
+        XCTAssertTrue(app.buttons["save-profile"].exists, "Save profile was not in the squad panel")
+    }
+
+    func testPresenceStripIsPresentAndHittable() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
+        app.launch()
+
+        let strip = app.descendants(matching: .any)["presence-strip"]
+        XCTAssertTrue(strip.waitForExistence(timeout: 15), "The presence strip was not in the header")
+        XCTAssertGreaterThan(strip.frame.height, 1)
+        let riley = app.buttons["presence-Riley"]
+        XCTAssertTrue(riley.waitForExistence(timeout: 5), "Riley was not in the presence strip")
+        XCTAssertTrue(riley.isHittable, "Riley's avatar was not hittable, frame \(riley.frame)")
+        XCTAssertTrue(riley.label.contains("presence isn't tracked yet"), "Mock presence claimed a status it does not have: \(riley.label)")
+        XCTAssertFalse(riley.label.lowercased().contains("online"))
+        let me = app.buttons["presence-You"]
+        XCTAssertTrue(me.exists, "The viewer was not in the presence strip")
+        XCTAssertTrue(me.isHittable)
+
+        riley.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["squad-count"].waitForExistence(timeout: 5), "An avatar did not open the squad panel")
+    }
+
+    func testPresenceStripShowsSpotSeats() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall"]
+        app.launch()
+
+        let alex = app.buttons["presence-Alex"]
+        XCTAssertTrue(alex.waitForExistence(timeout: 15), "Alex was not in the presence strip")
+        XCTAssertTrue(alex.label.contains("ready"), "A Ready seat did not show as ready: \(alex.label)")
+        let sam = app.buttons["presence-Sam"]
+        XCTAssertTrue(sam.exists, "Sam was not in the presence strip")
+        XCTAssertTrue(sam.label.contains("in the spot call"), "A seat that is not Ready did not show as in the spot: \(sam.label)")
+    }
+
+    func testVoicePillStaysAMock() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
+        app.launch()
+
+        let pill = app.buttons["voice-room-pill"]
+        XCTAssertTrue(pill.waitForExistence(timeout: 15), "The voice-room pill was not in the header")
+        XCTAssertTrue(pill.isHittable)
+        XCTAssertTrue(pill.label.contains("mock"), "The voice pill did not say it is a mock: \(pill.label)")
+        XCTAssertTrue(pill.label.contains("Double tap to join."))
+        pill.tap()
+        let joined = NSPredicate(format: "label CONTAINS %@", "Double tap to leave.")
+        let flipped = expectation(for: joined, evaluatedWith: pill)
+        wait(for: [flipped], timeout: 5)
+    }
+
+    func testPresenceStripStaysHittableAtLargeText() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-uitest-largeText"]
+        app.launch()
+
+        let title = app.descendants(matching: .any)["squad-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "The squad header was missing at large text")
+        XCTAssertGreaterThan(title.frame.height, 1)
+        let riley = app.buttons["presence-Riley"]
+        XCTAssertTrue(riley.waitForExistence(timeout: 5), "Riley was not in the presence strip at large text")
+        XCTAssertTrue(riley.isHittable, "Riley's avatar was not hittable at large text, frame \(riley.frame)")
+        let composer = app.descendants(matching: .any)["composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        XCTAssertLessThan(riley.frame.maxY, composer.frame.minY, "The presence strip runs into the composer")
+        XCTAssertTrue(app.buttons["members"].isHittable, "Members was squeezed out of the header at large text")
+    }
 }

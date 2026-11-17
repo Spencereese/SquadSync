@@ -2118,66 +2118,9 @@ struct LiveSessionView: View {
         .accessibilityIdentifier("composer-plus")
     }
 
-    /// Opened from the + menu or a bare `/spots`. Says what it is doing while it calls,
-    /// keeps the sheet open with the reason when the call fails.
+    /// Opened from the + menu or a bare `/spots`.
     private var spotCallSheet: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: SQSpace.m) {
-                Text("Call spots")
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(SQColor.ink)
-                    .accessibilityAddTraits(.isHeader)
-                Text("The squad gets 5 minutes to join. Starters already in a game can join late. Seats cap at 8.")
-                    .font(SQType.detail)
-                    .foregroundStyle(SQColor.subtle)
-                    .fixedSize(horizontal: false, vertical: true)
-                TextField("Game", text: Binding(get: { model.spotGame }, set: { model.spotGame = $0 }))
-                    .textFieldStyle(.roundedBorder)
-                    .accessibilityLabel("Game")
-                    .accessibilityIdentifier("spot-sheet-game")
-                switch model.spotSheet {
-                case .calling:
-                    HStack(spacing: SQSpace.s) {
-                        ProgressView()
-                            .accessibilityHidden(true)
-                        Text("Calling spots…")
-                            .font(SQType.caption)
-                            .foregroundStyle(SQColor.subtle)
-                    }
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("spot-sheet-calling")
-                case .failed(let reason):
-                    Text(reason)
-                        .font(SQType.caption)
-                        .foregroundStyle(SQColor.danger)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("spot-sheet-error")
-                case .editing:
-                    EmptyView()
-                }
-                Button {
-                    SQHaptics.play(.success)
-                    Task { await model.callSpotsFromSheet() }
-                } label: {
-                    Text("Call spots")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(model.spotGate.busy)
-                .accessibilityIdentifier("spot-sheet-call")
-                Button("Not now", role: .cancel) { model.spotSheetOpen = false }
-                    .accessibilityIdentifier("spot-sheet-cancel")
-            }
-            .padding(SQSpace.xl)
-            .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        // Keeps "Call spots" off the keyboard's suggestion bar when the game field
-        // is focused at large text.
-        .safeAreaPadding(.bottom, SQSpace.l)
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(SQColor.surface0)
-        .adoptingLaunchDynamicType()
+        SpotCallSheet(model: model)
     }
 
     private var membershipSheet: some View {
@@ -2732,5 +2675,92 @@ private struct ChatPinModifier: ViewModifier {
                     lastOffset = sample.offset
                 }
         }
+    }
+}
+
+/// The call sheet, opened from the + menu or a bare `/spots`. Its own view so its
+/// focus and detent state live with it. Says what it is doing while it calls, and
+/// keeps the sheet open with the reason when the call fails.
+private struct SpotCallSheet: View {
+    let model: LiveSessionModel
+    @FocusState private var spotGameFocused: Bool
+    @State private var spotSheetDetent: PresentationDetent = .medium
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: SQSpace.m) {
+                Text("Call spots")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(SQColor.ink)
+                    .accessibilityAddTraits(.isHeader)
+                Text("The squad gets 5 minutes to join. Starters already in a game can join late. Seats cap at 8.")
+                    .font(SQType.detail)
+                    .foregroundStyle(SQColor.subtle)
+                    .fixedSize(horizontal: false, vertical: true)
+                TextField("Game", text: Binding(get: { model.spotGame }, set: { model.spotGame = $0 }))
+                    .textFieldStyle(.roundedBorder)
+                    .focused($spotGameFocused)
+                    .submitLabel(.go)
+                    .onSubmit {
+                        Task { await model.callSpotsFromSheet() }
+                    }
+                    .accessibilityLabel("Game")
+                    .accessibilityIdentifier("spot-sheet-game")
+                switch model.spotSheet {
+                case .calling:
+                    HStack(spacing: SQSpace.s) {
+                        ProgressView()
+                            .accessibilityHidden(true)
+                        Text("Calling spots…")
+                            .font(SQType.caption)
+                            .foregroundStyle(SQColor.subtle)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("spot-sheet-calling")
+                case .failed(let reason):
+                    Text(reason)
+                        .font(SQType.caption)
+                        .foregroundStyle(SQColor.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("spot-sheet-error")
+                case .editing:
+                    EmptyView()
+                }
+            }
+            .padding(SQSpace.xl)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        // The actions ride in the bottom safe-area inset, so they sit above the
+        // whole keyboard, including the QuickType bar, at every text size.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: SQSpace.s) {
+                Button {
+                    SQHaptics.play(.success)
+                    Task { await model.callSpotsFromSheet() }
+                } label: {
+                    Text("Call spots")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.spotGate.busy)
+                .accessibilityIdentifier("spot-sheet-call")
+                Button("Not now", role: .cancel) { model.spotSheetOpen = false }
+                    .accessibilityIdentifier("spot-sheet-cancel")
+            }
+            .padding(.horizontal, SQSpace.xl)
+            .padding(.top, SQSpace.s)
+            .padding(.bottom, SQSpace.m)
+            .frame(maxWidth: .infinity)
+            .background(SQColor.surface0)
+        }
+        // Typing gets the whole screen, so the field and the actions both stay in view.
+        .onChange(of: spotGameFocused) { _, focused in
+            if focused { spotSheetDetent = .large }
+        }
+        .onAppear { spotSheetDetent = .medium }
+        .presentationDetents([.medium, .large], selection: $spotSheetDetent)
+        .presentationDragIndicator(.visible)
+        .presentationBackground(SQColor.surface0)
+        .adoptingLaunchDynamicType()
     }
 }

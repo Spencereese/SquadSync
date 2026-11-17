@@ -75,7 +75,7 @@ final class SpotThreadTests: XCTestCase {
     func testRosterLimitsAlwaysEndWithZeroRows() {
         XCTAssertEqual(SquadPresence.rosterLimits(count: 5), [5, 4, 2, 1, 0])
         XCTAssertEqual(SquadPresence.rosterLimits(count: 1), [1, 1, 1, 1, 0])
-        XCTAssertEqual(SquadPresence.moreLabel(3), "3 more in the squad panel")
+        XCTAssertEqual(SquadPresence.moreLabel(3), "3 more in Who's in")
     }
 }
 

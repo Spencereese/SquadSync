@@ -45,7 +45,7 @@ struct SQAvatar: View {
 
     @ViewBuilder
     private var ring: some View {
-        if status == .unknown {
+        if status == .unknown || status == .notCheckedIn {
             Circle()
                 .strokeBorder(SQColor.hairline, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
         } else {
@@ -59,8 +59,11 @@ struct SQAvatar: View {
         case .locked: SQColor.accent
         case .ready: SQColor.online
         case .inSpot: SQColor.signal
+        case .availableNow: SQColor.online.opacity(0.8)
+        case .later: SQColor.warning
+        case .cantPlay: SQColor.danger.opacity(0.7)
         case .you: SQColor.signal.opacity(0.55)
-        case .unknown: SQColor.hairline
+        case .notCheckedIn, .unknown: SQColor.hairline
         }
     }
 
@@ -69,7 +72,9 @@ struct SQAvatar: View {
         case .locked: "lock.fill"
         case .ready: "checkmark"
         case .inSpot: "gamecontroller.fill"
-        case .you, .unknown: nil
+        case .later: "clock"
+        case .cantPlay: "minus"
+        case .availableNow, .you, .notCheckedIn, .unknown: nil
         }
     }
 }

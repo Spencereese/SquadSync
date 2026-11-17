@@ -102,12 +102,12 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(thumbs.waitForExistence(timeout: 5), "Thumbs up was not in the reaction row")
         thumbs.tap()
 
-        let count = app.staticTexts["reaction-count"]
-        XCTAssertTrue(count.waitForExistence(timeout: 5), "Reaction count was not visible")
-        XCTAssertEqual(count.label, "1")
+        let chip = app.buttons["reaction-chip-hand.thumbsup.fill"]
+        XCTAssertTrue(chip.waitForExistence(timeout: 5), "The reaction chip was not visible")
+        XCTAssertEqual(chip.label, "Thumbs up, 1 reaction, including yours")
 
         thumbs.tap()
-        XCTAssertTrue(count.waitForNonExistence(timeout: 5), "Reaction count stayed after it was removed")
+        XCTAssertTrue(chip.waitForNonExistence(timeout: 5), "The reaction chip stayed after it was removed")
     }
 
     func testMockSpotCallJoinAndReady() {
@@ -481,12 +481,13 @@ final class AccessibilityUITests: XCTestCase {
         app.buttons["send-message"].tap()
         let retry = app.buttons["retry-send"]
         XCTAssertTrue(retry.waitForExistence(timeout: 5), "Failed send did not offer Retry")
+        XCTAssertTrue(caption("Not delivered", in: app).exists, "The failed send didn't say Not delivered")
         if retry.isHittable {
             retry.tap()
         } else {
             retry.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         }
-        let sent = app.buttons.matching(NSPredicate(format: "label == %@", "once"))
+        let sent = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "You, once, "))
         XCTAssertTrue(sent.firstMatch.waitForExistence(timeout: 5), "Sent bubble did not appear")
         XCTAssertEqual(sent.count, 1)
         XCTAssertFalse(app.buttons["retry-send"].waitForExistence(timeout: 2))
@@ -1220,6 +1221,333 @@ final class AccessibilityUITests: XCTestCase {
         let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
         origin.withOffset(CGVector(dx: point.x, dy: point.y)).tap()
     }
+
+    // MARK: Message polish (redesign S3)
+
+    private enum Polish {
+        static func id(_ suffix: Int) -> String {
+            "message-row-00000000-0000-0000-0000-" + String(format: "%012X", 0x300 + suffix)
+        }
+        static let question = id(0x21)
+        static let alexSecond = id(0x22)
+        static let mineFirst = id(0x23)
+        static let longLine = id(0x24)
+        static let firstUnread = id(0x25)
+        static let reply = id(0x26)
+        static let thumbs = "reaction-chip-hand.thumbsup.fill"
+    }
+
+    private func launchChat(_ scenario: String, largeText: Bool = false, extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", scenario] + (largeText ? ["-uitest-largeText"] : []) + extra
+        app.launch()
+        return app
+    }
+
+    private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)[identifier]
+    }
+
+    private func caption(_ text: String, in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(identifier: "delivery-caption")
+            .matching(NSPredicate(format: "label == %@", text))
+            .firstMatch
+    }
+
+    /// Scrolls the chat until the element is hittable: up toward older messages
+    /// first, then back down.
+    @discardableResult
+    private func reveal(_ target: XCUIElement, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) -> Bool {
+        let list = app.scrollViews["message-list"]
+        for direction in [true, false] {
+            for _ in 0..<10 {
+                if target.exists && target.isHittable { return true }
+                if direction { list.swipeDown() } else { list.swipeUp() }
+            }
+        }
+        let found = target.exists && target.isHittable
+        XCTAssertTrue(found, "Couldn't scroll to \(target)", file: file, line: line)
+        return found
+    }
+
+    /// The message bubble inside a row: the row's first button.
+    private func bubble(_ rowIdentifier: String, in app: XCUIApplication) -> XCUIElement {
+        element(rowIdentifier, in: app).buttons.element(boundBy: 0)
+    }
+
+    private func waitForLabel(_ target: XCUIElement, _ predicate: String, timeout: TimeInterval = 5) -> Bool {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: predicate), object: target)
+        return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    func testThreadGroupsBySenderUnderDaySeparators() {
+        let app = launchChat("chatPolish")
+        let latest = element(Polish.reply, in: app)
+        XCTAssertTrue(latest.waitForExistence(timeout: 15), "The seeded thread didn't load")
+        let days = app.descendants(matching: .any).matching(identifier: "day-separator")
+        let today = days.matching(NSPredicate(format: "label == 'Today'")).firstMatch
+        XCTAssertTrue(reveal(today, in: app), "No Today separator")
+        let yesterday = days.matching(NSPredicate(format: "label == 'Yesterday'")).firstMatch
+        XCTAssertTrue(reveal(yesterday, in: app), "No Yesterday separator")
+        XCTAssertTrue(yesterday.frame.maxY <= today.frame.minY || !today.exists, "Yesterday should sit above Today")
+
+        let first = element(Polish.question, in: app)
+        reveal(first, in: app)
+        let second = element(Polish.alexSecond, in: app)
+        let mine = element(Polish.mineFirst, in: app)
+        XCTAssertTrue(second.exists && mine.exists)
+        XCTAssertTrue(bubble(Polish.question, in: app).label.hasPrefix("Alex, Who's on tonight?, "), bubble(Polish.question, in: app).label)
+        XCTAssertTrue(bubble(Polish.alexSecond, in: app).label.hasPrefix("Alex, I can do 9, "))
+        let inGroup = second.frame.minY - first.frame.maxY
+        let betweenGroups = mine.frame.minY - second.frame.maxY
+        XCTAssertLessThan(inGroup, betweenGroups, "Alex's second line should sit tight under the first; a new sender gets a header. in \(inGroup) between \(betweenGroups)")
+        XCTAssertLessThan(first.frame.maxY, mine.frame.minY)
+    }
+
+    func testOnlyTheLatestMessageShowsSeenBy() {
+        let app = launchChat("chatPolish")
+        let latest = element(Polish.reply, in: app)
+        XCTAssertTrue(latest.waitForExistence(timeout: 15))
+        let seen = app.descendants(matching: .any).matching(identifier: "seen-by")
+        XCTAssertTrue(seen.firstMatch.waitForExistence(timeout: 5), "No Seen by line")
+        XCTAssertEqual(seen.count, 1, "Seen by belongs on the latest message only")
+        XCTAssertEqual(seen.firstMatch.label, "Seen by Alex and Jordan")
+        XCTAssertTrue(latest.frame.contains(CGPoint(x: seen.firstMatch.frame.midX, y: seen.firstMatch.frame.midY)), "Seen by isn't on the latest message")
+        let mine = element(Polish.longLine, in: app)
+        reveal(mine, in: app)
+        let captions = app.descendants(matching: .any).matching(identifier: "delivery-caption")
+        XCTAssertLessThanOrEqual(captions.count, 1, "Only your latest message gets Sent; others' messages get no caption")
+        let sent = caption("Sent", in: app)
+        XCTAssertTrue(sent.exists, "Your latest message should say Sent")
+        XCTAssertTrue(mine.frame.contains(CGPoint(x: sent.frame.midX, y: sent.frame.midY)), "Sent isn't on your latest message")
+    }
+
+    func testUnreadDividerSitsAboveTheFirstUnreadAndStays() {
+        let app = launchChat("chatPolish")
+        let divider = element("unread-divider", in: app)
+        XCTAssertTrue(divider.waitForExistence(timeout: 15), "No unread divider")
+        XCTAssertEqual(divider.label, "2 unread messages")
+        let unread = element(Polish.firstUnread, in: app)
+        let before = element(Polish.longLine, in: app)
+        XCTAssertLessThanOrEqual(divider.frame.maxY, unread.frame.minY + 1, "The divider isn't above the first unread message")
+        XCTAssertGreaterThanOrEqual(divider.frame.minY, before.frame.maxY - 1, "The divider isn't below the last read message")
+        sleep(2)
+        XCTAssertTrue(divider.exists, "Reading the chat made the divider jump away")
+    }
+
+    func testJumpToLatestShowsWhenScrolledUpAndBringsYouBack() {
+        let app = launchChat("chatPolish")
+        let latest = element(Polish.reply, in: app)
+        XCTAssertTrue(latest.waitForExistence(timeout: 15))
+        let jump = app.buttons["jump-to-latest"]
+        XCTAssertFalse(jump.exists, "Jump to latest showed while already at the bottom")
+        let list = app.scrollViews["message-list"]
+        for _ in 0..<4 { list.swipeDown() }
+        XCTAssertTrue(jump.waitForExistence(timeout: 5), "Jump to latest didn't show after scrolling up")
+        XCTAssertTrue(jump.isHittable)
+        XCTAssertTrue(jump.label.lowercased().contains("jump to latest"), jump.label)
+        jump.tap()
+        XCTAssertTrue(jump.waitForNonExistence(timeout: 5), "Jump to latest stayed after jumping")
+        XCTAssertTrue(latest.isHittable, "The latest message isn't on screen after jumping")
+    }
+
+    func testReactionChipsAreBigEnoughAndToggleYours() {
+        let app = launchChat("chatPolish")
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
+        let chip = app.buttons[Polish.thumbs]
+        reveal(chip, in: app)
+        XCTAssertEqual(chip.label, "Thumbs up, 2 reactions, including yours")
+        XCTAssertGreaterThanOrEqual(chip.frame.height, 44, "Chip is too short to hit: \(chip.frame)")
+        XCTAssertGreaterThanOrEqual(chip.frame.width, 44, "Chip is too narrow to hit: \(chip.frame)")
+        chip.tap()
+        XCTAssertTrue(waitForLabel(chip, "label == 'Thumbs up, 1 reaction'"), "Tapping your chip didn't take yours back: \(chip.label)")
+        chip.tap()
+        XCTAssertTrue(waitForLabel(chip, "label == 'Thumbs up, 2 reactions, including yours'"), "Tapping again didn't add yours: \(chip.label)")
+        let fire = app.buttons["reaction-chip-exclamationmark"]
+        XCTAssertEqual(fire.label, "Emphasis, 1 reaction")
+    }
+
+    func testLongPressOffersReactReplyAndCopy() {
+        let app = launchChat("chatPolish")
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
+        let target = bubble(Polish.question, in: app)
+        reveal(target, in: app)
+        target.press(forDuration: 1.2)
+        XCTAssertTrue(app.buttons["Copy"].waitForExistence(timeout: 5), "Long-press had no Copy")
+        XCTAssertTrue(app.buttons["Reply"].exists, "Long-press had no Reply")
+        XCTAssertTrue(app.buttons["Thumbs up"].exists, "Long-press had no reactions")
+        XCTAssertFalse(app.buttons["Retry sending"].exists, "A sent message offered Retry")
+        app.buttons["Copy"].tap()
+        let toast = element("chat-toast", in: app)
+        XCTAssertTrue(toast.waitForExistence(timeout: 2), "Copy didn't say Copied")
+        XCTAssertEqual(toast.label, "Copied")
+    }
+
+    func testReplyFromLongPressQuotesTheOriginal() {
+        let app = launchChat("chatPolish")
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
+        let quotes = app.descendants(matching: .any).matching(identifier: "reply-quote")
+        XCTAssertEqual(quotes.firstMatch.label, "Replying to Alex: Who's on tonight?", "The seeded reply's quote is wrong")
+        let target = bubble(Polish.question, in: app)
+        reveal(target, in: app)
+        target.press(forDuration: 1.2)
+        let reply = app.buttons["Reply"]
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        reply.tap()
+        let banner = element("reply-banner", in: app)
+        XCTAssertTrue(banner.waitForExistence(timeout: 5), "No reply banner over the composer")
+        XCTAssertEqual(banner.label, "Replying to Alex: Who's on tonight?")
+        let field = app.textFields["Message"]
+        field.tap()
+        field.typeText("Me too")
+        app.buttons["send-message"].tap()
+        XCTAssertTrue(banner.waitForNonExistence(timeout: 5), "The banner stayed after sending")
+        let sent = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "You, Me too, "))
+        XCTAssertTrue(sent.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertEqual(sent.count, 1, "The reply was duplicated")
+        XCTAssertEqual(quotes.count, 2, "The new reply has no quote")
+    }
+
+    func testCancelReplyDropsTheBanner() {
+        let app = launchChat("chatPolish")
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
+        let target = bubble(Polish.question, in: app)
+        reveal(target, in: app)
+        target.press(forDuration: 1.2)
+        XCTAssertTrue(app.buttons["Reply"].waitForExistence(timeout: 5))
+        app.buttons["Reply"].tap()
+        let cancel = app.buttons["reply-cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5))
+        XCTAssertEqual(cancel.label, "Cancel reply")
+        cancel.tap()
+        XCTAssertTrue(element("reply-banner", in: app).waitForNonExistence(timeout: 5))
+    }
+
+    func testWithoutTheReplyColumnLongPressHasNoReply() {
+        let app = launchChat("chatNoReplies")
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "reply-quote").count, 0)
+        let target = bubble(Polish.question, in: app)
+        reveal(target, in: app)
+        target.press(forDuration: 1.2)
+        XCTAssertTrue(app.buttons["Copy"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Reply"].exists, "Reply showed on a server without reply_to_id")
+    }
+
+    func testFailedSendSaysNotDeliveredThenOneBubbleSaysSent() {
+        let app = launchChat("chatPolish", extra: ["-debug-fail-sends", "1"])
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
+        let field = app.textFields["Message"]
+        field.tap()
+        field.typeText("once")
+        app.buttons["send-message"].tap()
+        XCTAssertTrue(caption("Not delivered", in: app).waitForExistence(timeout: 5), "No Not delivered caption")
+        let retry = app.buttons["retry-send"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(retry.frame.height, 44, "Retry is too short to hit")
+        retry.tap()
+        XCTAssertTrue(caption("Sent", in: app).waitForExistence(timeout: 5), "The retried message didn't say Sent")
+        XCTAssertFalse(caption("Not delivered", in: app).exists)
+        let sent = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "You, once, "))
+        XCTAssertEqual(sent.count, 1, "Retry made a second bubble")
+        XCTAssertFalse(element("unread-divider", in: app).exists, "Sending should clear the unread divider")
+    }
+
+    func testEmptySquadSaysSo() {
+        let app = launchChat("chatEmpty")
+        let empty = element("chat-empty", in: app)
+        XCTAssertTrue(empty.waitForExistence(timeout: 15), "No empty state")
+        XCTAssertEqual(empty.label, "No messages yet. Say hi to the squad.")
+        XCTAssertFalse(app.buttons["jump-to-latest"].exists)
+    }
+
+    func testHistoryErrorOffersRetryThenLoads() {
+        let app = launchChat("chatHistoryFailed")
+        let error = element("chat-error", in: app)
+        XCTAssertTrue(error.waitForExistence(timeout: 15), "No history error")
+        XCTAssertEqual(error.label, "Messages couldn't load.")
+        let retry = app.buttons["chat-retry"]
+        XCTAssertTrue(retry.isHittable)
+        retry.tap()
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 10), "Retry didn't load the thread")
+        XCTAssertTrue(error.waitForNonExistence(timeout: 5), "The error stayed after loading")
+    }
+
+    func testHistoryLoadingShowsThenMessagesArrive() {
+        let app = launchChat("chatHistorySlow")
+        let loading = element("chat-loading", in: app)
+        XCTAssertTrue(loading.waitForExistence(timeout: 10), "No loading row")
+        XCTAssertTrue(loading.label.contains("Loading messages"), loading.label)
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15), "The thread never arrived")
+        XCTAssertTrue(loading.waitForNonExistence(timeout: 5), "The loading row stayed")
+        XCTAssertFalse(element("chat-empty", in: app).exists, "Loading must not flash the empty state")
+    }
+
+    func testMessagePolishStaysUsableAtLargeText() {
+        let app = launchChat("chatPolish", largeText: true)
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
+        let width = app.windows.firstMatch.frame.width
+        let seen = element("seen-by", in: app)
+        reveal(seen, in: app)
+        XCTAssertGreaterThanOrEqual(seen.frame.minX, 0)
+        XCTAssertLessThanOrEqual(seen.frame.maxX, width + 1, "Seen by runs off screen: \(seen.frame)")
+
+        let divider = element("unread-divider", in: app)
+        reveal(divider, in: app)
+        XCTAssertLessThanOrEqual(divider.frame.maxX, width + 1, "The unread divider runs off screen")
+
+        let long = bubble(Polish.longLine, in: app)
+        reveal(long, in: app)
+        XCTAssertLessThanOrEqual(long.frame.maxX, width + 1, "The long message runs off screen")
+        XCTAssertGreaterThan(long.frame.height, 100, "The long message didn't wrap at AX5: \(long.frame)")
+
+        let chip = app.buttons[Polish.thumbs]
+        reveal(chip, in: app)
+        XCTAssertGreaterThanOrEqual(chip.frame.height, 44)
+        XCTAssertLessThanOrEqual(chip.frame.maxX, width + 1, "A chip runs off screen at AX5")
+
+        let jump = app.buttons["jump-to-latest"]
+        if !jump.exists {
+            app.scrollViews["message-list"].swipeDown()
+        }
+        XCTAssertTrue(jump.waitForExistence(timeout: 5), "Jump to latest didn't show at AX5")
+        XCTAssertTrue(jump.isHittable)
+        let composer = element("composer", in: app)
+        XCTAssertLessThanOrEqual(jump.frame.maxY, composer.frame.minY + 1, "Jump to latest covers the composer")
+        XCTAssertLessThanOrEqual(jump.frame.maxX, width + 1)
+    }
+
+    func testReplyBannerStaysHittableAtLargeTextWithTheKeyboard() {
+        let app = launchChat("chatPolish", largeText: true)
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
+        let target = bubble(Polish.question, in: app)
+        reveal(target, in: app)
+        target.press(forDuration: 1.2)
+        XCTAssertTrue(app.buttons["Reply"].waitForExistence(timeout: 5))
+        app.buttons["Reply"].tap()
+        let cancel = app.buttons["reply-cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "Reply should focus the composer")
+        XCTAssertTrue(cancel.isHittable, "Cancel reply is covered at AX5: \(cancel.frame)")
+        XCTAssertGreaterThanOrEqual(cancel.frame.height, 44)
+        let send = app.buttons["send-message"]
+        XCTAssertTrue(send.isHittable, "Send is covered at AX5 while replying: \(send.frame)")
+        let banner = element("reply-banner", in: app)
+        XCTAssertLessThanOrEqual(banner.frame.maxX, app.windows.firstMatch.frame.width + 1)
+    }
+
+    func testDayLabelsAreReadOnceWithoutSymbolNames() {
+        let app = launchChat("chatPolish")
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
+        let today = app.descendants(matching: .any).matching(identifier: "day-separator")
+            .matching(NSPredicate(format: "label == 'Today'")).firstMatch
+        XCTAssertTrue(reveal(today, in: app))
+        XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == 'Today'")).count == 1,
+                      "The day label is read more than once")
+        let symbolNames = ["arrow.down", "xmark", "doc.on.doc", "arrowshape", "hand.thumbsup", "exclamationmark", "arrow.clockwise"]
+        let format = symbolNames.map { "label CONTAINS[c] '\($0)'" }.joined(separator: " OR ")
+        let leaked = app.descendants(matching: .any).matching(NSPredicate(format: format))
+        XCTAssertEqual(leaked.count, 0, "An SF Symbol name is exposed to VoiceOver: \(leaked.allElementsBoundByIndex.map(\.label))")
+    }
 }
-
-

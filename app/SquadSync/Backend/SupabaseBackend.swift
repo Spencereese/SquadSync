@@ -593,13 +593,17 @@ final class SupabaseChatService: ChatService {
     /// Newest messages a full history read returns.
     static let historyLimit = 200
 
+    /// `knownReplies` carries an earlier probe's yes, so a poll on a fresh service
+    /// still selects `reply_to_id` without probing again.
     init(
         config: BackendConfig,
         accessToken: String,
         refresher: TokenRefreshing? = nil,
-        transport: HTTPTransport = URLSessionTransport.shared
+        transport: HTTPTransport = URLSessionTransport.shared,
+        knownReplies: Bool? = nil
     ) {
         self.http = SupabaseHTTP(config: config, accessToken: accessToken, transport: transport, refresher: refresher)
+        self.repliesSupported = knownReplies
     }
 
     func history(squadId: UUID) async throws -> [RemoteMessage] {

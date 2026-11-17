@@ -338,6 +338,16 @@ final class ChatServerTests: XCTestCase {
         XCTAssertEqual(rows.first?.replyToId, reply)
     }
 
+    func testAKnownReplyColumnSkipsTheProbeOnAFreshService() async throws {
+        let transport = ScriptedTransport(responses: [(200, Data("[]".utf8))])
+        let chat = SupabaseChatService(config: config, accessToken: "access", transport: transport, knownReplies: true)
+        let available = await chat.repliesAvailable()
+        XCTAssertTrue(available)
+        _ = try await chat.history(squadId: squad)
+        XCTAssertEqual(transport.requests.count, 1, "No second probe")
+        XCTAssertTrue(query(transport.requests.first).contains("reply_to_id"))
+    }
+
     func testAServerWithoutTheReplyColumnTurnsRepliesOff() async throws {
         let missing = Data(#"{"code":"42703","message":"column sq8_messages.reply_to_id does not exist"}"#.utf8)
         let transport = ScriptedTransport(responses: [(400, missing), (200, Data("[]".utf8))])

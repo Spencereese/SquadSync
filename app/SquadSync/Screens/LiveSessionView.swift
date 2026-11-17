@@ -146,9 +146,9 @@ final class LiveSessionModel {
                         now: Date(),
                         replies: scenario != .chatNoReplies
                     )
-                    thread.messages.forEach(chat.seed)
-                    thread.reads.forEach { chat.seedRead(userId: $0.userId, at: $0.lastReadAt) }
-                    thread.reactions.forEach(chat.seedReaction)
+                    for message in thread.messages { chat.seed(message) }
+                    for read in thread.reads { chat.seedRead(userId: read.userId, at: read.lastReadAt) }
+                    for mark in thread.reactions { chat.seedReaction(mark) }
                 }
             } else if scenario == .spotHistory || scenario == .spotServerMissing {
                 let seeded = squads.seedSpotSquad(ownerId: session.userId)
@@ -1174,7 +1174,12 @@ final class LiveSessionModel {
     }
 
     private func chatService(_ session: AuthSession) -> ChatService {
-        mockChat ?? SupabaseChatService(config: config, accessToken: session.accessToken, refresher: tokenRefresher)
+        mockChat ?? SupabaseChatService(
+            config: config,
+            accessToken: session.accessToken,
+            refresher: tokenRefresher,
+            knownReplies: chatCaps.replies ? true : nil
+        )
     }
 
     private var tokenRefresher: TokenRefreshing? { auth as? TokenRefreshing }

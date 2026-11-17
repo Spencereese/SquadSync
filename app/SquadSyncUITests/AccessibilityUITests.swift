@@ -1223,6 +1223,16 @@ final class AccessibilityUITests: XCTestCase {
 
     // MARK: Call sheet and the keyboard
 
+    /// Polls a condition on the main run loop; true as soon as it holds, false at the timeout.
+    private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            if Date() >= deadline { return false }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+        return true
+    }
+
     /// XCUITest's keyboard frame leaves out the QuickType bar (about 43 pt), so
     /// Call spots must end at least 50 pt above the keyboard's top to clear it.
     private func assertCallSheetClearsTheKeyboardBar(largeText: Bool, file: StaticString = #filePath, line: UInt = #line) {
@@ -1232,9 +1242,16 @@ final class AccessibilityUITests: XCTestCase {
         tapMenuCallSpots(app, file: file, line: line)
         let game = app.textFields["spot-sheet-game"]
         XCTAssertTrue(game.waitForExistence(timeout: 5), "The call sheet's game field was missing", file: file, line: line)
-        game.tap()
+        // The sheet animates up; at accessibility sizes it must open large enough that the
+        // field is on screen without dragging. Wait for that, and fail with the frame if not.
+        XCTAssertTrue(waitUntil(timeout: 5) { game.isHittable }, "The game field is off screen when the sheet opens: \(game.frame) in window \(app.windows.firstMatch.frame)", file: file, line: line)
         let keyboard = app.keyboards.firstMatch
-        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "The keyboard didn't come up", file: file, line: line)
+        game.tap()
+        if !keyboard.waitForExistence(timeout: 3) {
+            // One retry covers a tap that landed while the sheet was still settling.
+            game.tap()
+        }
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "The keyboard didn't come up after tapping the game field at \(game.frame)", file: file, line: line)
         let call = app.buttons["spot-sheet-call"]
         XCTAssertTrue(call.waitForExistence(timeout: 5), file: file, line: line)
         // Let the sheet finish moving to the large detent.

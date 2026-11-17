@@ -307,6 +307,24 @@ enum LaunchScenario: String {
     case spotHistory
     /// The server has no spot RPCs or history read, so the app has to say so.
     case spotServerMissing
+    /// Two days of chat: groups, day separators, reactions, a reply, an unread run,
+    /// and "Seen by" on the latest message.
+    case chatPolish
+    /// Same thread on a server without 0014's `reply_to_id`, so Reply is hidden.
+    case chatNoReplies
+    /// A squad with no messages yet.
+    case chatEmpty
+    /// The history read fails until Retry.
+    case chatHistoryFailed
+    /// The history read takes a few seconds, so the loading row shows.
+    case chatHistorySlow
+
+    var isChatScenario: Bool {
+        switch self {
+        case .chatPolish, .chatNoReplies, .chatEmpty, .chatHistoryFailed, .chatHistorySlow: true
+        default: false
+        }
+    }
 }
 
 enum Seed {
@@ -350,7 +368,8 @@ enum Seed {
                 Seat(userId: "jordan", status: .ready),
                 Seat(userId: "quinn", status: .ready)
             ]
-        case .noSquad, .invite, .spotCall, .spotCallMine, .spotCallNearlyFull, .spotCallExpired, .almostFull, .spotHistory, .spotServerMissing:
+        case .noSquad, .invite, .spotCall, .spotCallMine, .spotCallNearlyFull, .spotCallExpired, .almostFull, .spotHistory, .spotServerMissing,
+             .chatPolish, .chatNoReplies, .chatEmpty, .chatHistoryFailed, .chatHistorySlow:
             seats = []
         }
         return Party(

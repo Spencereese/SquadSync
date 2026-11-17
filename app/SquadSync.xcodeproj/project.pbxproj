@@ -45,6 +45,10 @@
 		A10000000000000000000087 /* SpotThread.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000077 /* SpotThread.swift */; };
 		A10000000000000000000088 /* SpotCardViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000078 /* SpotCardViews.swift */; };
 		A10000000000000000000089 /* SpotThreadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000079 /* SpotThreadTests.swift */; };
+		A1000000000000000000008A /* ChatThread.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000007A /* ChatThread.swift */; };
+		A1000000000000000000008B /* ChatRows.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000007B /* ChatRows.swift */; };
+		A1000000000000000000008C /* ChatThreadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000007C /* ChatThreadTests.swift */; };
+		A1000000000000000000008D /* ChatModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000007D /* ChatModelTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -93,6 +97,10 @@
 		A10000000000000000000077 /* SpotThread.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotThread.swift; sourceTree = "<group>"; };
 		A10000000000000000000078 /* SpotCardViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotCardViews.swift; sourceTree = "<group>"; };
 		A10000000000000000000079 /* SpotThreadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotThreadTests.swift; sourceTree = "<group>"; };
+		A1000000000000000000007A /* ChatThread.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatThread.swift; sourceTree = "<group>"; };
+		A1000000000000000000007B /* ChatRows.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatRows.swift; sourceTree = "<group>"; };
+		A1000000000000000000007C /* ChatThreadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatThreadTests.swift; sourceTree = "<group>"; };
+		A1000000000000000000007D /* ChatModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatModelTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -144,6 +152,7 @@
 				A10000000000000000000060 /* PushRoute.swift */,
 				A10000000000000000000074 /* SquadPresence.swift */,
 				A10000000000000000000077 /* SpotThread.swift */,
+				A1000000000000000000007A /* ChatThread.swift */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -160,6 +169,7 @@
 				A10000000000000000000056 /* LiveSessionView.swift */,
 				A10000000000000000000075 /* SquadHomeHeader.swift */,
 				A10000000000000000000078 /* SpotCardViews.swift */,
+				A1000000000000000000007B /* ChatRows.swift */,
 			);
 			path = Screens;
 			sourceTree = "<group>";
@@ -198,6 +208,8 @@
 				A10000000000000000000062 /* PushRouteTests.swift */,
 				A10000000000000000000076 /* SquadHomeTests.swift */,
 				A10000000000000000000079 /* SpotThreadTests.swift */,
+				A1000000000000000000007D /* ChatModelTests.swift */,
+				A1000000000000000000007C /* ChatThreadTests.swift */,
 			);
 			path = SquadSyncTests;
 			sourceTree = "<group>";
@@ -349,8 +361,10 @@
 				A10000000000000000000083 /* SquadChrome.swift in Sources */,
 				A10000000000000000000084 /* SquadPresence.swift in Sources */,
 				A10000000000000000000087 /* SpotThread.swift in Sources */,
+				A1000000000000000000008A /* ChatThread.swift in Sources */,
 				A10000000000000000000085 /* SquadHomeHeader.swift in Sources */,
 				A10000000000000000000088 /* SpotCardViews.swift in Sources */,
+				A1000000000000000000008B /* ChatRows.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -365,6 +379,8 @@
 				A10000000000000000000063 /* PushRouteTests.swift in Sources */,
 				A10000000000000000000086 /* SquadHomeTests.swift in Sources */,
 				A10000000000000000000089 /* SpotThreadTests.swift in Sources */,
+				A1000000000000000000008D /* ChatModelTests.swift in Sources */,
+				A1000000000000000000008C /* ChatThreadTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

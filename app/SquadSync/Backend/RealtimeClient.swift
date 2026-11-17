@@ -259,6 +259,7 @@ extension RemoteMessage {
               let body = record["body"] as? String,
               let stamp = record["sent_at"] as? String,
               let sentAt = BackendJSON.parse(stamp) else { return nil }
-        self.init(id: id, squadId: squadId, senderId: senderId, body: body, sentAt: sentAt)
+        let reply = (record["reply_to_id"] as? String).flatMap(UUID.init(uuidString:))
+        self.init(id: id, squadId: squadId, senderId: senderId, body: body, sentAt: sentAt, replyToId: reply)
     }
 }

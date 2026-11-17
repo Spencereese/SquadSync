@@ -93,7 +93,7 @@ enum Tapback: String, Codable, CaseIterable, Identifiable {
     var spoken: String {
         switch self {
         case .love: "Love"
-        case .laugh: "Haha"
+        case .laugh: "Ha ha"
         case .emphasize: "Emphasis"
         case .question: "Question"
         case .thumbs: "Thumbs up"

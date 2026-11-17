@@ -42,6 +42,9 @@
 		A10000000000000000000084 /* SquadPresence.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000074 /* SquadPresence.swift */; };
 		A10000000000000000000085 /* SquadHomeHeader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000075 /* SquadHomeHeader.swift */; };
 		A10000000000000000000086 /* SquadHomeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000076 /* SquadHomeTests.swift */; };
+		A10000000000000000000087 /* SpotThread.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000077 /* SpotThread.swift */; };
+		A10000000000000000000088 /* SpotCardViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000078 /* SpotCardViews.swift */; };
+		A10000000000000000000089 /* SpotThreadTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000079 /* SpotThreadTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -87,6 +90,9 @@
 		A10000000000000000000074 /* SquadPresence.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadPresence.swift; sourceTree = "<group>"; };
 		A10000000000000000000075 /* SquadHomeHeader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadHomeHeader.swift; sourceTree = "<group>"; };
 		A10000000000000000000076 /* SquadHomeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadHomeTests.swift; sourceTree = "<group>"; };
+		A10000000000000000000077 /* SpotThread.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotThread.swift; sourceTree = "<group>"; };
+		A10000000000000000000078 /* SpotCardViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotCardViews.swift; sourceTree = "<group>"; };
+		A10000000000000000000079 /* SpotThreadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotThreadTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -137,6 +143,7 @@
 				A10000000000000000000005 /* SpotRules.swift */,
 				A10000000000000000000060 /* PushRoute.swift */,
 				A10000000000000000000074 /* SquadPresence.swift */,
+				A10000000000000000000077 /* SpotThread.swift */,
 			);
 			path = Model;
 			sourceTree = "<group>";
@@ -152,6 +159,7 @@
 				A10000000000000000000011 /* VoiceRoomView.swift */,
 				A10000000000000000000056 /* LiveSessionView.swift */,
 				A10000000000000000000075 /* SquadHomeHeader.swift */,
+				A10000000000000000000078 /* SpotCardViews.swift */,
 			);
 			path = Screens;
 			sourceTree = "<group>";
@@ -189,6 +197,7 @@
 				A10000000000000000000057 /* ChatLogTests.swift */,
 				A10000000000000000000062 /* PushRouteTests.swift */,
 				A10000000000000000000076 /* SquadHomeTests.swift */,
+				A10000000000000000000079 /* SpotThreadTests.swift */,
 			);
 			path = SquadSyncTests;
 			sourceTree = "<group>";
@@ -339,7 +348,9 @@
 				A10000000000000000000082 /* Haptics.swift in Sources */,
 				A10000000000000000000083 /* SquadChrome.swift in Sources */,
 				A10000000000000000000084 /* SquadPresence.swift in Sources */,
+				A10000000000000000000087 /* SpotThread.swift in Sources */,
 				A10000000000000000000085 /* SquadHomeHeader.swift in Sources */,
+				A10000000000000000000088 /* SpotCardViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -353,6 +364,7 @@
 				A10000000000000000000047 /* ChatLogTests.swift in Sources */,
 				A10000000000000000000063 /* PushRouteTests.swift in Sources */,
 				A10000000000000000000086 /* SquadHomeTests.swift in Sources */,
+				A10000000000000000000089 /* SpotThreadTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

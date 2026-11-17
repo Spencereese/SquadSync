@@ -337,6 +337,8 @@ enum SpotProblem: Error, Equatable {
     case notIn
     case expired
     case badResponse
+    /// The RPC is not on this server. The app says so instead of guessing.
+    case unavailable
     case other(String)
 
     var message: String {
@@ -356,8 +358,17 @@ enum SpotProblem: Error, Equatable {
         case .notIn: "Join before you mark Ready."
         case .expired: "The 5 minute window has ended."
         case .badResponse: "Join or leave. Those are the only answers this server stores."
+        case .unavailable: "Spot calls aren't set up on this server yet."
         case .other(let text): text
         }
+    }
+
+    /// A missing function comes back as `.other` with PostgREST's text. Actions turn it into `.unavailable`.
+    static func unavailableIfMissing(_ problem: SpotProblem) -> SpotProblem {
+        if case .other(let text) = problem, !SpotProbe.functionPresent(status: 400, body: text) {
+            return .unavailable
+        }
+        return problem
     }
 
     static func from(serverMessage: String) -> SpotProblem {
@@ -472,6 +483,43 @@ enum SpotSeed {
                 SpotRsvp(userId: alex, name: "Alex", response: "in", starter: true, ready: false)
             ]
         )
+    }
+
+    static let historyEnded = UUID(uuidString: "00000000-0000-0000-0000-00000000B021")!
+    static let historyCancelled = UUID(uuidString: "00000000-0000-0000-0000-00000000B022")!
+
+    /// Two finished calls: Apex ended 30 minutes ago with four in, Valorant was cancelled 10 minutes ago.
+    static func history(ownerId: UUID, squadId: UUID, now: Date) -> [SpotCall] {
+        let ended = SpotCall(
+            id: historyEnded,
+            squadId: squadId,
+            callerId: alex,
+            game: "Apex",
+            calledAt: now.addingTimeInterval(-50 * 60),
+            joinUntil: now.addingTimeInterval(-45 * 60),
+            lockedAt: now.addingTimeInterval(-46 * 60),
+            closedAt: now.addingTimeInterval(-30 * 60),
+            status: .ended,
+            rsvps: [
+                SpotRsvp(userId: alex, name: "Alex", response: "in", starter: true, ready: true),
+                SpotRsvp(userId: jordan, name: "Jordan", response: "in", starter: false, ready: true),
+                SpotRsvp(userId: sam, name: "Sam", response: "in", starter: false, ready: true),
+                SpotRsvp(userId: ownerId, name: "You", response: "in", starter: false, ready: true)
+            ]
+        )
+        let cancelled = SpotCall(
+            id: historyCancelled,
+            squadId: squadId,
+            callerId: ownerId,
+            game: "Valorant",
+            calledAt: now.addingTimeInterval(-12 * 60),
+            joinUntil: now.addingTimeInterval(-7 * 60),
+            lockedAt: nil,
+            closedAt: now.addingTimeInterval(-10 * 60),
+            status: .cancelled,
+            rsvps: [SpotRsvp(userId: ownerId, name: "You", response: "in", starter: false, ready: false)]
+        )
+        return [ended, cancelled]
     }
 
     static let morgan = UUID(uuidString: "00000000-0000-0000-0000-00000000B015")!

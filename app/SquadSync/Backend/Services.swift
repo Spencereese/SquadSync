@@ -313,6 +313,8 @@ protocol SpotServing: AnyObject {
     func setReady(callId: UUID, userId: UUID, ready: Bool) async throws
     /// Read-only. Missing 0020 functions and columns come back unavailable.
     func serverCapabilities() async -> SpotServerCapabilities
+    /// Read-only. The squad's most recent ended, cancelled, or expired calls, newest first.
+    func history(squadId: UUID, limit: Int) async throws -> [SpotCall]
 }
 
 protocol InviteServing: AnyObject {

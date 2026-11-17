@@ -251,8 +251,13 @@ struct VoiceRoomPillButton: View {
 }
 
 /// Large-text presence roster. The session screen floats it over the top of the
-/// chat (an overlay, not a row in the stack), so the chat keeps its height while
-/// it is open. Short squads show every row; long ones scroll inside the panel.
+/// message list (an overlay, not a row in the stack), so the chat keeps its height
+/// and the pinned spot bar above stays uncovered.
+///
+/// It never scrolls: it shows the longest roster that fits the space it is offered,
+/// and folds the rest into "N more", so its last row is always fully on screen.
+/// Only the rows are tappable. The panel's background and padding let taps through
+/// to the chat underneath.
 struct SquadPresenceRoster: View {
     let entries: [SquadPresenceEntry]
     let voice: VoicePillState
@@ -260,65 +265,91 @@ struct SquadPresenceRoster: View {
     let onVoice: () -> Void
 
     var body: some View {
-        ViewThatFits(in: .vertical) {
-            rows
-            ScrollView {
-                rows
-            }
-            .scrollIndicators(.visible)
+        let limits = SquadPresence.rosterLimits(count: entries.count)
+        return ViewThatFits(in: .vertical) {
+            panel(limit: limits[0])
+            panel(limit: limits[1])
+            panel(limit: limits[2])
+            panel(limit: limits[3])
+            panel(limit: limits[4])
         }
-        .background(SQColor.surface1, in: RoundedRectangle(cornerRadius: SQRadius.l, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: SQRadius.l, style: .continuous)
-                .stroke(SQColor.hairline, lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.5), radius: 16, y: 8)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Squad presence")
         .accessibilityIdentifier("presence-strip")
     }
 
-    /// One row per member: avatar, name, and status or game wrapping under it.
-    private var rows: some View {
-        VStack(alignment: .leading, spacing: SQSpace.s) {
+    private func panel(limit: Int) -> some View {
+        let shown = Array(entries.prefix(limit))
+        let hidden = entries.count - shown.count
+        return VStack(alignment: .leading, spacing: SQSpace.s) {
             VoiceRoomPillButton(voice: voice, onVoice: onVoice)
-            ForEach(entries) { entry in
+            ForEach(shown) { entry in
+                row(entry)
+            }
+            if hidden > 0 {
                 Button {
                     SQHaptics.play(.tap)
                     onOpenPanel()
                 } label: {
-                    HStack(alignment: .center, spacing: SQSpace.s) {
-                        SQAvatar(initial: entry.initial, status: entry.status, size: 32)
-                        VStack(alignment: .leading, spacing: 0) {
-                            Text(entry.isViewer ? "You" : entry.name)
-                                .font(SQType.detail.weight(.semibold))
-                                .foregroundStyle(SQColor.ink)
-                                .fixedSize(horizontal: false, vertical: true)
-                            if let caption = presenceCaption(entry) {
-                                Text(caption)
-                                    .font(SQType.caption)
-                                    .foregroundStyle(presenceCaptionColor(entry))
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .contentShape(Rectangle())
+                    Text(SquadPresence.moreLabel(hidden))
+                        .font(SQType.detail.weight(.semibold))
+                        .foregroundStyle(SQColor.signal)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(entry.spokenLabel)
                 .accessibilityHint("Opens the squad panel")
-                .accessibilityIdentifier("presence-\(entry.name)")
+                .accessibilityIdentifier("presence-more")
             }
             if SquadPresence.hasUntracked(entries) {
                 Text(SquadPresence.untrackedSpoken)
                     .font(SQType.caption)
                     .foregroundStyle(SQColor.subtle)
                     .fixedSize(horizontal: false, vertical: true)
+                    .allowsHitTesting(false)
                     .accessibilityIdentifier("presence-untracked")
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(SQSpace.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: SQRadius.l, style: .continuous)
+                .fill(SQColor.surface1)
+                .overlay {
+                    RoundedRectangle(cornerRadius: SQRadius.l, style: .continuous)
+                        .stroke(SQColor.hairline, lineWidth: 1)
+                }
+                .shadow(color: .black.opacity(0.5), radius: 16, y: 8)
+                .allowsHitTesting(false)
+        }
+    }
+
+    /// Avatar, name, and status or game. The button hugs its content, so the space
+    /// to its right is not a tap target.
+    private func row(_ entry: SquadPresenceEntry) -> some View {
+        Button {
+            SQHaptics.play(.tap)
+            onOpenPanel()
+        } label: {
+            HStack(alignment: .center, spacing: SQSpace.s) {
+                SQAvatar(initial: entry.initial, status: entry.status, size: 32)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(entry.isViewer ? "You" : entry.name)
+                        .font(SQType.detail.weight(.semibold))
+                        .foregroundStyle(SQColor.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let caption = presenceCaption(entry) {
+                        Text(caption)
+                            .font(SQType.caption)
+                            .foregroundStyle(presenceCaptionColor(entry))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(entry.spokenLabel)
+        .accessibilityHint("Opens the squad panel")
+        .accessibilityIdentifier("presence-\(entry.name)")
     }
 }

@@ -165,6 +165,19 @@ enum SquadPresence {
     static func hasUntracked(_ entries: [SquadPresenceEntry]) -> Bool {
         entries.contains { $0.status == .unknown }
     }
+
+    /// Row counts the large-text roster tries, longest first: everyone, then 4, 2, 1,
+    /// and 0 (voice pill, "N more", and the untracked line). It shows the first that
+    /// fits and folds the rest into "N more", so it never needs to scroll.
+    /// Always five values so the view can lay out a fixed set of tries.
+    static func rosterLimits(count: Int) -> [Int] {
+        let all = max(0, count)
+        return [all, min(all, 4), min(all, 2), min(all, 1), 0]
+    }
+
+    static func moreLabel(_ hidden: Int) -> String {
+        hidden == 1 ? "1 more in the squad panel" : "\(hidden) more in the squad panel"
+    }
 }
 
 /// Header copy for the chat-first home.

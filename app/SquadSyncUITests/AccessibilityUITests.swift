@@ -1670,7 +1670,8 @@ final class AccessibilityUITests: XCTestCase {
     // MARK: Who's in (redesign S4)
 
     /// Opens Who's in from the composer's + menu, which is there at every text size.
-    private func openWhosInFromMenu(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+    /// `waitForSheet: false` returns right after the tap, for checks that can't wait.
+    private func openWhosInFromMenu(_ app: XCUIApplication, waitForSheet: Bool = true, file: StaticString = #filePath, line: UInt = #line) {
         let plus = app.buttons["composer-plus"]
         XCTAssertTrue(plus.waitForExistence(timeout: 15), "The composer's + menu was missing", file: file, line: line)
         plus.tap()
@@ -1682,6 +1683,7 @@ final class AccessibilityUITests: XCTestCase {
             XCTAssertTrue(fallback.waitForExistence(timeout: 3), "Who's in was not in the + menu", file: file, line: line)
             fallback.tap()
         }
+        guard waitForSheet else { return }
         XCTAssertTrue(element("whos-in-sheet", in: app).waitForExistence(timeout: 5), "Who's in didn't open", file: file, line: line)
     }
 
@@ -1822,13 +1824,15 @@ final class AccessibilityUITests: XCTestCase {
     }
 
     func testWhosInLoadingThenRows() {
+        // The mock's read takes 9s (whosInSlow), so the loading row is up well past
+        // the first look. Look straight after the tap, not after waiting for the sheet.
         let app = launchChat("whosInSlow")
-        openWhosInFromMenu(app)
+        openWhosInFromMenu(app, waitForSheet: false)
         let loading = element("whos-in-loading", in: app)
-        XCTAssertTrue(loading.waitForExistence(timeout: 3), "No loading row")
+        XCTAssertTrue(loading.waitForExistence(timeout: 5), "No loading row")
         XCTAssertTrue(loading.label.contains("Loading who's in"), loading.label)
         XCTAssertFalse(element("whos-in-section-none", in: app).exists, "Loading must not claim nobody checked in")
-        XCTAssertTrue(element("whos-in-section-now", in: app).waitForExistence(timeout: 10), "Check-ins never arrived")
+        XCTAssertTrue(element("whos-in-section-now", in: app).waitForExistence(timeout: 20), "Check-ins never arrived")
         XCTAssertTrue(loading.waitForNonExistence(timeout: 5))
     }
 

@@ -257,7 +257,7 @@ final class LiveSessionModel {
         case .whosInFailed:
             return MockCheckInService(rows: WhosInSeed.rows(viewerId: viewerId, squadId: squad, now: now, details: false), readsDown: true)
         case .whosInSlow:
-            return MockCheckInService(rows: WhosInSeed.rows(viewerId: viewerId, squadId: squad, now: now, details: false), readDelay: 3, waitsForSheet: true)
+            return MockCheckInService(rows: WhosInSeed.rows(viewerId: viewerId, squadId: squad, now: now, details: false), readDelay: 9, waitsForSheet: true)
         case .whosInNoServer:
             return MockCheckInService(caps: .unknown)
         default:

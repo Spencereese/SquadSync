@@ -328,7 +328,7 @@ enum LaunchScenario: String {
     case whosInEmpty
     /// The check-in read fails until Retry.
     case whosInFailed
-    /// The check-in read takes a few seconds, so the loading row shows.
+    /// The check-in read takes 9 seconds, so the loading row shows long enough to see.
     case whosInSlow
     /// The server has no `sq8_check_ins`, so presence stays untracked.
     case whosInNoServer

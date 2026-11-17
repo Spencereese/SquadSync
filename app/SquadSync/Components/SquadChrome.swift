@@ -90,6 +90,8 @@ struct PresencePill: View {
     /// A drawn dashed ring instead of a symbol. Shapes carry no label, so nothing
     /// can leak a symbol name to VoiceOver or the accessibility tree.
     var dashedMark = false
+    /// A drawn dot instead of a symbol, for the same reason as `dashedMark`.
+    var dotMark = false
 
     var body: some View {
         HStack(spacing: SQSpace.xs) {
@@ -97,6 +99,11 @@ struct PresencePill: View {
                 Circle()
                     .strokeBorder(.foreground, style: StrokeStyle(lineWidth: 1.5, dash: [2, 2]))
                     .frame(width: 10, height: 10)
+                    .accessibilityHidden(true)
+            } else if dotMark {
+                Circle()
+                    .fill(.foreground)
+                    .frame(width: 8, height: 8)
                     .accessibilityHidden(true)
             } else if let systemImage {
                 Image(systemName: systemImage)

@@ -176,10 +176,13 @@ struct SquadHomeHeader: View {
             SQHaptics.play(.tap)
             onOpenWhosIn()
         } label: {
+            // A drawn dot, not an SF Symbol: the symbol's name leaked to VoiceOver
+            // here ("person.2.wave.2"). A shape has no label to leak.
             PresencePill(
                 text: SquadPresence.whosInPill(entries),
-                systemImage: "person.2.wave.2",
-                tint: SQColor.signal
+                tint: SQColor.signal,
+                spoken: SquadPresence.whosInSpoken(entries),
+                dotMark: true
             )
             .frame(minHeight: 44)
             .contentShape(Rectangle())

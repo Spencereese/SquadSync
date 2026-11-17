@@ -74,7 +74,7 @@ struct SquadSyncApp: App {
             if launch.scenario == .spotCall || launch.scenario == .spotCallMine || launch.scenario == .spotCallNearlyFull || launch.scenario == .spotCallExpired {
                 LiveSessionView(backend: .mock, scenario: launch.scenario)
                     .modifier(LargeTextLaunch(enabled: launch.largeText))
-            } else if launch.scenario == .invite || launch.scenario == .almostFull || launch.scenario == .spotHistory || launch.scenario == .spotServerMissing || launch.scenario.isChatScenario {
+            } else if launch.scenario == .invite || launch.scenario == .almostFull || launch.scenario == .spotHistory || launch.scenario == .spotServerMissing || launch.scenario.isChatScenario || launch.scenario.isWhosInScenario {
                 LiveSessionView(backend: .mock, scenario: launch.scenario)
                     .modifier(LargeTextLaunch(enabled: launch.largeText))
             } else if launch.scenario == .noSquad {

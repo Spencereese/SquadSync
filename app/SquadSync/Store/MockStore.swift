@@ -390,7 +390,8 @@ enum Seed {
                 Seat(userId: "quinn", status: .ready)
             ]
         case .noSquad, .invite, .spotCall, .spotCallMine, .spotCallNearlyFull, .spotCallExpired, .almostFull, .spotHistory, .spotServerMissing,
-             .chatPolish, .chatNoReplies, .chatEmpty, .chatHistoryFailed, .chatHistorySlow:
+             .chatPolish, .chatNoReplies, .chatEmpty, .chatHistoryFailed, .chatHistorySlow,
+             .whosIn, .whosInBasic, .whosInEmpty, .whosInFailed, .whosInSlow, .whosInNoServer:
             seats = []
         }
         return Party(

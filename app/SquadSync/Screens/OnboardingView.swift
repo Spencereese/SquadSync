@@ -11,6 +11,7 @@ struct OnboardingView: View {
     let model: LiveSessionModel
     let step: OnboardingStep
     @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     @FocusState private var focus: Field?
 
     enum Field: Hashable {
@@ -18,6 +19,12 @@ struct OnboardingView: View {
     }
 
     private var motion: MotionPolicy { .current(systemReduceMotion: systemReduceMotion) }
+
+    /// At accessibility sizes "name@example.com" wrapped and hyphenated as
+    /// "name@example.-com", so the big sizes get a placeholder with no address in it.
+    static func emailPlaceholder(_ size: DynamicTypeSize) -> String {
+        size.isAccessibilitySize ? "Your email" : "name@example.com"
+    }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -143,7 +150,7 @@ struct OnboardingView: View {
                 .foregroundStyle(SQColor.muted)
                 .fixedSize(horizontal: false, vertical: true)
             OnboardingField(label: "Email") {
-                TextField("name@example.com", text: Binding(get: { model.email }, set: { model.email = $0 }))
+                TextField(Self.emailPlaceholder(typeSize), text: Binding(get: { model.email }, set: { model.email = $0 }))
                     .keyboardType(.emailAddress)
                     .textContentType(.emailAddress)
                     .textInputAutocapitalization(.never)

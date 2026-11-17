@@ -335,6 +335,10 @@ enum SendReceipt: Equatable {
 
 protocol ChatService: AnyObject {
     func history(squadId: UUID) async throws -> [RemoteMessage]
+    /// One page strictly before `before` (by `sent_at`, then `id`), oldest first.
+    func older(squadId: UUID, before: ChatPageCursor, limit: Int) async throws -> [RemoteMessage]
+    /// One message by id in this squad, or nil when the server doesn't have it.
+    func message(squadId: UUID, id: UUID) async throws -> RemoteMessage?
     func send(_ message: RemoteMessage) async throws -> SendReceipt
     func newer(squadId: UUID, after: Date) async throws -> [RemoteMessage]
     func markRead(squadId: UUID, userId: UUID, at: Date, messageId: UUID?) async throws

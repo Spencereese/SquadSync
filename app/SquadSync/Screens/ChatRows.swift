@@ -283,3 +283,66 @@ struct ChatHistoryRow: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 }
+
+/// The top of the thread: pages older messages when it comes into view, says when
+/// it's loading or failed (with a 44pt Retry), and marks the start of the chat.
+struct ChatOlderRow: View {
+    let state: ChatOlderPaging.State
+    let retry: () -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        switch state {
+        case .idle:
+            // Invisible trigger: its appearance is what starts the next page.
+            Color.clear
+                .frame(maxWidth: .infinity, minHeight: 8, maxHeight: 8)
+                .accessibilityHidden(true)
+        case .loading:
+            HStack(spacing: SQSpace.s) {
+                ProgressView()
+                    .accessibilityHidden(true)
+                text(ChatOlderPaging.loadingText)
+            }
+            .padding(.vertical, SQSpace.s)
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("chat-older-loading")
+        case .failed(let reason):
+            let layout = typeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(alignment: .leading, spacing: SQSpace.xs))
+                : AnyLayout(HStackLayout(alignment: .center, spacing: SQSpace.s))
+            layout {
+                text(reason)
+                    .accessibilityIdentifier("chat-older-error")
+                if !typeSize.isAccessibilitySize {
+                    Spacer(minLength: 0)
+                }
+                Button(action: retry) {
+                    Text("Retry")
+                        .font(SQType.label)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel("Retry loading earlier messages")
+                .accessibilityIdentifier("chat-older-retry")
+            }
+            .padding(.vertical, SQSpace.xs)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        case .reachedStart:
+            text(ChatOlderPaging.startText)
+                .multilineTextAlignment(.center)
+                .padding(.vertical, SQSpace.s)
+                .frame(maxWidth: .infinity)
+                .accessibilityAddTraits(.isHeader)
+                .accessibilityIdentifier("chat-start")
+        }
+    }
+
+    private func text(_ value: String) -> some View {
+        Text(value)
+            .font(SQType.caption)
+            .foregroundStyle(SQColor.subtle)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}

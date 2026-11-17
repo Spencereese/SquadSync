@@ -113,6 +113,8 @@ cp app/Config.example.xcconfig app/Config.xcconfig
 
 Open `app/Config.xcconfig` and replace `paste-anon-key-here` with the project anon key. The URL line is already the `sfckxrnoiwetmzdycqaa` project, written so xcconfig does not treat `//` as a comment.
 
+The build reads `app/Base.xcconfig` (tracked, empty Supabase values), which pulls in `Config.xcconfig` with `#include?`. Without `Config.xcconfig` the build still succeeds and the app opens on "This build isn't connected to a server".
+
 Then launch the simulator build with the live flag:
 
 ```bash

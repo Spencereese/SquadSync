@@ -281,7 +281,37 @@ final class MockChatService: ChatService {
             try await Task.sleep(nanoseconds: UInt64(historyDelay * 1_000_000_000))
         }
         if historyDown { throw BackendFailure.rejected(ChatHistoryState.failedText) }
-        return stored.filter { $0.squadId == squadId }.sorted { $0.sentAt < $1.sentAt }
+        // Like live: the newest `historyLimit` rows, oldest first.
+        return Array(ordered(squadId).suffix(SupabaseChatService.historyLimit))
+    }
+
+    /// Mock of an older-page read that fails until Retry brings it back.
+    var olderDown = false
+    /// Mock of a slow older-page read, so the loading row can be seen.
+    var olderDelay: TimeInterval = 0
+    /// How many older pages were asked for (tests).
+    private(set) var olderReads = 0
+
+    func older(squadId: UUID, before: ChatPageCursor, limit: Int) async throws -> [RemoteMessage] {
+        olderReads += 1
+        if olderDelay > 0 {
+            try await Task.sleep(nanoseconds: UInt64(olderDelay * 1_000_000_000))
+        }
+        if olderDown { throw BackendFailure.reconnecting }
+        let earlier = ordered(squadId).filter { before.precedes(sentAt: $0.sentAt, id: $0.id) }
+        return Array(earlier.suffix(limit))
+    }
+
+    func message(squadId: UUID, id: UUID) async throws -> RemoteMessage? {
+        stored.first { $0.squadId == squadId && $0.id == id }
+    }
+
+    /// Same order as the server's paging index: time, then id.
+    private func ordered(_ squadId: UUID) -> [RemoteMessage] {
+        stored.filter { $0.squadId == squadId }.sorted { lhs, rhs in
+            if lhs.sentAt != rhs.sentAt { return lhs.sentAt < rhs.sentAt }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
     }
 
     func send(_ message: RemoteMessage) async throws -> SendReceipt {

@@ -1541,6 +1541,71 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertFalse(element("chat-empty", in: app).exists, "Loading must not flash the empty state")
     }
 
+    // MARK: Chat durability
+
+    private enum Long {
+        static func id(_ index: Int) -> String {
+            "message-row-00000000-0000-4000-8000-" + String(format: "%012X", 0x1000 + index)
+        }
+        static let newest = id(259)
+        /// The oldest message in the first history read (the newest 200).
+        static let firstReadTop = id(60)
+        /// The newest message of the first older page.
+        static let firstPageNewest = id(59)
+        static let oldest = id(0)
+    }
+
+    func testScrollingUpLoadsOlderMessagesUntilStartOfChat() {
+        let app = launchChat("chatLongHistory")
+        XCTAssertTrue(element(Long.newest, in: app).waitForExistence(timeout: 15), "The thread never loaded")
+        XCTAssertFalse(element(Long.firstPageNewest, in: app).exists, "More than one read's worth loaded up front")
+        let list = app.scrollViews["message-list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        var sawOlder = false
+        var keptPlace = false
+        for _ in 0..<60 {
+            if element("chat-start", in: app).exists { break }
+            list.swipeDown(velocity: .fast)
+            if !sawOlder, element(Long.firstPageNewest, in: app).exists {
+                sawOlder = true
+                // The page landed above the reader: the message that was at the top
+                // stays on screen instead of the list jumping to the new oldest one.
+                keptPlace = waitUntil(timeout: 3) { self.element(Long.firstReadTop, in: app).exists }
+            }
+        }
+        XCTAssertTrue(sawOlder, "Scrolling up never loaded an older page")
+        XCTAssertTrue(keptPlace, "The previous top message was gone after the page landed")
+        let start = element("chat-start", in: app)
+        XCTAssertTrue(start.waitForExistence(timeout: 10), "No Start of chat after paging back")
+        XCTAssertEqual(start.label, "Start of chat")
+        XCTAssertTrue(element(Long.oldest, in: app).exists, "The first message isn't there at the start of the chat")
+        XCTAssertFalse(element("chat-older-error", in: app).exists)
+    }
+
+    func testFailedMessageIsStillThereAfterRelaunch() {
+        let first = launchChat("chatPolish", extra: ["-debug-fail-sends", "1"])
+        XCTAssertTrue(element(Polish.reply, in: first).waitForExistence(timeout: 15))
+        let field = first.textFields["Message"]
+        field.tap()
+        field.typeText("survives a kill")
+        first.buttons["send-message"].tap()
+        XCTAssertTrue(caption("Not delivered", in: first).waitForExistence(timeout: 5), "The send didn't fail")
+        first.terminate()
+
+        // Same mock outbox on disk; the relaunch doesn't fail sends.
+        let app = launchChat("chatPolish", extra: ["-keepOutbox"])
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
+        let restored = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "You, survives a kill, "))
+        XCTAssertTrue(restored.firstMatch.waitForExistence(timeout: 5), "The failed message was lost on relaunch")
+        XCTAssertTrue(caption("Not delivered", in: app).exists, "The restored message doesn't say Not delivered")
+        let retry = app.buttons["retry-send"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5), "No Retry on the restored message")
+        scrollChat(to: retry, in: app)
+        retry.tap()
+        XCTAssertTrue(caption("Sent", in: app).waitForExistence(timeout: 5), "The restored message didn't send on Retry")
+        XCTAssertEqual(restored.count, 1, "Retry made a second bubble")
+    }
+
     func testMessagePolishStaysUsableAtLargeText() {
         let app = launchChat("chatPolish", largeText: true)
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))

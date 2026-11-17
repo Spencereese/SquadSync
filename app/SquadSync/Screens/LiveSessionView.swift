@@ -28,6 +28,18 @@ final class LiveSessionModel {
     var reacting = false
     /// History read for the open squad: loading, loaded, or why it failed.
     var chatLoad = ChatHistoryState.idle
+    /// The row at the top of the thread that pages older messages.
+    var olderPaging = ChatOlderPaging()
+    /// Set when an older page lands, so the list can put the previous top message
+    /// back at the top instead of jumping.
+    var olderLanding: ChatOlderLanding?
+    @ObservationIgnored private var olderLandingSerial = 0
+    /// An older page has been added for the open squad, so a later full reload
+    /// doesn't decide "start of chat" from the newest 200 alone.
+    @ObservationIgnored private var olderPagedThisSquad = false
+    /// A pushed message to open once the thread is loaded.
+    @ObservationIgnored private var pendingReveal: UUID?
+    @ObservationIgnored private var requestedReveal: UUID?
     /// Where the unread divider sits. Settled on the squad's first load, cleared when you send.
     var unreadMarker = ChatUnreadMarker()
     /// What the server lets the chat do. Replies stay off until `reply_to_id` is found.
@@ -112,6 +124,8 @@ final class LiveSessionModel {
     }
 
     private let config: BackendConfig
+    /// Unsent messages on disk, so a kill doesn't lose them.
+    let outbox: ChatOutbox
     private let voiceRoom: VoiceRoomService = InMemoryVoiceRoomService()
     private let sessionStore: SessionStoring
     private var auth: AuthService
@@ -140,8 +154,19 @@ final class LiveSessionModel {
         case ready
     }
 
-    init(config: BackendConfig, backend: BackendMode = .live, scenario: LaunchScenario = .seated, sessionStore: SessionStoring? = nil) {
+    init(config: BackendConfig, backend: BackendMode = .live, scenario: LaunchScenario = .seated, sessionStore: SessionStoring? = nil, outbox: ChatOutbox? = nil) {
         self.config = config
+        if let outbox {
+            self.outbox = outbox
+        } else if backend == .mock {
+            // Mock launches start with an empty outbox unless a UI test relaunches
+            // with -keepOutbox to check that a failed send survived.
+            let mockOutbox = ChatOutbox.standard(mock: true)
+            if !ProcessInfo.processInfo.arguments.contains("-keepOutbox") { mockOutbox.clearAll() }
+            self.outbox = mockOutbox
+        } else {
+            self.outbox = ChatOutbox.standard(mock: false)
+        }
         if backend == .mock {
             let store = sessionStore ?? MemorySessionStore()
             let session = AuthSession(
@@ -206,7 +231,10 @@ final class LiveSessionModel {
                 let seeded = squads.seedSpotSquad(ownerId: session.userId)
                 self.squad = seeded
                 self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: nil)
-                if scenario != .chatEmpty {
+                if scenario == .chatLongHistory {
+                    let long = ChatLongSeed.messages(viewerId: session.userId, squadId: seeded.id, now: Date())
+                    for message in long { chat.seed(message) }
+                } else if scenario != .chatEmpty {
                     let thread = ChatPolishSeed.thread(
                         viewerId: session.userId,
                         squadId: seeded.id,
@@ -982,15 +1010,15 @@ final class LiveSessionModel {
         let id = UUID()
         let now = Date()
         let reply = chatCaps.replies ? replyingTo : nil
+        let message = RemoteMessage(id: id, squadId: squad.id, senderId: session.userId, body: text, sentAt: now, replyToId: reply)
         log.beginSend(id: id, senderId: session.userId, body: text, now: now, replyToId: reply)
+        // On disk before the network, so a kill mid-send still has it.
+        outbox.add(OutboxItem(message))
         followSend = id
         draft = ""
         replyingTo = nil
         unreadMarker.clear()
-        await deliver(
-            RemoteMessage(id: id, squadId: squad.id, senderId: session.userId, body: text, sentAt: now, replyToId: reply),
-            session: session
-        )
+        await deliver(message, session: session)
     }
 
     /// Long-press Copy. Says so for a moment, since the clipboard shows nothing.
@@ -1079,6 +1107,8 @@ final class LiveSessionModel {
             sentAt: entry.sentAt,
             replyToId: entry.replyToId
         )
+        // Same id as the first try, so the server's ignore-duplicates keeps one row.
+        outbox.add(OutboxItem(message))
         await deliver(message, session: session)
     }
 
@@ -1254,6 +1284,12 @@ final class LiveSessionModel {
 
     func signOut() async {
         if voicePill.joined { await toggleVoice() }
+        // Unsent messages belong to this account; the next person doesn't get them.
+        if let user = viewerId ?? profile?.id { outbox.clear(userId: user) }
+        olderPaging = ChatOlderPaging()
+        olderPagedThisSquad = false
+        pendingReveal = nil
+        requestedReveal = nil
         realtime?.stop()
         realtime = nil
         poll?.cancel()
@@ -1325,6 +1361,7 @@ final class LiveSessionModel {
         switch OutboundSend.result(receipt: receipt, error: error) {
         case .sent:
             log.markSent(id: message.id)
+            outbox.remove(id: message.id, squadId: message.squadId, userId: message.senderId)
             recoverAfterSend()
         case .staySending:
             break
@@ -1404,8 +1441,10 @@ final class LiveSessionModel {
             squadId: squad?.id,
             membershipKnown: signedIn
         )
-        if let message = PushCoordinator.shared.focusMessage {
-            followSend = message
+        if let message = PushCoordinator.shared.focusMessage, message != requestedReveal {
+            requestedReveal = message
+            pendingReveal = message
+            if chatLoad == .loaded { Task { await revealPendingMessage() } }
         }
         guard signedIn else { return }
         PushCoordinator.shared.askIfReady(signedIn: true, hasSquad: squad != nil)
@@ -1447,6 +1486,94 @@ final class LiveSessionModel {
         await refresh(session)
     }
 
+    // MARK: Older history, unsent messages, pushed messages
+
+    /// The top-of-thread row came into view: add one older page and keep the place.
+    func loadOlder() async {
+        _ = try? await fetchOlderPage(holdPlace: true, waitForRunning: false)
+    }
+
+    /// Retry on the older-page error row.
+    func retryOlder() async {
+        // The mock server comes back on Retry, so the UI test can see both states.
+        if let mock = mockChat as? MockChatService, mock.olderDown { mock.olderDown = false }
+        await loadOlder()
+    }
+
+    /// One older page, merged by id. Returns false once the start of the chat is
+    /// reached. Throws when the read fails (the row then offers Retry).
+    private func fetchOlderPage(holdPlace: Bool, waitForRunning: Bool = true) async throws -> Bool {
+        guard let squad, let session = try? requiredSession() else { return false }
+        // The row asking twice while a page runs is one page, not two.
+        if !waitForRunning, olderPaging.state == .loading { return true }
+        // Opening a pushed message waits for a page the row started, rather than skip.
+        var waits = 0
+        while olderPaging.state == .loading, waits < 200 {
+            try await Task.sleep(nanoseconds: 50_000_000)
+            waits += 1
+        }
+        guard let cursor = ChatOlderPaging.cursor(log) else {
+            olderPaging.finish(rowCount: 0)
+            return false
+        }
+        guard olderPaging.begin() else { return olderPaging.state != .reachedStart }
+        let requested = squad.id
+        let top = ChatScrollAnchor.before(log)
+        do {
+            let rows = try await chatService(session).older(squadId: requested, before: cursor, limit: ChatOlderPaging.pageSize)
+            guard HistoryMerge.accepts(requestSquad: requested, loadedSquad: loadedSquad) else { return false }
+            log.ingest(rows.map { $0.entry() })
+            olderPagedThisSquad = true
+            olderPaging.finish(rowCount: rows.count)
+            if holdPlace, let anchor = ChatScrollAnchor.after(previousTop: top, log: log) {
+                olderLandingSerial += 1
+                olderLanding = ChatOlderLanding(anchor: anchor, serial: olderLandingSerial)
+            }
+            return olderPaging.state != .reachedStart
+        } catch {
+            if RequestNoise.isCancellation(error) {
+                olderPaging.reset()
+            } else {
+                olderPaging.fail()
+            }
+            throw error
+        }
+    }
+
+    /// Unsent messages from before a relaunch go back in the thread as failed, with
+    /// their original ids. Any the server already has leave the outbox.
+    private func restoreOutbox(squadId: UUID, userId: UUID) {
+        let items = outbox.load(squadId: squadId, userId: userId)
+        guard !items.isEmpty else { return }
+        let delivered = OutboxRestore.apply(items, to: &log)
+        for id in delivered { outbox.remove(id: id, squadId: squadId, userId: userId) }
+    }
+
+    /// Opens the pushed message: scrolls to it when it's loaded, pages back for it
+    /// (up to `ChatReveal.maxPages`) when it isn't, and says so when it can't.
+    func revealPendingMessage() async {
+        guard let id = pendingReveal, let squad, let session = try? requiredSession() else { return }
+        pendingReveal = nil
+        let chat = chatService(session)
+        let squadId = squad.id
+        let outcome = await ChatReveal.run(
+            loaded: { [self] in log.entries.contains { $0.id == id } },
+            exists: { try await chat.message(squadId: squadId, id: id) != nil },
+            loadOlderPage: { [self] in try await fetchOlderPage(holdPlace: false) }
+        )
+        if outcome == .found {
+            followSend = id
+        } else if let text = ChatReveal.text(outcome) {
+            showToast(text)
+        }
+    }
+
+    /// Tests: open a message as if a push had asked for it.
+    func reveal(messageId: UUID) async {
+        pendingReveal = messageId
+        await revealPendingMessage()
+    }
+
     func catchUp(pinned: Bool) async {
         guard ReadAdvance.catchesUp(pinned: pinned), let squad, let session = try? requiredSession() else { return }
         let seenAt = max(Date(), log.ordered.last?.sentAt ?? .distantPast)
@@ -1474,6 +1601,8 @@ final class LiveSessionModel {
             replyingTo = nil
             chatCaps = .unknown
             loadedSquad = requested
+            olderPaging = ChatOlderPaging()
+            olderPagedThisSquad = false
         }
         chatLoad = .loading
         do {
@@ -1485,6 +1614,10 @@ final class LiveSessionModel {
             let rows = try await chat.history(squadId: requested)
             guard HistoryMerge.accepts(requestSquad: requested, loadedSquad: loadedSquad) else { return }
             log.adopt(replacingSquad: false, history: rows.map { $0.entry() })
+            if !olderPagedThisSquad {
+                olderPaging.settleFirstRead(rowCount: rows.count, limit: SupabaseChatService.historyLimit)
+            }
+            restoreOutbox(squadId: requested, userId: session.userId)
             chatLoad = .loaded
             if let cursor { log.markRead(at: cursor) }
             unreadMarker.settle(log: log, viewerId: session.userId)
@@ -1495,6 +1628,7 @@ final class LiveSessionModel {
             if let remoteReads = try? await chat.reads(squadId: squad.id) {
                 reads = remoteReads
             }
+            if pendingReveal != nil { await revealPendingMessage() }
         } catch {
             if !RequestNoise.isCancellation(error) {
                 chatLoad = ChatHistoryState.failure(error)
@@ -1722,6 +1856,8 @@ final class LiveSessionModel {
 struct LiveSessionView: View {
     @State private var model: LiveSessionModel
     @State private var pinnedToBottom = true
+    /// The older-history row at the top of the thread is on screen.
+    @State private var olderRowVisible = false
     @State private var wentToBackground = false
     @State private var confirmSignOut = false
     @State private var confirmEndSpot = false
@@ -2019,6 +2155,16 @@ struct LiveSessionView: View {
                                 Task { await model.retryChatLoad() }
                             }
                         }
+                        if model.chatLoad == .loaded, !model.log.entries.isEmpty {
+                            ChatOlderRow(state: model.olderPaging.state) {
+                                Task { await model.retryOlder() }
+                            }
+                            .onAppear {
+                                olderRowVisible = true
+                                loadOlderIfNeeded()
+                            }
+                            .onDisappear { olderRowVisible = false }
+                        }
                         ForEach(chatRows) { row in
                             switch row {
                             case .day(_, let label):
@@ -2097,6 +2243,13 @@ struct LiveSessionView: View {
                 if ChatCatchUp.requests(becamePinned: isPinned && !wasPinned, tappedNewMessages: false) {
                     Task { await model.catchUp(pinned: true) }
                 }
+                loadOlderIfNeeded()
+            }
+            // An older page landed above the reader: put the message that was at the
+            // top back at the top, without animation, so the place doesn't jump.
+            .onChange(of: model.olderLanding) { _, landing in
+                guard let landing else { return }
+                proxy.scrollTo(landing.anchor, anchor: .top)
             }
             .onChange(of: model.log.ordered.last?.id) { _, id in
                 guard let id else { return }
@@ -2138,6 +2291,15 @@ struct LiveSessionView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(SQColor.surface0)
+    }
+
+    private func loadOlderIfNeeded() {
+        guard model.olderPaging.shouldLoad(
+            rowVisible: olderRowVisible,
+            pinnedToBottom: pinnedToBottom,
+            hasMessages: !model.log.entries.isEmpty
+        ) else { return }
+        Task { await model.loadOlder() }
     }
 
     private func scrollChatToBottom(_ proxy: ScrollViewProxy) {

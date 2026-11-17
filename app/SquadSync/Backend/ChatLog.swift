@@ -88,6 +88,15 @@ struct ChatLog: Equatable {
         lastReadAt = date
     }
 
+    /// An unsent message read back from disk after a relaunch. Shown as failed
+    /// unless the thread already has that id (the server took it before the kill).
+    mutating func restoreUnsent(_ entry: ChatEntry) {
+        guard !entries.contains(where: { $0.id == entry.id }) else { return }
+        var restored = entry
+        restored.delivery = .failed
+        entries.append(restored)
+    }
+
     mutating func remove(id: UUID) {
         entries.removeAll { $0.id == id }
     }

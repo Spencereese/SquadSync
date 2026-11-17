@@ -6,6 +6,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A10000000000000000000999 /* ChatDurabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000001000 /* ChatDurabilityTests.swift */; };
+		A10000000000000000000998 /* ChatDurability.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000988 /* ChatDurability.swift */; };
 		A10000000000000000000997 /* LaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000987 /* LaunchTests.swift */; };
 		A10000000000000000000996 /* LaunchBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000986 /* LaunchBackend.swift */; };
 		A10000000000000000000995 /* OnboardingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000985 /* OnboardingTests.swift */; };
@@ -64,6 +66,8 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A10000000000000000001000 /* ChatDurabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDurabilityTests.swift; sourceTree = "<group>"; };
+		A10000000000000000000988 /* ChatDurability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDurability.swift; sourceTree = "<group>"; };
 		A10000000000000000000987 /* LaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000986 /* LaunchBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchBackend.swift; sourceTree = "<group>"; };
 		A10000000000000000000985 /* OnboardingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingTests.swift; sourceTree = "<group>"; };
@@ -106,6 +110,7 @@
 		A10000000000000000000066 /* SquadSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SquadSync.entitlements; sourceTree = "<group>"; };
 		A10000000000000000000057 /* ChatLogTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatLogTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000059 /* Config.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Config.xcconfig; sourceTree = "<group>"; };
+		A10000000000000000000989 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		A10000000000000000000932 /* SquadSyncUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SquadSyncUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A10000000000000000000014 /* SpotRulesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotRulesTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000015 /* StoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreTests.swift; sourceTree = "<group>"; };
@@ -220,6 +225,7 @@
 				A10000000000000000000971 /* CheckInService.swift */,
 				A10000000000000000000983 /* ProfileGames.swift */,
 				A10000000000000000000986 /* LaunchBackend.swift */,
+				A10000000000000000000988 /* ChatDurability.swift */,
 				A10000000000000000000051 /* Services.swift */,
 				A10000000000000000000052 /* MockBackend.swift */,
 				A10000000000000000000053 /* SessionStore.swift */,
@@ -243,6 +249,7 @@
 				A10000000000000000000973 /* WhosInTests.swift */,
 				A10000000000000000000985 /* OnboardingTests.swift */,
 				A10000000000000000000987 /* LaunchTests.swift */,
+				A10000000000000000001000 /* ChatDurabilityTests.swift */,
 				A10000000000000000000079 /* SpotThreadTests.swift */,
 				A1000000000000000000007D /* ChatModelTests.swift */,
 				A1000000000000000000007C /* ChatThreadTests.swift */,
@@ -271,6 +278,7 @@
 		A10000000000000000000920 = {
 			isa = PBXGroup;
 			children = (
+				A10000000000000000000989 /* Base.xcconfig */,
 				A10000000000000000000059 /* Config.xcconfig */,
 				A10000000000000000000800 /* SquadSync */,
 				A10000000000000000000806 /* SquadSyncTests */,
@@ -402,6 +410,7 @@
 				A10000000000000000000994 /* OnboardingView.swift in Sources */,
 				A10000000000000000000993 /* ProfileGames.swift in Sources */,
 				A10000000000000000000996 /* LaunchBackend.swift in Sources */,
+				A10000000000000000000998 /* ChatDurability.swift in Sources */,
 				A10000000000000000000992 /* Motion.swift in Sources */,
 				A10000000000000000000991 /* Palette.swift in Sources */,
 				A10000000000000000000990 /* Onboarding.swift in Sources */,
@@ -426,6 +435,7 @@
 				A10000000000000000000977 /* WhosInTests.swift in Sources */,
 				A10000000000000000000995 /* OnboardingTests.swift in Sources */,
 				A10000000000000000000997 /* LaunchTests.swift in Sources */,
+				A10000000000000000000999 /* ChatDurabilityTests.swift in Sources */,
 				A10000000000000000000089 /* SpotThreadTests.swift in Sources */,
 				A1000000000000000000008D /* ChatModelTests.swift in Sources */,
 				A1000000000000000000008C /* ChatThreadTests.swift in Sources */,
@@ -504,7 +514,7 @@
 		};
 		A10000000000000000000952 /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = A10000000000000000000059 /* Config.xcconfig */;
+			baseConfigurationReference = A10000000000000000000989 /* Base.xcconfig */;
 			buildSettings = {
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
@@ -529,7 +539,7 @@
 		};
 		A10000000000000000000953 /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = A10000000000000000000059 /* Config.xcconfig */;
+			baseConfigurationReference = A10000000000000000000989 /* Base.xcconfig */;
 			buildSettings = {
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;

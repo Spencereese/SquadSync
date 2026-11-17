@@ -1,0 +1,12 @@
+// Build settings every SquadSync build uses. Tracked; holds no real values.
+//
+// The Supabase values default to empty and are filled in by Config.xcconfig when
+// it exists (copy Config.example.xcconfig to Config.xcconfig and add the anon
+// key). Config.xcconfig is gitignored. The include is optional (#include?), so a
+// clone without it still builds and the app shows "This build isn't connected to
+// a server" instead of failing the build.
+
+SUPABASE_URL =
+SUPABASE_ANON_KEY =
+
+#include? "Config.xcconfig"

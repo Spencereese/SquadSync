@@ -9,24 +9,50 @@ import Foundation
 /// Stays nonisolated because `restore()` is a synchronous requirement. Its one
 /// piece of mutable state sits behind a lock.
 final class MockAuthService: AuthService {
+    /// GoTrue's words for a wrong or expired code, so the app maps it the same way.
+    static let wrongCodeText = "Token has expired or is invalid"
+    /// The mock onboarding code. Any other code is wrong when `acceptedCode` is set.
+    static let onboardingCode = "123456"
+
     private let store: SessionStoring
     private let lock = NSLock()
     private var pendingEmail: String?
+    /// nil accepts any well-formed code (the older mock behavior).
+    private let acceptedCode: String?
+    /// Thrown by every send, e.g. `.reconnecting` for offline.
+    private let sendFailure: BackendFailure?
+    private let delay: TimeInterval
+    private var sends = 0
+    /// How many codes went out. Read under the lock.
+    var sendCount: Int { lock.withLock { sends } }
 
-    init(store: SessionStoring) {
+    init(store: SessionStoring, acceptedCode: String? = nil, sendFailure: BackendFailure? = nil, delay: TimeInterval = 0) {
         self.store = store
+        self.acceptedCode = acceptedCode
+        self.sendFailure = sendFailure
+        self.delay = delay
+    }
+
+    private func pause() async throws {
+        if delay > 0 { try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000)) }
     }
 
     func sendCode(to email: String) async throws {
+        try await pause()
+        if let sendFailure { throw sendFailure }
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        lock.withLock { pendingEmail = trimmed }
+        lock.withLock {
+            pendingEmail = trimmed
+            sends += 1
+        }
     }
 
     func verify(email: String, code: String) async throws -> AuthSession {
+        try await pause()
         let trimmed = email.trimmingCharacters(in: .whitespacesAndNewlines)
         let expected = lock.withLock { pendingEmail }
-        guard trimmed == expected, SignInCode.isValid(code) else {
-            throw BackendFailure.rejected("Enter the code from your email.")
+        guard trimmed == expected, SignInCode.isValid(code), acceptedCode == nil || code == acceptedCode else {
+            throw BackendFailure.rejected(Self.wrongCodeText)
         }
         let session = AuthSession(
             accessToken: "mock-access",

@@ -332,6 +332,30 @@ enum LaunchScenario: String {
     case whosInSlow
     /// The server has no `sq8_check_ins`, so presence stays untracked.
     case whosInNoServer
+    /// Signed out at the email step. The code is 123456; any other code is wrong.
+    /// A new code can be sent after 5 seconds. The games list stays on the phone, like live.
+    case onboarding
+    /// Signed out, and every send fails as if offline.
+    case onboardingOffline
+    /// Signed out; sending and checking a code each take 2 seconds, so loading shows.
+    case onboardingSlow
+    /// Signed in with no squad, before the profile step is done.
+    case onboardingProfile
+
+    var isOnboardingScenario: Bool {
+        switch self {
+        case .onboarding, .onboardingOffline, .onboardingSlow, .onboardingProfile: true
+        default: false
+        }
+    }
+
+    /// The mock saves no session for these, so the app opens at the email step.
+    var startsSignedOut: Bool {
+        switch self {
+        case .onboarding, .onboardingOffline, .onboardingSlow: true
+        default: false
+        }
+    }
 
     var isWhosInScenario: Bool {
         switch self {
@@ -391,7 +415,8 @@ enum Seed {
             ]
         case .noSquad, .invite, .spotCall, .spotCallMine, .spotCallNearlyFull, .spotCallExpired, .almostFull, .spotHistory, .spotServerMissing,
              .chatPolish, .chatNoReplies, .chatEmpty, .chatHistoryFailed, .chatHistorySlow,
-             .whosIn, .whosInBasic, .whosInEmpty, .whosInFailed, .whosInSlow, .whosInNoServer:
+             .whosIn, .whosInBasic, .whosInEmpty, .whosInFailed, .whosInSlow, .whosInNoServer,
+             .onboarding, .onboardingOffline, .onboardingSlow, .onboardingProfile:
             seats = []
         }
         return Party(

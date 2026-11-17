@@ -2104,6 +2104,7 @@ struct LiveSessionView: View {
                 ForEach(rows, id: \.0.id) { reaction, count in
                     HStack(spacing: 3) {
                         Image(systemName: reaction.rawValue)
+                            .accessibilityHidden(true)
                         Text("\(count)")
                             .accessibilityIdentifier("reaction-count")
                     }

@@ -187,8 +187,8 @@ struct SquadHomeHeader: View {
     private var untrackedPill: some View {
         PresencePill(
             text: SquadPresence.untrackedShort,
-            systemImage: "antenna.radiowaves.left.and.right.slash",
-            spoken: SquadPresence.untrackedSpoken
+            spoken: SquadPresence.untrackedSpoken,
+            dashedMark: true
         )
         .accessibilityIdentifier("presence-untracked")
     }

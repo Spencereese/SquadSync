@@ -82,10 +82,18 @@ struct PresencePill: View {
     var filled = false
     /// What VoiceOver reads. The symbol is decoration and is never read.
     var spoken: String? = nil
+    /// A drawn dashed ring instead of a symbol. Shapes carry no label, so nothing
+    /// can leak a symbol name to VoiceOver or the accessibility tree.
+    var dashedMark = false
 
     var body: some View {
         HStack(spacing: SQSpace.xs) {
-            if let systemImage {
+            if dashedMark {
+                Circle()
+                    .strokeBorder(.foreground, style: StrokeStyle(lineWidth: 1.5, dash: [2, 2]))
+                    .frame(width: 10, height: 10)
+                    .accessibilityHidden(true)
+            } else if let systemImage {
                 Image(systemName: systemImage)
                     .imageScale(.small)
                     .accessibilityHidden(true)

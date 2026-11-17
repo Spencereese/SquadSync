@@ -1220,6 +1220,47 @@ final class AccessibilityUITests: XCTestCase {
         let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
         origin.withOffset(CGVector(dx: point.x, dy: point.y)).tap()
     }
+
+    // MARK: Call sheet and the keyboard
+
+    /// XCUITest's keyboard frame leaves out the QuickType bar (about 43 pt), so
+    /// Call spots must end at least 50 pt above the keyboard's top to clear it.
+    private func assertCallSheetClearsTheKeyboardBar(largeText: Bool, file: StaticString = #filePath, line: UInt = #line) {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotHistory"] + (largeText ? ["-uitest-largeText"] : [])
+        app.launch()
+        tapMenuCallSpots(app, file: file, line: line)
+        let game = app.textFields["spot-sheet-game"]
+        XCTAssertTrue(game.waitForExistence(timeout: 5), "The call sheet's game field was missing", file: file, line: line)
+        game.tap()
+        let keyboard = app.keyboards.firstMatch
+        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "The keyboard didn't come up", file: file, line: line)
+        let call = app.buttons["spot-sheet-call"]
+        XCTAssertTrue(call.waitForExistence(timeout: 5), file: file, line: line)
+        // Let the sheet finish moving to the large detent.
+        let deadline = Date().addingTimeInterval(3)
+        while Date() < deadline, call.frame.maxY > keyboard.frame.minY - 50 {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+        XCTAssertTrue(call.isHittable, "Call spots is covered with the keyboard up: \(call.frame)", file: file, line: line)
+        XCTAssertLessThanOrEqual(
+            call.frame.maxY,
+            keyboard.frame.minY - 50,
+            "Call spots \(call.frame) sits on the QuickType bar; keyboard keys start at \(keyboard.frame.minY)",
+            file: file,
+            line: line
+        )
+        XCTAssertGreaterThanOrEqual(call.frame.minY, game.frame.maxY - 1, "Call spots covers the game field", file: file, line: line)
+        XCTAssertTrue(game.isHittable, "The game field went off screen with the keyboard up", file: file, line: line)
+        call.tap()
+        XCTAssertTrue(call.waitForNonExistence(timeout: 5), "Calling from the keyboard-up sheet didn't work", file: file, line: line)
+    }
+
+    func testCallSheetButtonClearsTheKeyboardBarAtLargeText() {
+        assertCallSheetClearsTheKeyboardBar(largeText: true)
+    }
+
+    func testCallSheetButtonClearsTheKeyboardBarAtDefaultSize() {
+        assertCallSheetClearsTheKeyboardBar(largeText: false)
+    }
 }
-
-

@@ -293,6 +293,17 @@ final class LiveSessionModel {
             self.mockGames = nil
             self.marks = OnboardingMarks()
         }
+        if let live = auth as? SupabaseAuthService {
+            live.onRefresh = { [weak self] session in
+                Task { @MainActor in self?.sessionRefreshed(session) }
+            }
+        }
+    }
+
+    /// Every token refresh hands the open socket the new JWT, so realtime doesn't
+    /// drop into polling when the old one expires.
+    func sessionRefreshed(_ session: AuthSession) {
+        realtime?.updateAccessToken(session.accessToken)
     }
 
     /// Mock check-in servers. Every mock scenario has check-ins like live (0006) with
@@ -1792,8 +1803,16 @@ struct LiveSessionView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { wentToBackground = true }
-            guard phase == .active, wentToBackground else { return }
+            guard phase == .active else { return }
+            let wasInBackground = wentToBackground
             wentToBackground = false
+            guard RealtimeResume.reconnects(
+                wentToBackground: wasInBackground,
+                link: model.link,
+                signedInWithSquad: model.phase == .ready && model.squad != nil
+            ) else { return }
+            // becameActive refreshes the session, reloads (the backfill), and restarts
+            // the socket with the fresh token; catchUp then reads anything newer.
             Task {
                 await model.becameActive()
                 await model.catchUp(pinned: pinnedToBottom)

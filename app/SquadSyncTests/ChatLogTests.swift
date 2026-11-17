@@ -89,10 +89,19 @@ final class AuthSessionTests: XCTestCase {
         XCTAssertNil(try auth.restore())
     }
 
-    func testLaunchBackendDefaultsToMock() {
-        let options = LaunchOptions.current(["SquadSync", "-screen", "inbox"])
-        XCTAssertEqual(options.backend, .mock)
-        XCTAssertEqual(LaunchOptions.current(["-backend", "live"]).backend, .live)
+    func testLaunchOptionsPickTheBackendFromConfigAndFlags() {
+        let configured = BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
+        let empty = BackendConfig(urlText: "$(SUPABASE_URL)", anonKey: "$(SUPABASE_ANON_KEY)")
+        XCTAssertEqual(LaunchOptions.current(["SquadSync"], config: configured, isRelease: true, hostingUnitTests: false).backend, .live)
+        XCTAssertEqual(LaunchOptions.current(["SquadSync", "-screen", "inbox"], config: configured, isRelease: false, hostingUnitTests: false).backend, .live)
+        XCTAssertEqual(
+            LaunchOptions.current(["SquadSync"], config: empty, isRelease: false, hostingUnitTests: false).backend,
+            .notConfigured(missing: ["SupabaseURL", "SupabaseAnonKey"])
+        )
+        XCTAssertEqual(LaunchOptions.current(["-backend", "mock", "-screen", "inbox"], config: configured, isRelease: false, hostingUnitTests: false).backend, .mock)
+        XCTAssertEqual(LaunchOptions.current(["-scenario", "invite"], config: configured, isRelease: false, hostingUnitTests: false).backend, .mock)
+        // These tests run inside the app; with the real environment it stays on mock.
+        XCTAssertEqual(LaunchOptions.current(["SquadSync"], config: configured, isRelease: false).backend, .mock)
     }
 }
 

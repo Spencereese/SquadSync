@@ -29,8 +29,20 @@ final class RealtimeClient {
     private var generation = 0
     private var squadId = UUID()
     private var config = BackendConfig(urlText: "", anonKey: "")
-    private var accessToken = ""
+    /// The JWT the next join uses, and the one an open channel was last given.
+    private(set) var accessToken = ""
+    /// True once the channel join is acknowledged; false while (re)connecting.
+    private(set) var joined = false
+    private var nextRef = 100
     private let topicPrefix = "realtime:sq8"
+    /// Tests pass a sender to capture frames; the app leaves it nil and uses a socket.
+    private let sender: ((String) async -> Void)?
+
+    init(sender: ((String) async -> Void)? = nil) {
+        self.sender = sender
+    }
+
+    private var topic: String { "\(topicPrefix):\(squadId.uuidString.lowercased())" }
     private static let socketSession: URLSession = {
         let configuration = URLSessionConfiguration.default
         configuration.waitsForConnectivity = true
@@ -49,6 +61,7 @@ final class RealtimeClient {
 
     func stop() {
         stopped = true
+        joined = false
         listen?.cancel()
         heart?.cancel()
         reconnect?.cancel()
@@ -60,6 +73,7 @@ final class RealtimeClient {
         listen?.cancel()
         heart?.cancel()
         task?.cancel(with: .goingAway, reason: nil)
+        joined = false
         guard !stopped, let url = socketURL() else {
             onEvent(.phase(.down))
             return
@@ -68,6 +82,10 @@ final class RealtimeClient {
         generation += 1
         let current = generation
         onEvent(.phase(link))
+        if sender != nil {
+            listen = Task { [weak self] in await self?.sendJoin() }
+            return
+        }
         let socket = Self.socketSession.webSocketTask(with: url)
         task = socket
         socket.resume()
@@ -116,7 +134,7 @@ final class RealtimeClient {
                 "private": false
             ]
         ]
-        await send(topic: "\(topicPrefix):\(squad)", event: "phx_join", payload: payload, ref: "1")
+        await send(topic: topic, event: "phx_join", payload: payload, ref: "1")
     }
 
     private func change(_ table: String, filter: String?, event: String = "*") -> [String: Any] {
@@ -139,17 +157,37 @@ final class RealtimeClient {
         }
     }
 
+    /// A refreshed session's JWT. An open channel gets it right away with an
+    /// `access_token` frame; a channel that's still joining picks it up in the
+    /// join, which always reads the newest token.
+    func updateAccessToken(_ token: String) {
+        let fresh = token.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !fresh.isEmpty, fresh != accessToken else { return }
+        accessToken = fresh
+        guard joined, !stopped else { return }
+        nextRef += 1
+        let frame = RealtimeFrames.accessToken(topic: topic, token: fresh, ref: "\(nextRef)")
+        Task { [weak self] in await self?.send(frame) }
+    }
+
     private func send(topic: String, event: String, payload: [String: Any], ref: String) async {
-        let body: [String: Any] = [
+        await send([
             "topic": topic,
             "event": event,
             "payload": payload,
             "ref": ref,
             "join_ref": "1"
-        ]
+        ])
+    }
+
+    private func send(_ body: [String: Any]) async {
         guard let data = try? JSONSerialization.data(withJSONObject: body),
-              let text = String(data: data, encoding: .utf8),
-              let task else { return }
+              let text = String(data: data, encoding: .utf8) else { return }
+        if let sender {
+            await sender(text)
+            return
+        }
+        guard let task else { return }
         try? await task.send(.string(text))
     }
 
@@ -178,6 +216,7 @@ final class RealtimeClient {
     private func scheduleReconnect() {
         guard !stopped, !reconnecting else { return }
         reconnecting = true
+        joined = false
         attempt += 1
         let delay = UInt64(min(attempt, 4)) * 1_000_000_000
         onEvent(.phase(.reconnecting))
@@ -188,7 +227,8 @@ final class RealtimeClient {
         }
     }
 
-    private func handle(_ text: String) {
+    /// One incoming frame. Internal so tests can play server replies.
+    func handle(_ text: String) {
         guard let data = text.data(using: .utf8),
               let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
         let event = object["event"] as? String ?? ""
@@ -198,6 +238,7 @@ final class RealtimeClient {
             let status = payload["status"] as? String ?? ""
             if status == "ok" {
                 attempt = 0
+                joined = true
                 onEvent(.phase(.connected))
             } else {
                 onEvent(.phase(.down))

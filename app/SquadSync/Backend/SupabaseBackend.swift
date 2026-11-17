@@ -11,6 +11,9 @@ final class SupabaseAuthService: AuthService, TokenRefreshing {
     private let transport: HTTPTransport
     private var refreshTask: RefreshFlight?
     private let refreshLock = NSLock()
+    /// Called with the new session after every successful token refresh, so the
+    /// realtime socket can take the fresh access token. May run off the main actor.
+    var onRefresh: ((AuthSession) -> Void)?
 
     init(config: BackendConfig, store: SessionStoring, transport: HTTPTransport = URLSessionTransport.shared) {
         self.config = config
@@ -162,6 +165,7 @@ final class SupabaseAuthService: AuthService, TokenRefreshing {
             email: decoded.user.email ?? session.email
         )
         try store.save(updated)
+        onRefresh?(updated)
         return updated
     }
 

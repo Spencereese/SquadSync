@@ -60,22 +60,26 @@ xcrun simctl launch "$UDID" com.spencereese.squadsync
 
 ## Launch arguments
 
-Arguments go after the bundle id. `-screen` jumps to a state. `-scenario` picks the party seed. `-uitest-largeText` locks Dynamic Type at the largest accessibility size.
+Arguments go after the bundle id.
+
+**Which backend:** a launch is live whenever `Config.xcconfig` sets the Supabase URL and anon key, in Debug and Release. Without them the app shows "This build isn't connected to a server" instead of sample data. Mock data needs `-backend mock`; in Debug a `-scenario` launch with no `-backend` flag is also mock (that's how the UI tests run), and the app hosting unit tests stays on mock. Every UI test passes `-backend mock`.
+
+`-screen` jumps to a state. `-scenario` picks the party seed. `-uitest-largeText` locks Dynamic Type at the largest accessibility size.
 
 Screens: `inbox`, `thread-general`, `thread-warzone`, `party`, `voice`, `voice-pill`, `space`, `handoff`.
 
 Scenarios: `seated` (viewer is Ready), `unseated` (I'm in can be tapped), `ready4` (Lock can be tapped), `noSquad` (create-squad form on the mock backend), `invite` (invite, remove, and join on the mock backend), `almostFull` (7 members, so the next join fills 8 and the one after is rejected).
 
 ```bash
-xcrun simctl launch "$UDID" com.spencereese.squadsync -screen inbox -scenario seated
-xcrun simctl launch "$UDID" com.spencereese.squadsync -screen thread-general -scenario unseated
-xcrun simctl launch "$UDID" com.spencereese.squadsync -screen thread-warzone
-xcrun simctl launch "$UDID" com.spencereese.squadsync -screen party -scenario ready4
-xcrun simctl launch "$UDID" com.spencereese.squadsync -screen voice
-xcrun simctl launch "$UDID" com.spencereese.squadsync -screen voice-pill
-xcrun simctl launch "$UDID" com.spencereese.squadsync -screen space
-xcrun simctl launch "$UDID" com.spencereese.squadsync -screen handoff
-xcrun simctl launch "$UDID" com.spencereese.squadsync -uitest-largeText -screen inbox
+xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -screen inbox -scenario seated
+xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -screen thread-general -scenario unseated
+xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -screen thread-warzone
+xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -screen party -scenario ready4
+xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -screen voice
+xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -screen voice-pill
+xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -screen space
+xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -screen handoff
+xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -uitest-largeText -screen inbox
 xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario noSquad
 xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario invite
 xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario spotCall

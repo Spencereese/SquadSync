@@ -445,6 +445,7 @@ final class AccessibilityUITests: XCTestCase {
         app.buttons["confirm-leave"].tap()
 
         XCTAssertTrue(app.staticTexts["You're not in a squad yet."].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.descendants(matching: .any)["onboarding-header"].label, "Find your squad", "No step count after leaving a squad")
         XCTAssertEqual(app.textFields.matching(identifier: "join-code").count, 1)
         XCTAssertEqual(app.buttons.matching(identifier: "join-squad").count, 1)
 
@@ -1925,5 +1926,284 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(waitUntil(timeout: 5) { retry.isHittable }, "Retry starts off screen at AX5: \(retry.frame)")
         assertHitTarget(retry, "Retry")
         XCTAssertLessThanOrEqual(retry.frame.maxX, app.windows.firstMatch.frame.width + 1)
+    }
+
+
+    // MARK: Onboarding (redesign S5)
+
+    private enum Onboard {
+        static let wrongCode = "That code didn't work. It may be mistyped or expired. Check the newest email, or send a new code."
+        static let offline = "You're offline. Check your connection, then try again."
+        static let invalidEmail = "Enter an email like name@example.com."
+    }
+
+    /// Drags the onboarding scroll view, above the keyboard when it's up, until the
+    /// target is hittable. Bounded; down first, then back up.
+    @discardableResult
+    private func revealInOnboarding(_ target: XCUIElement, in app: XCUIApplication, container: String = "onboarding", file: StaticString = #filePath, line: UInt = #line) -> Bool {
+        let scroller = element(container, in: app)
+        let window = app.windows.firstMatch
+        for step in 0..<14 {
+            if target.exists && target.isHittable { return true }
+            let keyboard = app.keyboards.firstMatch
+            let top = scroller.frame.minY
+            let bottom = keyboard.exists ? min(keyboard.frame.minY, scroller.frame.maxY) : scroller.frame.maxY
+            guard bottom - top > 40 else { break }
+            let x = scroller.frame.maxX - 12
+            let origin = window.coordinate(withNormalizedOffset: .zero)
+            let upper = origin.withOffset(CGVector(dx: x, dy: top + (bottom - top) * 0.3))
+            let lower = origin.withOffset(CGVector(dx: x, dy: top + (bottom - top) * 0.75))
+            let (from, to) = step >= 9 ? (upper, lower) : (lower, upper)
+            from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.1)
+        }
+        let found = target.exists && target.isHittable
+        XCTAssertTrue(found, "Couldn't scroll onboarding to \(target)", file: file, line: line)
+        return found
+    }
+
+    /// Email step: type an address and send. Leaves the app on the code step.
+    private func sendCode(_ app: XCUIApplication, email: String = "new@squad.app", file: StaticString = #filePath, line: UInt = #line) {
+        let field = app.textFields["signin-email"]
+        XCTAssertTrue(field.waitForExistence(timeout: 15), "No email field", file: file, line: line)
+        field.tap()
+        field.typeText(email)
+        let send = app.buttons["signin-send"]
+        guard revealInOnboarding(send, in: app, file: file, line: line) else { return }
+        send.tap()
+    }
+
+    private func enterCode(_ code: String, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let field = app.textFields["signin-code"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10), "No code field", file: file, line: line)
+        field.tap()
+        field.typeText(code)
+    }
+
+    func testOnboardingSignsInSetsUpAProfileAndCreatesASquad() {
+        let app = launchChat("onboarding")
+        let header = element("onboarding-header", in: app)
+        XCTAssertTrue(header.waitForExistence(timeout: 15))
+        XCTAssertEqual(header.label, "Sign in with email, Step 1 of 4")
+        XCTAssertEqual(element("onboarding", in: app).value as? String, "Full motion")
+        sendCode(app)
+        XCTAssertTrue(waitForLabel(header, "label == \"Enter your code, Step 2 of 4\""), header.label)
+        XCTAssertTrue(app.staticTexts["We sent a code to new@squad.app. It can take a minute to arrive."].exists)
+        // The sixth digit checks the code on its own.
+        enterCode("123456", in: app)
+        XCTAssertTrue(waitForLabel(header, "label == \"Set up your profile, Step 3 of 4\"", timeout: 10), header.label)
+        let name = app.textFields["onboarding-name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        XCTAssertEqual(name.value as? String, "new", "The server's default name comes in")
+        XCTAssertTrue(element("onboarding-games-empty", in: app).exists, "No empty state for the games list")
+        let suggest = app.buttons["onboarding-suggest-Fortnite"]
+        guard revealInOnboarding(suggest, in: app) else { return }
+        suggest.tap()
+        XCTAssertTrue(element("onboarding-game-Fortnite", in: app).waitForExistence(timeout: 3), "The suggestion didn't join the list")
+        XCTAssertFalse(element("onboarding-games-empty", in: app).exists)
+        XCTAssertTrue(element("onboarding-games-note", in: app).exists, "The phone-only note is missing on a server without 0023")
+        let save = app.buttons["onboarding-save-profile"]
+        guard revealInOnboarding(save, in: app) else { return }
+        save.tap()
+        let squadName = app.textFields["squad-name"]
+        XCTAssertTrue(squadName.waitForExistence(timeout: 5), "No squad step after the profile")
+        XCTAssertEqual(element("onboarding-header", in: app).label, "Find your squad, Step 4 of 4")
+        squadName.tap()
+        squadName.typeText("Friday")
+        let create = app.buttons["create-squad"]
+        guard revealInOnboarding(create, in: app, container: "onboarding-squad") else { return }
+        create.tap()
+        let title = element("squad-title", in: app)
+        XCTAssertTrue(title.waitForExistence(timeout: 5), "Creating the squad didn't open it")
+        XCTAssertEqual(title.label, "Friday · 1 of 8")
+    }
+
+    func testTyposAreCaughtBeforeACodeIsSent() {
+        let app = launchChat("onboarding")
+        sendCode(app, email: "nope")
+        let error = element("signin-error", in: app)
+        XCTAssertTrue(error.waitForExistence(timeout: 3), "No error for a bad email")
+        XCTAssertEqual(error.label, Onboard.invalidEmail)
+        XCTAssertFalse(app.textFields["signin-code"].exists, "A bad email moved on")
+    }
+
+    func testWrongCodeSaysWhatToDoAndClearsTheField() {
+        let app = launchChat("onboarding")
+        sendCode(app)
+        enterCode("000000", in: app)
+        let error = element("signin-error", in: app)
+        XCTAssertTrue(error.waitForExistence(timeout: 5), "No error for a wrong code")
+        XCTAssertEqual(error.label, Onboard.wrongCode)
+        let field = app.textFields["signin-code"]
+        XCTAssertTrue(waitUntil(timeout: 3) { (field.value as? String).map { $0 == "Code" || $0.isEmpty } ?? true }, "The wrong code stayed: \(String(describing: field.value))")
+        enterCode("123456", in: app)
+        XCTAssertTrue(app.textFields["onboarding-name"].waitForExistence(timeout: 10), "The right code after a wrong one didn't sign in")
+    }
+
+    func testResendCountsDownThenSendsANewCode() {
+        let app = launchChat("onboarding")
+        sendCode(app)
+        let resend = app.buttons["signin-resend"]
+        XCTAssertTrue(resend.waitForExistence(timeout: 5))
+        XCTAssertTrue(resend.label.hasPrefix("Send a new code, available in"), resend.label)
+        XCTAssertFalse(resend.isEnabled, "Resend is open during the cooldown")
+        XCTAssertTrue(waitUntil(timeout: 10) { resend.isEnabled }, "Resend never opened")
+        XCTAssertEqual(resend.label, "Send a new code")
+        guard revealInOnboarding(resend, in: app) else { return }
+        resend.tap()
+        let note = element("signin-resent", in: app)
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "No word that a new code went out")
+        XCTAssertEqual(note.label, "We sent a new code to new@squad.app. Use the newest one.")
+        XCTAssertFalse(resend.isEnabled, "The cooldown didn't restart")
+        let change = app.buttons["signin-change-email"]
+        guard revealInOnboarding(change, in: app) else { return }
+        change.tap()
+        XCTAssertTrue(app.textFields["signin-email"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.textFields["signin-email"].value as? String, "new@squad.app", "Changing email lost what was typed")
+    }
+
+    func testOfflineSendSaysSoAndStays() {
+        let app = launchChat("onboardingOffline")
+        sendCode(app)
+        let error = element("signin-error", in: app)
+        XCTAssertTrue(error.waitForExistence(timeout: 5))
+        XCTAssertEqual(error.label, Onboard.offline)
+        XCTAssertTrue(app.buttons["signin-send"].isEnabled, "Send should be ready to try again")
+        XCTAssertFalse(app.textFields["signin-code"].exists)
+    }
+
+    func testSlowSendAndVerifyShowWhatTheyAreDoing() {
+        let app = launchChat("onboardingSlow")
+        sendCode(app)
+        let send = app.buttons["signin-send"]
+        XCTAssertTrue(waitForLabel(send, "label == \"Sending code…\"", timeout: 1.5), "No sending state: \(send.label)")
+        XCTAssertFalse(send.isEnabled, "Send can be tapped twice while sending")
+        enterCode("123456", in: app)
+        let verify = app.buttons["signin-verify"]
+        XCTAssertTrue(waitForLabel(verify, "label == \"Checking code…\"", timeout: 1.5), "No checking state: \(verify.label)")
+        XCTAssertTrue(app.textFields["onboarding-name"].waitForExistence(timeout: 10))
+    }
+
+    func testProfileGamesListEmptyAddDuplicateRemove() {
+        let app = launchChat("onboardingProfile")
+        let empty = element("onboarding-games-empty", in: app)
+        XCTAssertTrue(empty.waitForExistence(timeout: 15), "No empty games state")
+        let field = app.textFields["onboarding-add-game"]
+        guard revealInOnboarding(field, in: app) else { return }
+        field.tap()
+        field.typeText("Halo Infinite")
+        let add = app.buttons["onboarding-add-game-button"]
+        guard revealInOnboarding(add, in: app) else { return }
+        add.tap()
+        let row = element("onboarding-game-Halo Infinite", in: app)
+        XCTAssertTrue(row.waitForExistence(timeout: 3), "The typed game didn't join the list")
+        XCTAssertFalse(empty.exists)
+        guard revealInOnboarding(field, in: app) else { return }
+        field.tap()
+        field.typeText("halo infinite")
+        guard revealInOnboarding(add, in: app) else { return }
+        add.tap()
+        let error = element("onboarding-games-error", in: app)
+        XCTAssertTrue(error.waitForExistence(timeout: 3))
+        XCTAssertEqual(error.label, "halo infinite is already in your list.")
+        let remove = app.buttons["onboarding-remove-Halo Infinite"]
+        XCTAssertEqual(remove.label, "Remove Halo Infinite")
+        guard revealInOnboarding(remove, in: app) else { return }
+        assertHitTarget(remove, "Remove")
+        remove.tap()
+        XCTAssertTrue(empty.waitForExistence(timeout: 3), "The empty state didn't come back")
+    }
+
+    func testProfileNeedsANameBeforeMovingOn() {
+        let app = launchChat("onboardingProfile")
+        let name = app.textFields["onboarding-name"]
+        XCTAssertTrue(name.waitForExistence(timeout: 15))
+        name.tap()
+        name.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 20))
+        let save = app.buttons["onboarding-save-profile"]
+        guard revealInOnboarding(save, in: app) else { return }
+        save.tap()
+        let error = element("onboarding-name-error", in: app)
+        XCTAssertTrue(error.waitForExistence(timeout: 3), "An empty name moved on")
+        XCTAssertEqual(error.label, "Add the name your squad will see.")
+        XCTAssertFalse(app.textFields["squad-name"].exists)
+    }
+
+    func testOnboardingReadsInOrderWithoutSymbolNames() {
+        let app = launchChat("onboarding")
+        let header = element("onboarding-header", in: app)
+        XCTAssertTrue(header.waitForExistence(timeout: 15))
+        let field = app.textFields["signin-email"]
+        let send = app.buttons["signin-send"]
+        XCTAssertEqual(field.label, "Email", "The field's spoken name is its visible label")
+        XCTAssertLessThan(header.frame.minY, field.frame.minY, "The header should come before the field")
+        XCTAssertLessThan(field.frame.minY, send.frame.minY, "The field should come before Send")
+        sendCode(app, email: "nope")
+        XCTAssertTrue(element("signin-error", in: app).waitForExistence(timeout: 3))
+        let symbols = ["exclamationmark", "circle.fill", "xmark"]
+        let format = symbols.map { "label CONTAINS[c] '\($0)'" }.joined(separator: " OR ")
+        let leaked = app.descendants(matching: .any).matching(NSPredicate(format: format))
+        XCTAssertEqual(leaked.count, 0, "An SF Symbol name is exposed: \(leaked.allElementsBoundByIndex.map(\.label))")
+    }
+
+    func testReduceMotionIsRespected() {
+        let app = launchChat("onboarding", extra: ["-reduceMotion"])
+        let container = element("onboarding", in: app)
+        XCTAssertTrue(container.waitForExistence(timeout: 15))
+        XCTAssertEqual(container.value as? String, "Reduced motion")
+        sendCode(app)
+        // No slide: the code step is there and hittable right away.
+        let code = app.textFields["signin-code"]
+        XCTAssertTrue(code.waitForExistence(timeout: 2))
+        XCTAssertTrue(waitUntil(timeout: 1) { code.isHittable }, "The code step was still moving with Reduce Motion on")
+    }
+
+    func testOnboardingWorksAtLargeText() {
+        let app = launchChat("onboarding", largeText: true)
+        let width = app.windows.firstMatch.frame.width
+        let field = app.textFields["signin-email"]
+        XCTAssertTrue(field.waitForExistence(timeout: 15))
+        XCTAssertLessThanOrEqual(field.frame.maxX, width + 1)
+        let send = app.buttons["signin-send"]
+        field.tap()
+        field.typeText("new@squad.app")
+        guard revealInOnboarding(send, in: app) else { return }
+        assertHitTarget(send, "Send code")
+        XCTAssertLessThanOrEqual(send.frame.maxX, width + 1, "Send code runs off screen at AX5: \(send.frame)")
+        send.tap()
+        let resend = app.buttons["signin-resend"]
+        XCTAssertTrue(resend.waitForExistence(timeout: 5))
+        guard revealInOnboarding(resend, in: app) else { return }
+        assertHitTarget(resend, "Send a new code")
+        XCTAssertLessThanOrEqual(resend.frame.maxX, width + 1)
+        enterCode("123456", in: app)
+        let save = app.buttons["onboarding-save-profile"]
+        XCTAssertTrue(save.waitForExistence(timeout: 10))
+        guard revealInOnboarding(save, in: app) else { return }
+        assertHitTarget(save, "Continue")
+        XCTAssertLessThanOrEqual(save.frame.maxX, width + 1)
+    }
+
+    func testProfileStepAtLargeText() {
+        let app = launchChat("onboardingProfile", largeText: true)
+        let width = app.windows.firstMatch.frame.width
+        let suggest = app.buttons["onboarding-suggest-Warzone"]
+        XCTAssertTrue(suggest.waitForExistence(timeout: 15))
+        guard revealInOnboarding(suggest, in: app) else { return }
+        assertHitTarget(suggest, "A suggested game")
+        XCTAssertLessThanOrEqual(suggest.frame.maxX, width + 1, "A suggestion runs off screen at AX5: \(suggest.frame)")
+        suggest.tap()
+        let remove = app.buttons["onboarding-remove-Warzone"]
+        guard revealInOnboarding(remove, in: app) else { return }
+        assertHitTarget(remove, "Remove")
+        XCTAssertGreaterThanOrEqual(remove.frame.width, 43.5)
+        XCTAssertLessThanOrEqual(remove.frame.maxX, width + 1)
+        let save = app.buttons["onboarding-save-profile"]
+        guard revealInOnboarding(save, in: app) else { return }
+        save.tap()
+        let create = app.buttons["create-squad"]
+        XCTAssertTrue(create.waitForExistence(timeout: 5), "No squad step at AX5")
+        guard revealInOnboarding(create, in: app, container: "onboarding-squad") else { return }
+        assertHitTarget(create, "Create squad")
+        XCTAssertLessThanOrEqual(create.frame.maxX, width + 1)
     }
 }

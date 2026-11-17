@@ -48,7 +48,7 @@ struct LaunchOptions {
         return options
     }
 
-    private static func flag(_ name: String, in arguments: [String]) -> String? {
+    static func flag(_ name: String, in arguments: [String]) -> String? {
         guard let index = arguments.firstIndex(of: name), arguments.index(after: index) < arguments.endIndex else {
             return nil
         }
@@ -60,11 +60,13 @@ struct LaunchOptions {
 struct SquadSyncApp: App {
     @State private var store: MockStore
     private let launch: LaunchOptions
+    @UIApplicationDelegateAdaptor(PushAppDelegate.self) private var pushDelegate
 
     init() {
         let launch = LaunchOptions.current()
         self.launch = launch
         _store = State(initialValue: MockStore.seeded(scenario: launch.scenario))
+        PushCoordinator.shared.consumeLaunchArguments()
     }
 
     var body: some Scene {

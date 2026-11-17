@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import UserNotifications
 
 @MainActor
 @Observable
@@ -41,7 +42,7 @@ final class LiveSessionModel {
     var status = ""
     var reconnecting = false
     var notes: [String] = [
-        "Voice, spots, presence, and push stay mock. Leave off -backend live to use that shell."
+        LiveShellCopy.footer
     ]
     var busy = false
 
@@ -230,6 +231,7 @@ final class LiveSessionModel {
             status = "Squad created."
             await loadChat(session)
             startLive(session)
+            settlePush(signedIn: true)
         }
     }
 
@@ -275,6 +277,7 @@ final class LiveSessionModel {
                 )
                 await loadChat(session)
                 startLive(session)
+                settlePush(signedIn: true)
             } catch let problem as InviteProblem {
                 membershipIsError = true
                 status = problem.message
@@ -301,7 +304,10 @@ final class LiveSessionModel {
         guard let session = try? requiredSession(), let current = squad else { return }
         membershipIsError = false
         busy = true
-        defer { busy = false }
+        defer {
+            busy = false
+            settlePush(signedIn: (try? requiredSession()) != nil)
+        }
         do {
             try await squadService(session).renameSquad(
                 squadId: current.id,
@@ -579,6 +585,14 @@ final class LiveSessionModel {
         poll?.cancel()
         poll = nil
         do {
+            if case .unregister(let token) = PushCoordinator.shared.signOutAction(),
+               let session = try? requiredSession() {
+                do {
+                    try await squadService(session).unregisterPushToken(token)
+                } catch {
+                    PushCoordinator.shared.noteStoreFailure(PushStoreFailure.reason(error))
+                }
+            }
             try await auth.signOut()
             status = ""
         } catch {
@@ -590,6 +604,7 @@ final class LiveSessionModel {
         squadNameError = ""
         log = ChatLog()
         phase = .email
+        settlePush(signedIn: false)
     }
 
     /// `-debug-expire-token` rewrites the stored access token's `exp` into the past so a launch exercises refresh.
@@ -675,9 +690,59 @@ final class LiveSessionModel {
             reconnecting = false
             await loadChat(session)
             await loadSpot(session)
+            settlePush(signedIn: true)
         } catch {
             handleSessionError(error)
         }
+    }
+
+    func settlePush(signedIn: Bool) {
+        PushCoordinator.shared.settle(
+            signedIn: signedIn,
+            squadId: squad?.id,
+            membershipKnown: signedIn
+        )
+        if let message = PushCoordinator.shared.focusMessage {
+            followSend = message
+        }
+        guard signedIn else { return }
+        PushCoordinator.shared.askIfReady(signedIn: true, hasSquad: squad != nil)
+        registerForPushTokensIfAllowed()
+    }
+
+    /// Every signed-in launch and foreground. Permission was already decided; this only refreshes the token.
+    func registerForPushTokensIfAllowed() {
+        if let seen = PushCoordinator.shared.seenToken,
+           PushCoordinator.shared.plan(seen) != .none {
+            let token = seen
+            Task { await syncPushToken(token) }
+        }
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            let state = PushAuthState(status: settings.authorizationStatus)
+            DispatchQueue.main.async {
+                PushCoordinator.shared.performRegistration(status: state) {
+                    UIApplication.shared.registerForRemoteNotifications()
+                }
+            }
+        }
+    }
+
+    func syncPushToken(_ token: String) async {
+        guard let session = try? requiredSession() else {
+            PushCoordinator.shared.noteSeen(token)
+            PushCoordinator.shared.noteStoreFailure(PushStoreFailure.signedOut)
+            return
+        }
+        await PushTokenSync.apply(token: token, service: squadService(session), coordinator: .shared)
+    }
+
+    func settleIncomingPush() async {
+        guard let session = try? requiredSession() else {
+            settlePush(signedIn: false)
+            return
+        }
+        if busy { return }
+        await refresh(session)
     }
 
     func catchUp(pinned: Bool) async {
@@ -820,7 +885,10 @@ final class LiveSessionModel {
 
     private func run(_ work: () async throws -> Void) async {
         busy = true
-        defer { busy = false }
+        defer {
+            busy = false
+            settlePush(signedIn: (try? requiredSession()) != nil)
+        }
         do {
             try await work()
         } catch {
@@ -943,6 +1011,13 @@ struct LiveSessionView: View {
                 }
             }
             .padding(SQSpace.l)
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if pushToastText != nil {
+                    pushToast
+                        .padding(.top, SQSpace.s)
+                        .padding(.bottom, SQSpace.xs)
+                }
+            }
             .navigationTitle(squadTitle ?? "SquadSync")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -990,6 +1065,21 @@ struct LiveSessionView: View {
                 .adoptingLaunchDynamicType()
         }
         .task { await model.restore() }
+        .onReceive(NotificationCenter.default.publisher(for: .sq8PushToken)) { note in
+            guard let token = note.object as? String else { return }
+            Task { await model.syncPushToken(token) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .sq8PushRoute)) { _ in
+            Task { await model.settleIncomingPush() }
+        }
+        .task(id: pushToastText) {
+            guard let message = pushToastText else { return }
+            UIAccessibility.post(notification: .announcement, argument: message)
+            try? await Task.sleep(nanoseconds: UInt64(PushToast.lifetime * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            guard pushToastText == message else { return }
+            PushCoordinator.shared.dismissToast()
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { wentToBackground = true }
             guard phase == .active, wentToBackground else { return }
@@ -1048,6 +1138,48 @@ struct LiveSessionView: View {
                 Text(model.status).font(.footnote).foregroundStyle(SQColor.muted)
             }
             notes
+        }
+    }
+
+    private var pushToastText: String? {
+        PushToast.text(
+            notice: PushCoordinator.shared.notice,
+            openedChat: PushCoordinator.shared.openedChat,
+            openedSquad: PushCoordinator.shared.openedSquad
+        )
+    }
+
+    private var pushToast: some View {
+        Group {
+            if let message = pushToastText,
+               let identifier = PushToast.identifier(
+                notice: PushCoordinator.shared.notice,
+                openedChat: PushCoordinator.shared.openedChat,
+                openedSquad: PushCoordinator.shared.openedSquad
+               ) {
+                Button {
+                    PushCoordinator.shared.dismissToast()
+                } label: {
+                    Text(message)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(SQColor.ink)
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, SQSpace.m)
+                        .padding(.vertical, SQSpace.s)
+                        .background(SQColor.card, in: RoundedRectangle(cornerRadius: 12))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 12).stroke(SQColor.line, lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, SQSpace.s)
+                .contentShape(Rectangle())
+                .accessibilityIdentifier(identifier)
+                .accessibilityLabel(message)
+                .accessibilityAddTraits(.isStaticText)
+            }
         }
     }
 
@@ -1162,11 +1294,19 @@ struct LiveSessionView: View {
                 composerBar(proxy)
             }
             .onAppear {
+                if let id = model.followSend {
+                    proxy.scrollTo(id, anchor: .center)
+                    return
+                }
                 guard model.log.ordered.last != nil else { return }
                 Task { @MainActor in
                     scrollChatToBottom(proxy)
                     await model.catchUp(pinned: pinnedToBottom)
                 }
+            }
+            .onChange(of: model.followSend) { _, id in
+                guard let id else { return }
+                proxy.scrollTo(id, anchor: .center)
             }
             .onChange(of: pinnedToBottom) { wasPinned, isPinned in
                 if ChatCatchUp.hidesNewMessages(pinned: isPinned) {

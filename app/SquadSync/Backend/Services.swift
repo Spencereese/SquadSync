@@ -287,6 +287,10 @@ protocol SquadService: AnyObject {
     /// False until `sq8_rename_squad` exists. Only 404 and PGRST202 hide it.
     func renameAvailable() async -> Bool
     func renameSquad(squadId: UUID, name: String?) async throws
+    /// False until `sq8_register_device_token` from 0012 exists.
+    func pushTokenRPCAvailable() async -> Bool
+    func registerPushToken(_ token: String) async throws
+    func unregisterPushToken(_ token: String) async throws
 }
 
 struct MemberRead: Equatable {

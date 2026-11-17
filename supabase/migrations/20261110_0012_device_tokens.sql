@@ -1,5 +1,8 @@
 -- Proposed. Not applied to the live project.
 -- One row per signed-in person per device token. Idempotent.
+-- The iOS app stores the APNs device token with sq8_register_device_token
+-- and deletes the previous token with sq8_unregister_device_token when the
+-- token changes and on sign-out. Do not add a second token table.
 -- Does not grant anon or public. The push sender is not this function:
 -- sq8.message_push_targets is executable by service_role only, when that
 -- role exists, and it is how a server lists tokens for the other members.

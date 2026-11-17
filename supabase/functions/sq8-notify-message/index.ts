@@ -5,6 +5,7 @@
 // recipient list. FCM is HTTP v1 with a service-account JWT, not the legacy
 // server key.
 
+import { apnsAuthorization, apnsHost, buildApnsPayload, missingApnsSecrets } from "./apns.ts";
 import {
   AccessTokenCache,
   type ServiceAccount,
@@ -62,9 +63,12 @@ function readRecord(body: unknown): MessageRecord | null {
 
 async function signServiceJwt(account: ServiceAccount, nowSeconds: number): Promise<string> {
   const signingInput = jwtSigningInput(account, nowSeconds);
+  const pkcs8 = pemToPkcs8(account.private_key);
+  const keyBytes = new ArrayBuffer(pkcs8.byteLength);
+  new Uint8Array(keyBytes).set(pkcs8);
   const key = await crypto.subtle.importKey(
     "pkcs8",
-    pemToPkcs8(account.private_key),
+    keyBytes,
     { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
     false,
     ["sign"],
@@ -104,14 +108,27 @@ async function accessToken(account: ServiceAccount): Promise<string | null> {
 }
 
 Deno.serve(async (request) => {
-  const missing = missingSecrets();
+  const requiredMissing = missingSecrets().filter((name) =>
+    name !== "FCM_SERVICE_ACCOUNT_JSON"
+  );
   const account = readAccount();
-  if (missing.length > 0 || !account) {
+  const apnsEnv = {
+    APNS_KEY_P8: Deno.env.get("APNS_KEY_P8"),
+    APNS_KEY_ID: Deno.env.get("APNS_KEY_ID"),
+    APNS_TEAM_ID: Deno.env.get("APNS_TEAM_ID"),
+    APNS_BUNDLE_ID: Deno.env.get("APNS_BUNDLE_ID"),
+  };
+  const apnsMissing = missingApnsSecrets(apnsEnv);
+  if (requiredMissing.length > 0 || (!account && apnsMissing.length > 0)) {
     return new Response(
       JSON.stringify({
         ok: false,
         reason: "notifications off",
-        missing: account ? missing : [...missing, "FCM_SERVICE_ACCOUNT_JSON"],
+        missing: [
+          ...requiredMissing,
+          ...(account ? [] : ["FCM_SERVICE_ACCOUNT_JSON"]),
+          ...apnsMissing,
+        ],
       }),
       { status: 200, headers: cors },
     );
@@ -152,17 +169,66 @@ Deno.serve(async (request) => {
     );
   }
   const rows = await targets.json() as Array<{ token: string; platform: string }>;
-  const bearer = await accessToken(account);
-  if (!bearer) {
-    return new Response(
-      JSON.stringify({ ok: false, reason: "notifications off", missing: ["oauth"] }),
-      { status: 200, headers: cors },
-    );
+  const bearer = account ? await accessToken(account) : null;
+  let apnsBearer: string | null = null;
+  if (apnsMissing.length === 0) {
+    try {
+      apnsBearer = await apnsAuthorization({
+        keyPem: apnsEnv.APNS_KEY_P8 ?? "",
+        keyId: apnsEnv.APNS_KEY_ID ?? "",
+        teamId: apnsEnv.APNS_TEAM_ID ?? "",
+        nowSeconds: Math.floor(Date.now() / 1000),
+      });
+    } catch {
+      apnsBearer = null;
+    }
   }
 
   let sent = 0;
   let dropped = 0;
+  let skipped = 0;
   for (const row of rows) {
+    if (row.platform === "ios") {
+      if (!apnsBearer || !apnsEnv.APNS_BUNDLE_ID) {
+        skipped += 1;
+        continue;
+      }
+      const response = await fetch(
+        `${apnsHost(Deno.env.get("APNS_SANDBOX") !== "false")}/3/device/${row.token}`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `bearer ${apnsBearer}`,
+            "apns-topic": apnsEnv.APNS_BUNDLE_ID,
+            "apns-push-type": "alert",
+            "apns-priority": "10",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify(buildApnsPayload({
+            squadId: record.squad_id!,
+            messageId: record.id!,
+          })),
+        },
+      );
+      if (response.ok) sent += 1;
+      else if (response.status === 410) {
+        const removed = await fetch(`${url}/rest/v1/rpc/sq8_drop_device_token`, {
+          method: "POST",
+          headers: {
+            apikey: key,
+            authorization: `Bearer ${key}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ device_token: row.token }),
+        });
+        if (removed.ok) dropped += 1;
+      }
+      continue;
+    }
+    if (!bearer || !account) {
+      skipped += 1;
+      continue;
+    }
     const response = await fetch(
       `https://fcm.googleapis.com/v1/projects/${account.project_id}/messages:send`,
       {
@@ -196,7 +262,13 @@ Deno.serve(async (request) => {
     if (removed.ok) dropped += 1;
   }
 
-  return new Response(JSON.stringify({ ok: true, sent, dropped }), {
+  return new Response(JSON.stringify({
+    ok: true,
+    sent,
+    dropped,
+    skipped,
+    apns: apnsMissing.length === 0 ? "ready" : "key missing",
+  }), {
     status: 200,
     headers: cors,
   });

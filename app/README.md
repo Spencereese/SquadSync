@@ -99,7 +99,7 @@ The prototype starts in the inbox. The States menu shows loading, empty, and err
 
 ## Live backend
 
-Mock data is the default. `-backend live` uses the existing Supabase project for email sign-in, your profile, your squad, and squad chat. Voice, spots, presence, and push stay mock.
+Mock data is the default. `-backend live` uses the existing Supabase project for email sign-in, your profile, your squad, and squad chat. Voice stays mock. Spots and presence use the live project when those migrations are applied. Push registration and tap routing are in the app; delivery still needs the human gates in `supabase/functions/sq8-notify-message/README.md` (apply `20261110_0012_device_tokens.sql`, the APNs `.p8`, and the Push capability). `SquadSync.entitlements` is present and is not attached to the unsigned Debug and Release configs.
 
 Before building, create the local config. The anon key is not in git.
 

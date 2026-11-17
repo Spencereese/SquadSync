@@ -91,7 +91,8 @@ final class LiveSessionModel {
     private let mockChat: ChatService?
     private let mockInvites: InviteServing?
     private let mockSpots: SpotServing?
-    private let mockCheckIns: MockCheckInService?
+    /// Internal so model tests can change what the mock server holds.
+    let mockCheckIns: MockCheckInService?
     private var liveSpotService: SupabaseSpotService?
     private var liveSpotToken: String?
     private var realtime: RealtimeClient?
@@ -256,7 +257,7 @@ final class LiveSessionModel {
         case .whosInFailed:
             return MockCheckInService(rows: WhosInSeed.rows(viewerId: viewerId, squadId: squad, now: now, details: false), readsDown: true)
         case .whosInSlow:
-            return MockCheckInService(rows: WhosInSeed.rows(viewerId: viewerId, squadId: squad, now: now, details: false), readDelay: 3)
+            return MockCheckInService(rows: WhosInSeed.rows(viewerId: viewerId, squadId: squad, now: now, details: false), readDelay: 3, waitsForSheet: true)
         case .whosInNoServer:
             return MockCheckInService(caps: .unknown)
         default:
@@ -924,6 +925,15 @@ final class LiveSessionModel {
         }
     }
 
+    /// A realtime check-in delete. Every squad's deletes arrive, so this rereads
+    /// only when the delete could be someone this squad shows.
+    func checkInRemoved(userId: UUID?) async {
+        guard let squad else { return }
+        let members = Set(squad.members.map(\.id))
+        guard CheckInChange.rereads(afterRemoving: userId, memberIds: members, loaded: checkIns) else { return }
+        await loadWhosIn()
+    }
+
     /// Retry from the sheet's error row. The mock server comes back so both states can be seen.
     func retryWhosIn() async {
         mockCheckIns?.recover()
@@ -1127,7 +1137,8 @@ final class LiveSessionModel {
             reconnecting = false
             await loadChat(session)
             await loadSpot(session)
-            await loadWhosIn()
+            // The slow mock skips this so the sheet's own read is the one that loads.
+            if mockCheckIns?.waitsForSheet != true { await loadWhosIn() }
             settlePush(signedIn: true)
         } catch {
             handleSessionError(error)
@@ -1289,6 +1300,8 @@ final class LiveSessionModel {
             await loadSpot(session)
         case .checkIns:
             await loadWhosIn()
+        case .checkInRemoved(let user):
+            await checkInRemoved(userId: user)
         case .read(let read):
             var book = ReceiptBook(reads: reads)
             book.apply(read)

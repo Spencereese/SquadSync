@@ -198,6 +198,9 @@ final class MockCheckInService: CheckInServing {
     /// Reads fail until `recover()`; Retry in the sheet calls it through the model.
     var readsDown: Bool
     var readDelay: TimeInterval
+    /// The launch read doesn't happen, so the sheet's own (slow) read is the first one
+    /// and its loading row shows, like opening Who's in before the first read is back.
+    var waitsForSheet: Bool
     /// Every write is refused with this text.
     var refuseWrites: String?
     private(set) var writes: [CheckInWrite] = []
@@ -209,6 +212,7 @@ final class MockCheckInService: CheckInServing {
         steam: SteamRead = .notSetUp,
         readsDown: Bool = false,
         readDelay: TimeInterval = 0,
+        waitsForSheet: Bool = false,
         refuseWrites: String? = nil
     ) {
         self.caps = caps
@@ -216,6 +220,7 @@ final class MockCheckInService: CheckInServing {
         self.steamRead = steam
         self.readsDown = readsDown
         self.readDelay = readDelay
+        self.waitsForSheet = waitsForSheet
         self.refuseWrites = refuseWrites
     }
 

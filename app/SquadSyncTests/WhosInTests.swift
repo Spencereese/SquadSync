@@ -425,6 +425,37 @@ final class WhosInTests: XCTestCase {
         let failed = await SupabaseCheckInService(config: config, accessToken: "t", transport: broken).steam()
         XCTAssertEqual(failed, .failed)
     }
+
+    // MARK: Realtime deletes (Clear)
+
+    func testCheckInChangesInThisSquadReread() {
+        let id = squad.uuidString.lowercased()
+        XCTAssertEqual(CheckInChange.parse(kind: "INSERT", record: ["squad_id": id, "user_id": alex.uuidString], previous: [:], squadId: squad), .changed)
+        XCTAssertEqual(CheckInChange.parse(kind: "UPDATE", record: ["squad_id": id], previous: [:], squadId: squad), .changed)
+        XCTAssertNil(CheckInChange.parse(kind: "UPDATE", record: ["squad_id": UUID().uuidString], previous: [:], squadId: squad), "Another squad's write is ignored")
+    }
+
+    func testDeleteWithOnlyThePrimaryKeyStillCounts() {
+        // Under RLS the unfiltered delete may carry nothing but user_id.
+        XCTAssertEqual(
+            CheckInChange.parse(kind: "DELETE", record: [:], previous: ["user_id": alex.uuidString.lowercased()], squadId: squad),
+            .removed(userId: alex)
+        )
+        XCTAssertEqual(CheckInChange.parse(kind: "DELETE", record: [:], previous: [:], squadId: squad), .removed(userId: nil))
+        XCTAssertNil(
+            CheckInChange.parse(kind: "DELETE", record: [:], previous: ["user_id": alex.uuidString, "squad_id": UUID().uuidString], squadId: squad),
+            "A delete that says it's another squad's is ignored"
+        )
+    }
+
+    func testDeleteRereadsOnlyForSomeoneThisSquadShows() {
+        let members: Set<UUID> = [viewer, alex]
+        let loaded = [record(jordan, .availableNow, until: 3600)]
+        XCTAssertTrue(CheckInChange.rereads(afterRemoving: alex, memberIds: members, loaded: loaded), "A member cleared")
+        XCTAssertTrue(CheckInChange.rereads(afterRemoving: jordan, memberIds: members, loaded: loaded), "Left the squad, row still showing")
+        XCTAssertTrue(CheckInChange.rereads(afterRemoving: nil, memberIds: members, loaded: loaded), "Can't place it, so reread")
+        XCTAssertFalse(CheckInChange.rereads(afterRemoving: sam, memberIds: members, loaded: loaded), "Someone in another squad")
+    }
 }
 
 /// Every request fails as if offline.
@@ -525,5 +556,30 @@ final class WhosInModelTests: XCTestCase {
         let empty = self.model(.whosInEmpty)
         await empty.loadWhosIn()
         XCTAssertTrue(empty.whosInEntries(now: Date()).allSatisfy(\.isViewer))
+    }
+
+    func testRealtimeDeleteRereadsTheSquadsCheckIns() async {
+        let model = model(.whosInBasic)
+        await model.loadWhosIn()
+        XCTAssertTrue(model.checkIns.contains { $0.userId == SpotSeed.alex })
+        // Alex clears on another phone: the server row goes, and only the delete arrives.
+        model.mockCheckIns?.rows[SpotSeed.alex] = nil
+        await model.checkInRemoved(userId: SpotSeed.alex)
+        XCTAssertFalse(model.checkIns.contains { $0.userId == SpotSeed.alex }, "The delete didn't reread")
+        XCTAssertEqual(model.whosInLoad, .loaded)
+        let entry = model.whosInEntries(now: Date()).first { $0.id == SpotSeed.alex }
+        XCTAssertEqual(entry?.availability, .notCheckedIn)
+    }
+
+    func testRealtimeDeleteFromAnotherSquadDoesNotReread() async {
+        let model = model(.whosInBasic)
+        await model.loadWhosIn()
+        // Change the server without telling the model, then send a stranger's delete.
+        model.mockCheckIns?.rows[SpotSeed.jordan] = nil
+        await model.checkInRemoved(userId: UUID())
+        XCTAssertTrue(model.checkIns.contains { $0.userId == SpotSeed.jordan }, "A stranger's delete reread the squad")
+        // A delete with no user id can't be placed, so it rereads.
+        await model.checkInRemoved(userId: nil)
+        XCTAssertFalse(model.checkIns.contains { $0.userId == SpotSeed.jordan })
     }
 }

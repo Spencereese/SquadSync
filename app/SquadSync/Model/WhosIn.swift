@@ -625,3 +625,41 @@ enum WhosInLoad: Equatable {
         return .failed(WhosIn.failedPrefix)
     }
 }
+
+// MARK: Realtime
+
+/// A realtime change on `sq8_check_ins`, reduced to what the app does with it.
+///
+/// Inserts and updates come through the squad-filtered subscription. Clear is a
+/// DELETE, and Supabase doesn't deliver DELETEs to a filtered subscription, so the
+/// socket also listens to every check-in delete. Under RLS a delete may carry only
+/// the primary key (`user_id`), so it can't always say which squad it was in.
+enum CheckInChange: Equatable {
+    /// A row in this squad was written. Reread the squad's check-ins.
+    case changed
+    /// A row was deleted. The user id is there when the server sent it.
+    case removed(userId: UUID?)
+
+    /// Nil when the change is clearly another squad's.
+    static func parse(kind: String, record: [String: Any], previous: [String: Any], squadId: UUID) -> CheckInChange? {
+        if kind.uppercased() == "DELETE" {
+            if let squad = uuid(previous["squad_id"]), squad != squadId { return nil }
+            return .removed(userId: uuid(previous["user_id"]))
+        }
+        if let squad = uuid(record["squad_id"]), squad != squadId { return nil }
+        return .changed
+    }
+
+    /// Deletes arrive from every squad, so only reread for someone this squad shows:
+    /// a member, or someone with a loaded row (the trigger clears a check-in when its
+    /// owner leaves, possibly after the roster already dropped them). A delete with no
+    /// user id can't be placed, so it rereads.
+    static func rereads(afterRemoving userId: UUID?, memberIds: Set<UUID>, loaded: [CheckInRecord]) -> Bool {
+        guard let userId else { return true }
+        return memberIds.contains(userId) || loaded.contains { $0.userId == userId }
+    }
+
+    private static func uuid(_ value: Any?) -> UUID? {
+        (value as? String).flatMap(UUID.init(uuidString:))
+    }
+}

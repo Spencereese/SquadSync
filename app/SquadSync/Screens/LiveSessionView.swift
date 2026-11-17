@@ -2121,6 +2121,7 @@ struct LiveSessionView: View {
     /// Opened from the + menu or a bare `/spots`.
     private var spotCallSheet: some View {
         SpotCallSheet(model: model)
+            .adoptingLaunchDynamicType()
     }
 
     private var membershipSheet: some View {
@@ -2685,6 +2686,8 @@ private struct SpotCallSheet: View {
     let model: LiveSessionModel
     @FocusState private var spotGameFocused: Bool
     @State private var spotSheetDetent: PresentationDetent = .medium
+    // Read here, inside the launch Dynamic Type override applied at the call site.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         ScrollView {
@@ -2757,10 +2760,18 @@ private struct SpotCallSheet: View {
         .onChange(of: spotGameFocused) { _, focused in
             if focused { spotSheetDetent = .large }
         }
-        .onAppear { spotSheetDetent = .medium }
+        // At accessibility text sizes the medium detent pushes the field below the fold,
+        // so those sizes open (and stay) large.
+        .onAppear { spotSheetDetent = Self.openingDetent(for: dynamicTypeSize) }
+        .onChange(of: dynamicTypeSize) { _, size in
+            if size.isAccessibilitySize { spotSheetDetent = .large }
+        }
         .presentationDetents([.medium, .large], selection: $spotSheetDetent)
         .presentationDragIndicator(.visible)
         .presentationBackground(SQColor.surface0)
-        .adoptingLaunchDynamicType()
+    }
+
+    static func openingDetent(for size: DynamicTypeSize) -> PresentationDetent {
+        size.isAccessibilitySize ? .large : .medium
     }
 }

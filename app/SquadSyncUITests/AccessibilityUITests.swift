@@ -1937,26 +1937,28 @@ final class AccessibilityUITests: XCTestCase {
         static let invalidEmail = "Enter an email like name@example.com."
     }
 
-    /// Drags the onboarding scroll view, above the keyboard when it's up, until the
-    /// target is hittable. Bounded; down first, then back up.
+    /// Swipes the onboarding scroll view slowly until the target is hittable and, when
+    /// the keyboard is up, above it. Bounded: up to 8 swipes up, then up to 8 back down.
+    /// Fixed-point drags only moved ~380pt each and snapped back at AX5, where Continue
+    /// sits ~1700pt down the profile step.
     @discardableResult
     private func revealInOnboarding(_ target: XCUIElement, in app: XCUIApplication, container: String = "onboarding", file: StaticString = #filePath, line: UInt = #line) -> Bool {
         let scroller = element(container, in: app)
-        let window = app.windows.firstMatch
-        for step in 0..<14 {
-            if target.exists && target.isHittable { return true }
+        func reachable() -> Bool {
+            guard target.exists, target.isHittable else { return false }
             let keyboard = app.keyboards.firstMatch
-            let top = scroller.frame.minY
-            let bottom = keyboard.exists ? min(keyboard.frame.minY, scroller.frame.maxY) : scroller.frame.maxY
-            guard bottom - top > 40 else { break }
-            let x = scroller.frame.maxX - 12
-            let origin = window.coordinate(withNormalizedOffset: .zero)
-            let upper = origin.withOffset(CGVector(dx: x, dy: top + (bottom - top) * 0.3))
-            let lower = origin.withOffset(CGVector(dx: x, dy: top + (bottom - top) * 0.75))
-            let (from, to) = step >= 9 ? (upper, lower) : (lower, upper)
-            from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.1)
+            return !keyboard.exists || target.frame.maxY <= keyboard.frame.minY
         }
-        let found = target.exists && target.isHittable
+        for swipe in 0..<16 {
+            if reachable() { return true }
+            guard scroller.exists else { break }
+            if swipe < 8 {
+                scroller.swipeUp(velocity: .slow)
+            } else {
+                scroller.swipeDown(velocity: .slow)
+            }
+        }
+        let found = reachable()
         XCTAssertTrue(found, "Couldn't scroll onboarding to \(target)", file: file, line: line)
         return found
     }

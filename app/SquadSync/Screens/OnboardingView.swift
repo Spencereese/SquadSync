@@ -37,6 +37,7 @@ struct OnboardingView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollDismissesKeyboard(.interactively)
+        .statusBarScrim()
         .animation(motion.animation(.stepChange), value: step)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("onboarding")
@@ -348,6 +349,7 @@ struct OnboardingSquadStep: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollDismissesKeyboard(.interactively)
+        .statusBarScrim()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("onboarding-squad")
         .accessibilityValue(motion.label)
@@ -521,6 +523,24 @@ struct OnboardingSecondaryButton: View {
     }
 }
 
+/// With the navigation bar hidden, scrolled content would slide under the status
+/// bar and run into the clock. A zero-height top inset whose background fills the
+/// top safe area keeps that strip opaque.
+private struct StatusBarScrim: ViewModifier {
+    func body(content: Content) -> some View {
+        content.safeAreaInset(edge: .top, spacing: 0) {
+            Color.clear
+                .frame(height: 0)
+                .background(SQColor.surface0)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+extension View {
+    func statusBarScrim() -> some View { modifier(StatusBarScrim()) }
+}
+
 /// An error line. It appears with the motion policy and VoiceOver reads it out.
 struct OnboardingError: View {
     let text: String
@@ -530,19 +550,18 @@ struct OnboardingError: View {
     var body: some View {
         Group {
             if !text.isEmpty {
-                HStack(alignment: .firstTextBaseline, spacing: SQSpace.xs) {
-                    Image(systemName: "exclamationmark.circle.fill")
-                        .accessibilityHidden(true)
-                    Text(text)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .font(SQType.caption)
-                .foregroundStyle(SQColor.danger)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(text)
-                .accessibilityIdentifier(identifier)
-                .transition(motion.appearTransition)
-                .onAppear { UIAccessibility.post(notification: .announcement, argument: text) }
+                // One Text with the icon inline: a separate hidden Image still showed up
+                // to VoiceOver on iOS 26 as "exclamationmark.circle.fill".
+                Text("\(Image(systemName: "exclamationmark.circle.fill")) \(text)")
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .font(SQType.caption)
+                    .foregroundStyle(SQColor.danger)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(text)
+                    .accessibilityIdentifier(identifier)
+                    .transition(motion.appearTransition)
+                    .onAppear { UIAccessibility.post(notification: .announcement, argument: text) }
             }
         }
         .animation(motion.animation(.appear), value: text)

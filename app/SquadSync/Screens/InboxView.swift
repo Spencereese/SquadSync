@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct InboxView: View {
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Bindable var store: MockStore
     @State private var channelsOpen = false
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -78,7 +79,7 @@ struct InboxView: View {
         VStack(alignment: .leading, spacing: SQSpace.s) {
             if let space = visible.first(where: { $0.kind == .squadSpace }) {
                 Button {
-                    withAnimation(.snappy) { channelsOpen.toggle() }
+                    withMotion(.current(systemReduceMotion: systemReduceMotion), .toggle) { channelsOpen.toggle() }
                 } label: {
                     HStack {
                         Image(systemName: "person.3.fill")

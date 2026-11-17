@@ -2020,6 +2020,9 @@ struct LiveSessionView: View {
             .padding(SQSpace.xl)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // Keeps "Call spots" off the keyboard's suggestion bar when the game field
+        // is focused at large text.
+        .safeAreaPadding(.bottom, SQSpace.l)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(SQColor.surface0)

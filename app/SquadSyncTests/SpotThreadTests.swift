@@ -238,4 +238,13 @@ final class SpotThreadModelTests: XCTestCase {
         let thread = SpotThread.history(past: model.spotHistory, excluding: model.spot?.id, viewerId: model.viewerId, now: Date())
         XCTAssertEqual(thread.map(\.id), [first].compactMap { $0 })
     }
+
+    func testHistoryCardWrapsTheWholeGameNameAtAccessibilitySizes() {
+        let large = SpotHistoryCard.Layout(accessibilitySize: true)
+        XCTAssertTrue(large.stacksTime, "At AX sizes the time should sit under the game, not beside it")
+        XCTAssertNil(large.gameLineLimit, "At AX sizes the game name must wrap fully")
+        let regular = SpotHistoryCard.Layout(accessibilitySize: false)
+        XCTAssertFalse(regular.stacksTime)
+        XCTAssertEqual(regular.gameLineLimit, 2)
+    }
 }

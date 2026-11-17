@@ -6,20 +6,33 @@ struct SpotHistoryCard: View {
     let call: SpotCall
     let outcome: SpotOutcome
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    /// At accessibility sizes the game gets its own line and wraps fully, with the
+    /// time underneath, so a long name is never cut off.
+    struct Layout: Equatable {
+        let stacksTime: Bool
+        let gameLineLimit: Int?
+
+        init(accessibilitySize: Bool) {
+            stacksTime = accessibilitySize
+            gameLineLimit = accessibilitySize ? nil : 2
+        }
+    }
+
     var body: some View {
         let time = SpotHistoryCard.time(SpotThread.endedAt(call))
+        let layout = Layout(accessibilitySize: typeSize.isAccessibilitySize)
         VStack(alignment: .leading, spacing: 2) {
-            HStack(alignment: .firstTextBaseline, spacing: SQSpace.s) {
-                Text(call.game)
-                    .font(SQType.label)
-                    .foregroundStyle(SQColor.ink)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: SQSpace.xs)
-                Text(time)
-                    .font(SQType.micro.monospacedDigit())
-                    .foregroundStyle(SQColor.subtle)
-                    .lineLimit(1)
+            if layout.stacksTime {
+                gameText(layout)
+                timeText(time)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: SQSpace.s) {
+                    gameText(layout)
+                    Spacer(minLength: SQSpace.xs)
+                    timeText(time)
+                }
             }
             Text(SpotThread.detail(call, outcome: outcome))
                 .font(SQType.caption)
@@ -40,6 +53,21 @@ struct SpotHistoryCard: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(SpotThread.spoken(call, outcome: outcome, time: time))
         .accessibilityIdentifier("spot-history")
+    }
+
+    private func gameText(_ layout: Layout) -> some View {
+        Text(call.game)
+            .font(SQType.label)
+            .foregroundStyle(SQColor.ink)
+            .lineLimit(layout.gameLineLimit)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func timeText(_ time: String) -> some View {
+        Text(time)
+            .font(SQType.micro.monospacedDigit())
+            .foregroundStyle(SQColor.subtle)
+            .lineLimit(1)
     }
 
     private var tint: Color {

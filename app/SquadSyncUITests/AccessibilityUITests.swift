@@ -1097,36 +1097,129 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertGreaterThan(list.frame.height, app.windows.firstMatch.frame.height * 0.4, "The chat dropped under 40% with the roster open")
     }
 
+    /// The roster's empty space must let a tap reach the message button under it.
+    /// The tap point is a real hittable message button under an empty part of the
+    /// open roster. A control tap at the same point with the roster closed must
+    /// select the message first, so the test can't pass on a point that never works.
     func testPresenceRosterPassesEmptyTapsToTheChat() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-uitest-largeText"]
         app.launch()
 
+        // Find the point with the roster open.
+        openRoster(app)
+        guard let pick = emptyRosterPointOverMessageButton(app) else {
+            XCTFail("No hittable message button lies under an empty area of the open roster. roster \(rosterFrame(app)), kids \(rosterKidFrames(app)), buttons \(messageButtonFrames(app))")
+            return
+        }
+
+        // Control: roster closed, same point, the tap selects the message.
+        app.buttons["presence-toggle"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["presence-strip"].waitForNonExistence(timeout: 5), "The roster didn't close for the control tap")
+        let controlButton = messageButton(app, label: pick.label)
+        XCTAssertTrue(controlButton.exists && controlButton.isHittable, "Control: message button '\(pick.label)' isn't hittable with the roster closed")
+        XCTAssertTrue(controlButton.frame.contains(pick.point), "Control: the point \(pick.point) left '\(pick.label)' \(controlButton.frame) when the roster closed")
+        tap(app, at: pick.point)
+        XCTAssertTrue(app.buttons["react"].waitForExistence(timeout: 3), "Control: with the roster closed, tapping '\(pick.label)' at \(pick.point) didn't show React, so the point is not a working tap target")
+
+        // Dismiss: the app has no deselect, so relaunch to clear the selection.
+        app.terminate()
+        app.launch()
+        XCTAssertFalse(app.buttons["react"].waitForExistence(timeout: 2), "React was still showing after relaunch")
+
+        // Roster open, same point, the tap reaches the same message.
+        openRoster(app)
+        let roster = app.descendants(matching: .any)["presence-strip"]
+        XCTAssertTrue(roster.frame.contains(pick.point), "The roster moved off the point \(pick.point), roster \(roster.frame)")
+        let kids = rosterKidFrames(app)
+        XCTAssertFalse(kids.contains { $0.insetBy(dx: -4, dy: -4).contains(pick.point) }, "The point \(pick.point) is now on a roster control, kids \(kids)")
+        let button = messageButton(app, label: pick.label)
+        XCTAssertTrue(button.frame.contains(pick.point), "The point \(pick.point) left '\(pick.label)' \(button.frame) with the roster open")
+        let voice = app.buttons["voice-room-pill"]
+        let voiceLabel = voice.exists ? voice.label : nil
+        tap(app, at: pick.point)
+        XCTAssertTrue(app.buttons["react"].waitForExistence(timeout: 3), "The tap on the roster's empty area at \(pick.point) did not reach '\(pick.label)' under it")
+        XCTAssertTrue(roster.exists, "The tap closed the roster, so it hit a roster control")
+        XCTAssertFalse(app.descendants(matching: .any)["squad-count"].exists, "The tap opened the squad panel, so it hit a roster row or 'more'")
+        if let voiceLabel {
+            XCTAssertEqual(app.buttons["voice-room-pill"].label, voiceLabel, "The tap toggled the voice room")
+        }
+    }
+
+    private struct RosterTapPoint {
+        let point: CGPoint
+        let label: String
+    }
+
+    private func openRoster(_ app: XCUIApplication) {
         let toggle = app.buttons["presence-toggle"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 15))
         toggle.tap()
+        XCTAssertTrue(app.descendants(matching: .any)["presence-strip"].waitForExistence(timeout: 5), "The roster didn't open")
+    }
+
+    private func rosterFrame(_ app: XCUIApplication) -> CGRect {
+        app.descendants(matching: .any)["presence-strip"].frame
+    }
+
+    /// Every element inside the roster (rows, their text, the voice pill, "more").
+    private func rosterKidFrames(_ app: XCUIApplication) -> [CGRect] {
         let roster = app.descendants(matching: .any)["presence-strip"]
-        XCTAssertTrue(roster.waitForExistence(timeout: 5))
-        let frame = roster.frame
-        let candidates = [
-            CGPoint(x: frame.maxX - 10, y: frame.minY + 6),
-            CGPoint(x: frame.maxX - 10, y: frame.maxY - 6)
-        ]
-        let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'message-row-'"))
-        var target: CGPoint?
-        for point in candidates where target == nil {
-            for index in 0..<rows.count where rows.element(boundBy: index).frame.contains(point) {
-                target = point
-                break
+        let whole = roster.frame
+        return roster.descendants(matching: .any).allElementsBoundByIndex
+            .map(\.frame)
+            .filter { !$0.isEmpty && $0 != whole }
+    }
+
+    /// Buttons in the message list that are not part of the roster. The control tap
+    /// checks the chosen one is hittable with the roster closed.
+    private func messageButtons(_ app: XCUIApplication) -> [XCUIElement] {
+        let kids = Set(rosterKidFrames(app).map { "\($0)" })
+        return app.scrollViews["message-list"].buttons.allElementsBoundByIndex.filter { button in
+            let id = button.identifier
+            return !id.hasPrefix("presence-") && id != "voice-room-pill"
+                && !button.label.isEmpty
+                && !kids.contains("\(button.frame)")
+        }
+    }
+
+    private func messageButtonFrames(_ app: XCUIApplication) -> [String] {
+        messageButtons(app).map { "'\($0.label)' \($0.frame)" }
+    }
+
+    private func messageButton(_ app: XCUIApplication, label: String) -> XCUIElement {
+        app.scrollViews["message-list"].buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
+    }
+
+    /// Scans the open roster for a point inside a hittable message button that no
+    /// roster element covers, with a 4 pt margin on every side.
+    private func emptyRosterPointOverMessageButton(_ app: XCUIApplication) -> RosterTapPoint? {
+        let roster = rosterFrame(app).insetBy(dx: 4, dy: 4)
+        let list = app.scrollViews["message-list"].frame
+        let kids = rosterKidFrames(app).map { $0.insetBy(dx: -4, dy: -4) }
+        for button in messageButtons(app) {
+            let area = roster.intersection(button.frame.insetBy(dx: 4, dy: 4)).intersection(list)
+            guard !area.isNull, !area.isEmpty else { continue }
+            var y = area.minY
+            while y <= area.maxY {
+                var x = area.maxX
+                while x >= area.minX {
+                    let point = CGPoint(x: x, y: y)
+                    if !kids.contains(where: { $0.contains(point) }) {
+                        return RosterTapPoint(point: point, label: button.label)
+                    }
+                    x -= 4
+                }
+                y += 4
             }
         }
-        guard let target else {
-            XCTFail("No message row lies under an empty corner of the roster, roster \(frame)")
-            return
-        }
+        return nil
+    }
+
+    private func tap(_ app: XCUIApplication, at point: CGPoint) {
         let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-        origin.withOffset(CGVector(dx: target.x, dy: target.y)).tap()
-        XCTAssertTrue(app.buttons["react"].waitForExistence(timeout: 3), "The tap on the roster's empty corner did not reach the message under it")
+        origin.withOffset(CGVector(dx: point.x, dy: point.y)).tap()
     }
 }
+
 

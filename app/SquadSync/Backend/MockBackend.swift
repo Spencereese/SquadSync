@@ -283,11 +283,34 @@ final class MockSpotService: SpotServing {
     private let ownerId: UUID
     private let now: () -> Date
 
-    init(viewerId: UUID, ownerId: UUID, call: SpotCall?, now: @escaping () -> Date = { Date() }) {
+    /// Finished calls, newest last. A new call archives the one it replaces.
+    private var past: [SpotCall]
+    /// Mock of a server without the spot RPCs or the history read, for the honest-degrade UI.
+    private let serverMissing: Bool
+
+    init(
+        viewerId: UUID,
+        ownerId: UUID,
+        call: SpotCall?,
+        past: [SpotCall] = [],
+        serverMissing: Bool = false,
+        now: @escaping () -> Date = { Date() }
+    ) {
         self.viewerId = viewerId
         self.ownerId = ownerId
         self.call = call
+        self.past = past
+        self.serverMissing = serverMissing
         self.now = now
+    }
+
+    func history(squadId: UUID, limit: Int) async throws -> [SpotCall] {
+        if serverMissing { throw BackendFailure.notSetUp(.squad) }
+        var finished = past.filter { $0.squadId == squadId }
+        if let call, call.squadId == squadId, call.closedAt != nil {
+            finished.append(call)
+        }
+        return Array(finished.sorted { $0.calledAt > $1.calledAt }.prefix(max(1, limit)))
     }
 
     func current(squadId: UUID) async throws -> SpotCall? {
@@ -296,10 +319,20 @@ final class MockSpotService: SpotServing {
     }
 
     func call(squadId: UUID, game: String, startsAt: Date) async throws -> UUID {
+        if serverMissing { throw SpotProblem.unavailable }
         let label = game.trimmingCharacters(in: .whitespacesAndNewlines)
         if label.isEmpty { throw SpotProblem.gameBlank }
         if let existing = call, blocksAnotherCall(existing) {
             throw SpotProblem.alreadyOpen
+        }
+        if var replaced = call {
+            // 0013 closes the old unlocked row when the next call starts.
+            if replaced.closedAt == nil {
+                replaced.closedAt = now()
+                replaced.status = now() >= replaced.joinUntil ? .expired : .ended
+            }
+            past.removeAll { $0.id == replaced.id }
+            past.append(replaced)
         }
         let created = SpotCall(
             id: UUID(),

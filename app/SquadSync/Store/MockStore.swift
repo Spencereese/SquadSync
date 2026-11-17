@@ -303,6 +303,10 @@ enum LaunchScenario: String {
     case spotCallExpired
     /// Seven members, so one join fills the squad and the next is rejected.
     case almostFull
+    /// No open call. Two finished calls sit in the thread between messages.
+    case spotHistory
+    /// The server has no spot RPCs or history read, so the app has to say so.
+    case spotServerMissing
 }
 
 enum Seed {
@@ -346,7 +350,7 @@ enum Seed {
                 Seat(userId: "jordan", status: .ready),
                 Seat(userId: "quinn", status: .ready)
             ]
-        case .noSquad, .invite, .spotCall, .spotCallMine, .spotCallNearlyFull, .spotCallExpired, .almostFull:
+        case .noSquad, .invite, .spotCall, .spotCallMine, .spotCallNearlyFull, .spotCallExpired, .almostFull, .spotHistory, .spotServerMissing:
             seats = []
         }
         return Party(

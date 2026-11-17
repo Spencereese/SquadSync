@@ -39,6 +39,14 @@ final class LiveSessionModel {
     /// How many times the spot card was read. A failed call increments it.
     var spotLoads = 0
     var spotServer = SpotServerCapabilities.unavailable
+    /// Finished calls from the server, shown as compact cards in the thread.
+    var spotHistory: [SpotCall] = []
+    /// Set when the history read fails. The thread says so instead of looking empty.
+    var spotHistoryNote = ""
+    var spotLoad = SpotLoadState.idle
+    /// The call sheet opened from the composer's + menu or a bare `/spots`.
+    var spotSheetOpen = false
+    var spotSheet = SpotSheetState.editing
     var status = ""
     var reconnecting = false
     var notes: [String] = [
@@ -109,6 +117,33 @@ final class LiveSessionModel {
                 }
                 self.spot = card
                 self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: card)
+            } else if scenario == .spotHistory || scenario == .spotServerMissing {
+                let seeded = squads.seedSpotSquad(ownerId: session.userId)
+                self.squad = seeded
+                let now = Date()
+                if scenario == .spotHistory {
+                    let past = SpotSeed.history(ownerId: session.userId, squadId: seeded.id, now: now)
+                    self.spotHistory = past
+                    self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: nil, past: past)
+                    let lines: [(String, TimeInterval, UUID)] = [
+                        ("Who's on tonight?", -55 * 60, SpotSeed.alex),
+                        ("Apex was fun", -20 * 60, SpotSeed.jordan),
+                        ("Again later?", -5 * 60, session.userId)
+                    ]
+                    for (index, line) in lines.enumerated() {
+                        let message = RemoteMessage(
+                            id: UUID(uuidString: "00000000-0000-0000-0000-00000000020\(index + 1)")!,
+                            squadId: seeded.id,
+                            senderId: line.2,
+                            body: line.0,
+                            sentAt: now.addingTimeInterval(line.1)
+                        )
+                        chat.seed(message)
+                        log.ingest([message.entry()])
+                    }
+                } else {
+                    self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: nil, serverMissing: true)
+                }
             } else {
                 self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: nil)
                 if scenario == .almostFull {
@@ -419,8 +454,10 @@ final class LiveSessionModel {
         guard let squad else { return }
         spotLoads += 1
         defer { scheduleExpiryRead(session) }
+        spotLoad = SpotLoadState.beginning(spotLoad, hasCard: spot != nil)
         let service = spotService(session)
         spotServer = await service.serverCapabilities()
+        await loadSpotHistory(service, squad: squad)
         do {
             let loaded = try await service.current(squadId: squad.id)
             if var loaded {
@@ -438,31 +475,93 @@ final class LiveSessionModel {
             } else if mockSpots == nil {
                 spot = nil
             }
+            spotLoad = SpotLoadState.finished(failure: nil)
         } catch {
+            spotLoad = SpotLoadState.finished(failure: SpotThread.loadFailed)
             report(error)
         }
     }
 
-    func callSpots() async {
+    /// Read-only. A failure keeps the cards already shown and adds an honest note.
+    private func loadSpotHistory(_ service: SpotServing, squad: SquadRecord) async {
+        do {
+            let past = try await service.history(squadId: squad.id, limit: SpotThread.historyLimit)
+            spotHistory = past
+            spotHistoryNote = ""
+        } catch {
+            spotHistoryNote = SpotThread.historyUnavailable
+        }
+    }
+
+    func retrySpotLoad() async {
+        await reloadSpotAfterFailure()
+    }
+
+    /// The composer's + menu and a bare `/spots`. An active call keeps its card and
+    /// says why instead of opening a second call.
+    func openSpotCall(now: Date = Date()) {
+        guard SpotThread.canCallNow(spot, now: now) else {
+            spotNote = SpotProblem.alreadyOpen.message
+            return
+        }
+        if spotGame.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let fallback = defaultGame.trimmingCharacters(in: .whitespacesAndNewlines)
+            spotGame = fallback.isEmpty ? "Warzone" : fallback
+        }
+        spotSheet = .editing
+        spotSheetOpen = true
+    }
+
+    func callSpotsFromSheet() async {
+        spotSheet = .calling
+        let called = await callSpots()
+        spotSheet = SpotSheetState.after(success: called, message: spotNote)
+        if called { spotSheetOpen = false }
+    }
+
+    /// `/spots` opens the sheet. `/spots Apex` calls right away.
+    func runSpotCommand(_ command: SpotCommand, now: Date = Date()) async {
+        switch command {
+        case .call(let game):
+            guard SpotThread.canCallNow(spot, now: now) else {
+                spotNote = SpotProblem.alreadyOpen.message
+                return
+            }
+            if let game {
+                spotGame = game
+                await callSpots()
+            } else {
+                openSpotCall(now: now)
+            }
+        }
+    }
+
+    /// True when the call went through.
+    @discardableResult
+    func callSpots() async -> Bool {
         let game = spotGame.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !game.isEmpty else {
             spotNote = SpotProblem.gameBlank.message
-            return
+            return false
         }
-        guard spotGate.begin() else { return }
+        guard spotGate.begin() else { return false }
         defer { spotGate.finish() }
         do {
             let session = try requiredSession()
-            guard let squad else { return }
+            guard let squad else { return false }
             _ = try await spotService(session).call(squadId: squad.id, game: game, startsAt: Date())
             await loadSpot(session)
             spotNote = "Calling spots: \(game), 8 seats."
+            return true
         } catch let problem as SpotProblem {
             spotNote = problem.message
             await reloadSpotAfterFailure()
+            return false
         } catch {
             report(error)
+            spotNote = status.isEmpty ? SpotThread.loadFailed : status
             await reloadSpotAfterFailure()
+            return false
         }
     }
 
@@ -552,6 +651,11 @@ final class LiveSessionModel {
     func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let squad else { return }
+        if let command = SpotCommand.parse(text) {
+            draft = ""
+            await runSpotCommand(command)
+            return
+        }
         let session: AuthSession
         do {
             session = try requiredSession()
@@ -1082,6 +1186,9 @@ struct LiveSessionView: View {
             signOutSheet
                 .adoptingLaunchDynamicType()
         }
+        .sheet(isPresented: Binding(get: { model.spotSheetOpen }, set: { model.spotSheetOpen = $0 })) {
+            spotCallSheet
+        }
         .sheet(isPresented: $showMembers) {
             membershipSheet
                 .adoptingLaunchDynamicType()
@@ -1217,11 +1324,6 @@ struct LiveSessionView: View {
             homeHeader
             readyBody
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-                .overlay(alignment: .top) {
-                    if showsRoster {
-                        presenceRoster
-                    }
-                }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
@@ -1308,8 +1410,8 @@ struct LiveSessionView: View {
         rosterOpen && typeSize.isAccessibilitySize && !composerFocused && model.squad != nil
     }
 
-    /// Floats under the header over the chat. The chat keeps its full height, and
-    /// the roster never takes more than about 40% of an AX5 screen.
+    /// Floats over the top of the message list. It is offered the list's height and
+    /// picks the longest roster that fits, so its last row is always fully visible.
     private var presenceRoster: some View {
         TimelineView(.periodic(from: .now, by: 1)) { context in
             let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
@@ -1323,7 +1425,7 @@ struct LiveSessionView: View {
                 onVoice: { Task { await model.toggleVoice() } }
             )
         }
-        .frame(maxHeight: 360, alignment: .top)
+        .frame(maxHeight: .infinity, alignment: .top)
     }
 
     private var notes: some View {
@@ -1347,15 +1449,20 @@ struct LiveSessionView: View {
                     LazyVStack(alignment: .leading, spacing: 2) {
                         TimelineView(.periodic(from: .now, by: 1)) { context in
                             let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
-                            if SpotCallRules.showsCallForm(model.spot, now: now) {
-                                callSpotForm
+                            spotSlot(now: now)
+                        }
+                        if !model.spotHistoryNote.isEmpty {
+                            SpotStatusRow(text: model.spotHistoryNote, identifier: "spot-history-note")
+                        }
+                        ForEach(threadItems) { item in
+                            switch item {
+                            case .message(let entry):
+                                messageRow(entry).id(entry.id)
+                            case .spot(let call):
+                                if let outcome = SpotThread.outcome(call, viewerId: spotViewer, now: Date()) {
+                                    SpotHistoryCard(call: call, outcome: outcome)
+                                }
                             }
-                        }
-                        if let spot = model.spot {
-                            spotCard(spot)
-                        }
-                        ForEach(model.log.ordered) { entry in
-                            messageRow(entry).id(entry.id)
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1372,6 +1479,13 @@ struct LiveSessionView: View {
                 .scrollDismissesKeyboard(.interactively)
                 .modifier(ChatPinModifier(pinned: $pinnedToBottom))
                 .accessibilityIdentifier("message-list")
+                .overlay(alignment: .top) {
+                    // Floats over the message list only: the pinned spot bar above and
+                    // the composer below stay uncovered, and the list keeps its height.
+                    if showsRoster {
+                        presenceRoster
+                    }
+                }
                 composerBar(proxy)
             }
             .onAppear {
@@ -1455,6 +1569,52 @@ struct LiveSessionView: View {
         proxy.scrollTo(ChatAnchor.end, anchor: .bottom)
     }
 
+    private var spotViewer: UUID? { model.viewerId ?? model.profile?.id }
+
+    /// Messages with finished calls from the server between them. The current call
+    /// stays out: it sits in the top slot, pinned or as history, until the next read.
+    private var threadItems: [SpotThreadItem] {
+        let history = SpotThread.history(
+            past: model.spotHistory,
+            excluding: model.spot?.id,
+            viewerId: spotViewer,
+            now: Date()
+        )
+        return SpotThread.items(entries: model.log.ordered, history: history)
+    }
+
+    /// Top of the thread. An active call keeps its full card here (with the pinned bar
+    /// above the chat); once it ends, cancels, or expires the same slot turns into a
+    /// compact history card. Loading and failed reads say so.
+    @ViewBuilder
+    private func spotSlot(now: Date) -> some View {
+        if SpotThread.canCallNow(model.spot, now: now) {
+            callSpotForm
+        }
+        if let spot = model.spot {
+            switch SpotThread.phase(spot, viewerId: spotViewer, now: now) {
+            case .active:
+                spotCard(spot)
+            case .history(let outcome):
+                SpotHistoryCard(call: spot, outcome: outcome)
+                if !model.spotNote.isEmpty {
+                    Text(model.spotNote)
+                        .font(.caption)
+                        .foregroundStyle(SQColor.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, SQSpace.m)
+                        .accessibilityIdentifier("spot-note")
+                }
+            }
+        } else if model.spotLoad.showsLoadingRow {
+            SpotStatusRow(text: "Loading the spot call…", loading: true, identifier: "spot-loading")
+        } else if let failure = model.spotLoad.failure {
+            SpotStatusRow(text: failure, identifier: "spot-load-failed") {
+                Task { await model.retrySpotLoad() }
+            }
+        }
+    }
+
     private var callSpotForm: some View {
         VStack(alignment: .leading, spacing: SQSpace.s) {
             TextField("Game", text: Binding(get: { model.spotGame }, set: { model.spotGame = $0 }))
@@ -1467,6 +1627,13 @@ struct LiveSessionView: View {
                 : "Seats are capped at 8. This server does not store a smaller target.")
                 .font(.caption)
                 .foregroundStyle(SQColor.muted)
+            if model.spot == nil, !model.spotNote.isEmpty {
+                Text(model.spotNote)
+                    .font(.caption)
+                    .foregroundStyle(SQColor.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("spot-note")
+            }
         }
         .padding(SQSpace.s)
         .background(SQColor.card, in: RoundedRectangle(cornerRadius: 12))
@@ -1764,6 +1931,7 @@ struct LiveSessionView: View {
 
     private var composer: some View {
         HStack(alignment: .center) {
+            composerPlus
             TextField("Message", text: Binding(get: { model.draft }, set: { model.draft = $0 }))
                 .textFieldStyle(.roundedBorder)
                 .focused($composerFocused)
@@ -1774,6 +1942,35 @@ struct LiveSessionView: View {
             .accessibilityIdentifier("send-message")
         }
         .frame(maxHeight: composerLine * 3)
+    }
+
+    /// The + menu. Calling spots is the first thing it does; `/spots` does the same.
+    private var composerPlus: some View {
+        Menu {
+            Button {
+                SQHaptics.play(.tap)
+                model.openSpotCall()
+            } label: {
+                Text("Call spots")
+            }
+            .accessibilityIdentifier("composer-call-spots")
+        } label: {
+            Image(systemName: "plus.circle.fill")
+                .font(.title2.weight(.semibold))
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                .foregroundStyle(SQColor.signal)
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .accessibilityLabel("More")
+        .accessibilityHint("Call spots for the squad")
+        .accessibilityIdentifier("composer-plus")
+    }
+
+    /// Opened from the + menu or a bare `/spots`.
+    private var spotCallSheet: some View {
+        SpotCallSheet(model: model)
+            .adoptingLaunchDynamicType()
     }
 
     private var membershipSheet: some View {
@@ -2302,5 +2499,102 @@ private struct ChatPinModifier: ViewModifier {
                     lastOffset = sample.offset
                 }
         }
+    }
+}
+
+/// The call sheet, opened from the + menu or a bare `/spots`. Its own view so its
+/// focus and detent state live with it. Says what it is doing while it calls, and
+/// keeps the sheet open with the reason when the call fails.
+private struct SpotCallSheet: View {
+    let model: LiveSessionModel
+    @FocusState private var spotGameFocused: Bool
+    @State private var spotSheetDetent: PresentationDetent = .medium
+    // Read here, inside the launch Dynamic Type override applied at the call site.
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: SQSpace.m) {
+                Text("Call spots")
+                    .font(.title2.weight(.semibold))
+                    .foregroundStyle(SQColor.ink)
+                    .accessibilityAddTraits(.isHeader)
+                Text("The squad gets 5 minutes to join. Starters already in a game can join late. Seats cap at 8.")
+                    .font(SQType.detail)
+                    .foregroundStyle(SQColor.subtle)
+                    .fixedSize(horizontal: false, vertical: true)
+                TextField("Game", text: Binding(get: { model.spotGame }, set: { model.spotGame = $0 }))
+                    .textFieldStyle(.roundedBorder)
+                    .focused($spotGameFocused)
+                    .submitLabel(.go)
+                    .onSubmit {
+                        Task { await model.callSpotsFromSheet() }
+                    }
+                    .accessibilityLabel("Game")
+                    .accessibilityIdentifier("spot-sheet-game")
+                switch model.spotSheet {
+                case .calling:
+                    HStack(spacing: SQSpace.s) {
+                        ProgressView()
+                            .accessibilityHidden(true)
+                        Text("Calling spots…")
+                            .font(SQType.caption)
+                            .foregroundStyle(SQColor.subtle)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("spot-sheet-calling")
+                case .failed(let reason):
+                    Text(reason)
+                        .font(SQType.caption)
+                        .foregroundStyle(SQColor.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("spot-sheet-error")
+                case .editing:
+                    EmptyView()
+                }
+            }
+            .padding(SQSpace.xl)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        // The actions ride in the bottom safe-area inset, so they sit above the
+        // whole keyboard, including the QuickType bar, at every text size.
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: SQSpace.s) {
+                Button {
+                    SQHaptics.play(.success)
+                    Task { await model.callSpotsFromSheet() }
+                } label: {
+                    Text("Call spots")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(model.spotGate.busy)
+                .accessibilityIdentifier("spot-sheet-call")
+                Button("Not now", role: .cancel) { model.spotSheetOpen = false }
+                    .accessibilityIdentifier("spot-sheet-cancel")
+            }
+            .padding(.horizontal, SQSpace.xl)
+            .padding(.top, SQSpace.s)
+            .padding(.bottom, SQSpace.m)
+            .frame(maxWidth: .infinity)
+            .background(SQColor.surface0)
+        }
+        // Typing gets the whole screen, so the field and the actions both stay in view.
+        .onChange(of: spotGameFocused) { _, focused in
+            if focused { spotSheetDetent = .large }
+        }
+        // At accessibility text sizes the medium detent pushes the field below the fold,
+        // so those sizes open (and stay) large.
+        .onAppear { spotSheetDetent = Self.openingDetent(for: dynamicTypeSize) }
+        .onChange(of: dynamicTypeSize) { _, size in
+            if size.isAccessibilitySize { spotSheetDetent = .large }
+        }
+        .presentationDetents([.medium, .large], selection: $spotSheetDetent)
+        .presentationDragIndicator(.visible)
+        .presentationBackground(SQColor.surface0)
+    }
+
+    static func openingDetent(for size: DynamicTypeSize) -> PresentationDetent {
+        size.isAccessibilitySize ? .large : .medium
     }
 }

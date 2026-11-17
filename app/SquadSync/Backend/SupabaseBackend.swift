@@ -909,13 +909,13 @@ final class SupabaseSpotService: SpotServing {
 
     func call(squadId: UUID, game: String, startsAt: Date) async throws -> UUID {
         let body = try BackendJSON.encoder.encode(CallBody(squad: squadId, game: game, startsAt: startsAt))
-        let data = try await perform(path: "rest/v1/rpc/sq8_call_spot", body: body)
+        let data = try await performAction(path: "rest/v1/rpc/sq8_call_spot", body: body)
         return try JSONDecoder().decode(UUID.self, from: data)
     }
 
     func rsvp(callId: UUID, response: String) async throws {
         let body = try BackendJSON.encoder.encode(RsvpBody(callId: callId, response: response))
-        _ = try await perform(path: "rest/v1/rpc/sq8_rsvp_spot", body: body)
+        _ = try await performAction(path: "rest/v1/rpc/sq8_rsvp_spot", body: body)
     }
 
     func lock(callId: UUID) async throws {
@@ -924,15 +924,15 @@ final class SupabaseSpotService: SpotServing {
         // the UI whether that gate is on the server yet.
         _ = await serverCapabilities()
         let body = try BackendJSON.encoder.encode(CallIdBody(callId: callId))
-        _ = try await perform(path: "rest/v1/rpc/sq8_lock_spot", body: body)
+        _ = try await performAction(path: "rest/v1/rpc/sq8_lock_spot", body: body)
     }
 
     func cancel(callId: UUID) async throws {
-        _ = try await perform(path: "rest/v1/rpc/sq8_cancel_spot", body: try BackendJSON.encoder.encode(CallIdBody(callId: callId)))
+        _ = try await performAction(path: "rest/v1/rpc/sq8_cancel_spot", body: try BackendJSON.encoder.encode(CallIdBody(callId: callId)))
     }
 
     func end(callId: UUID) async throws {
-        _ = try await perform(path: "rest/v1/rpc/sq8_end_spot", body: try BackendJSON.encoder.encode(CallIdBody(callId: callId)))
+        _ = try await performAction(path: "rest/v1/rpc/sq8_end_spot", body: try BackendJSON.encoder.encode(CallIdBody(callId: callId)))
     }
 
     func setReady(callId: UUID, userId _: UUID, ready: Bool) async throws {
@@ -1071,6 +1071,71 @@ final class SupabaseSpotService: SpotServing {
             return !SpotProbe.functionPresent(status: 400, body: message)
         }
         return false
+    }
+
+    /// Call, RSVP, lock, cancel, and end. A missing function is `.unavailable`, so
+    /// the card says the server isn't set up instead of showing PostgREST's text.
+    private func performAction(path: String, body: Data) async throws -> Data {
+        do {
+            return try await perform(path: path, body: body)
+        } catch let failure as BackendFailure {
+            if case .notSetUp = failure { throw SpotProblem.unavailable }
+            throw failure
+        } catch let problem as SpotProblem {
+            throw SpotProblem.unavailableIfMissing(problem)
+        }
+    }
+
+    /// Finished calls for the thread. Two GETs on tables members can already read:
+    /// the calls, then their RSVPs. Nothing is written.
+    func history(squadId: UUID, limit: Int) async throws -> [SpotCall] {
+        let caps = await serverCapabilities()
+        let callSelect = caps.seatTarget
+            ? "id,squad_id,caller_id,game,called_at,join_until,locked_at,closed_at,status,seat_target"
+            : "id,squad_id,caller_id,game,called_at,join_until,locked_at,closed_at,status"
+        let data = try await http.send(
+            path: "rest/v1/sq8_spot_calls",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "squad_id", value: "eq.\(squadId.uuidString)"),
+                URLQueryItem(name: "status", value: "in.(ended,cancelled,expired)"),
+                URLQueryItem(name: "select", value: callSelect),
+                URLQueryItem(name: "order", value: "called_at.desc"),
+                URLQueryItem(name: "limit", value: String(max(1, limit)))
+            ],
+            feature: .squad
+        )
+        let rows = try BackendJSON.decoder.decode([CallRow].self, from: data)
+        guard !rows.isEmpty else { return [] }
+        let ids = rows.map { $0.id.uuidString.lowercased() }.joined(separator: ",")
+        let seatData = try await http.send(
+            path: "rest/v1/sq8_spot_rsvps",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "call_id", value: "in.(\(ids))"),
+                URLQueryItem(name: "select", value: "call_id,user_id,response,starter")
+            ],
+            feature: .squad
+        )
+        let seats = try BackendJSON.decoder.decode([HistoryRsvpRow].self, from: seatData)
+        return rows.map { row in
+            let mine = seats.filter { $0.callId == row.id }.map {
+                SpotRsvp(userId: $0.userId, name: "Player", response: $0.response, starter: $0.starter, ready: false)
+            }
+            return row.call(rsvps: mine, capabilities: caps)
+        }
+    }
+
+    private struct HistoryRsvpRow: Decodable {
+        let callId: UUID
+        let userId: UUID
+        let response: String
+        let starter: Bool
+        enum CodingKeys: String, CodingKey {
+            case response, starter
+            case callId = "call_id"
+            case userId = "user_id"
+        }
     }
 
     private func perform(path: String, body: Data) async throws -> Data {

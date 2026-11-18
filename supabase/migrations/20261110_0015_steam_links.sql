@@ -1,4 +1,4 @@
--- Proposed. Not applied to the live project.
+-- Applied live on Nov 18, 2026 (project sfckxrnoiwetmzdycqaa) with Spencer's yes.
 -- One SteamID64 per person. The person writes only their own row and can
 -- read only their own row. Other members do not receive the id. The presence
 -- function reads it with the service role after it has checked the caller's

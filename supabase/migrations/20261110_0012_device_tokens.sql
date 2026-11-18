@@ -1,4 +1,4 @@
--- Proposed. Not applied to the live project.
+-- Applied live on Nov 18, 2026 (project sfckxrnoiwetmzdycqaa) with Spencer's yes.
 -- One row per signed-in person per device token. Idempotent.
 -- The iOS app stores the APNs device token with sq8_register_device_token
 -- and deletes the previous token with sq8_unregister_device_token when the

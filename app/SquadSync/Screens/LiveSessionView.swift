@@ -1,6 +1,11 @@
 import SwiftUI
 import UIKit
 import UserNotifications
+import os
+
+/// Opening a pushed message: each step, so a launch that doesn't open it can be read
+/// back from the device log (subsystem com.spencereese.squadsync, category chat-open).
+private let chatOpenLog = Logger(subsystem: "com.spencereese.squadsync", category: "chat-open")
 
 @MainActor
 @Observable
@@ -40,9 +45,8 @@ final class LiveSessionModel {
     /// An older page has been added for the open squad, so a later full reload
     /// doesn't decide "start of chat" from the newest 200 alone.
     @ObservationIgnored private var olderPagedThisSquad = false
-    /// A pushed message to open once the thread is loaded.
-    @ObservationIgnored private var pendingReveal: UUID?
-    @ObservationIgnored private var requestedReveal: UUID?
+    /// A pushed message to open, held until the chat's first load has finished.
+    @ObservationIgnored private var pendingOpen = ChatPendingOpen()
     /// Where the unread divider sits. Settled on the squad's first load, cleared when you send.
     var unreadMarker = ChatUnreadMarker()
     /// What the server lets the chat do. Replies stay off until `reply_to_id` is found.
@@ -188,6 +192,9 @@ final class LiveSessionModel {
                 historyDown: scenario == .chatHistoryFailed,
                 historyDelay: scenario == .chatHistorySlow ? 3 : 0
             )
+            // UI tests: a slow older page, so "before" and "after" a page lands can
+            // both be read with nothing else moving the list.
+            if let delay = Self.debugOlderDelay() { chat.olderDelay = delay }
             self.sessionStore = store
             let mockAuth = MockAuthService(
                 store: store,
@@ -1292,8 +1299,7 @@ final class LiveSessionModel {
         if let user = viewerId ?? profile?.id { outbox.clear(userId: user) }
         olderPaging = ChatOlderPaging()
         olderPagedThisSquad = false
-        pendingReveal = nil
-        requestedReveal = nil
+        pendingOpen.clear()
         realtime?.stop()
         realtime = nil
         poll?.cancel()
@@ -1445,10 +1451,8 @@ final class LiveSessionModel {
             squadId: squad?.id,
             membershipKnown: signedIn
         )
-        if let message = PushCoordinator.shared.focusMessage, message != requestedReveal {
-            requestedReveal = message
-            pendingReveal = message
-            if chatLoad == .loaded { Task { await revealPendingMessage() } }
+        if let message = PushCoordinator.shared.focusMessage {
+            requestOpen(messageId: message)
         }
         guard signedIn else { return }
         PushCoordinator.shared.askIfReady(signedIn: true, hasSquad: squad != nil)
@@ -1495,6 +1499,20 @@ final class LiveSessionModel {
     /// The top-of-thread row came into view: add one older page and keep the place.
     func loadOlder() async {
         _ = try? await fetchOlderPage(waitForRunning: false)
+    }
+
+    /// `-mock-older-delay <seconds>` (Debug only).
+    private static func debugOlderDelay() -> TimeInterval? {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "-mock-older-delay"),
+              arguments.index(after: index) < arguments.endIndex,
+              let seconds = TimeInterval(arguments[arguments.index(after: index)]),
+              seconds > 0 else { return nil }
+        return seconds
+        #else
+        return nil
+        #endif
     }
 
     /// Tests: the mock chat server, to slow or fail its reads.
@@ -1558,30 +1576,67 @@ final class LiveSessionModel {
         for id in delivered { outbox.remove(id: id, squadId: squadId, userId: userId) }
     }
 
-    /// Opens the pushed message: scrolls to it when it's loaded, pages back for it
-    /// (up to `ChatReveal.maxPages`) when it isn't, and says so when it can't.
-    func revealPendingMessage() async {
-        guard let id = pendingReveal, let squad, let session = try? requiredSession() else { return }
-        pendingReveal = nil
-        let chat = chatService(session)
-        let squadId = squad.id
-        let outcome = await ChatReveal.run(
-            loaded: { [self] in log.entries.contains { $0.id == id } },
-            exists: { try await chat.message(squadId: squadId, id: id) != nil },
-            loadOlderPage: { [self] in try await fetchOlderPage() }
-        )
-        if outcome == .found {
-            scrollHold.endHold()
-            followSend = id
-        } else if let text = ChatReveal.text(outcome) {
-            showToast(text)
+    /// A push asked to open `messageId`. It opens once the chat's first load has
+    /// finished: now if it already has, otherwise from the end of that load.
+    func requestOpen(messageId: UUID) {
+        let ready = pendingOpen.chatReady
+        chatOpenLog.info("target set \(messageId.uuidString, privacy: .public) chatReady=\(ready, privacy: .public)")
+        if let id = pendingOpen.request(messageId) {
+            openTask = Task { await openMessage(id) }
         }
     }
 
-    /// Tests: open a message as if a push had asked for it.
+    /// The open started by `requestOpen` (tests await it).
+    @ObservationIgnored private(set) var openTask: Task<Void, Never>?
+
+    /// The chat's load finished: open a held target, if any.
+    private func chatLoadFinished() async {
+        let held = pendingOpen.target
+        chatOpenLog.info("chat load done, held=\(held?.uuidString ?? "none", privacy: .public)")
+        if let id = pendingOpen.chatLoaded() {
+            await openMessage(id)
+        }
+    }
+
+    /// Opens a message: scrolls to it when it's loaded, pages back for it (up to
+    /// `ChatReveal.maxPages`) when it isn't, and says so when it can't.
+    private func openMessage(_ id: UUID) async {
+        guard let squad, let session = try? requiredSession() else {
+            chatOpenLog.error("open \(id.uuidString, privacy: .public): no squad or session")
+            return
+        }
+        let chat = chatService(session)
+        let squadId = squad.id
+        var pages = 0
+        let outcome = await ChatReveal.run(
+            loaded: { [self] in log.entries.contains { $0.id == id } },
+            exists: {
+                let found = try await chat.message(squadId: squadId, id: id) != nil
+                chatOpenLog.info("lookup \(id.uuidString, privacy: .public): \(found ? "on server" : "not on server", privacy: .public)")
+                return found
+            },
+            loadOlderPage: { [self] in
+                pages += 1
+                let more = try await fetchOlderPage()
+                let count = log.entries.count
+                chatOpenLog.info("page fetch \(pages, privacy: .public): \(count, privacy: .public) loaded, more=\(more, privacy: .public)")
+                return more
+            }
+        )
+        switch outcome {
+        case .found:
+            chatOpenLog.info("found \(id.uuidString, privacy: .public) after \(pages, privacy: .public) pages")
+            scrollHold.endHold()
+            followSend = id
+        case .notInChat, .tooFarBack, .failed:
+            chatOpenLog.info("not found \(id.uuidString, privacy: .public): \(String(describing: outcome), privacy: .public)")
+            if let text = ChatReveal.text(outcome) { showToast(text) }
+        }
+    }
+
+    /// Tests: open a message directly, as if the chat were ready.
     func reveal(messageId: UUID) async {
-        pendingReveal = messageId
-        await revealPendingMessage()
+        await openMessage(messageId)
     }
 
     func catchUp(pinned: Bool) async {
@@ -1615,6 +1670,7 @@ final class LiveSessionModel {
             olderPagedThisSquad = false
             olderHoldAnchor = nil
             scrollHold.reset()
+            pendingOpen.chatReset()
         }
         chatLoad = .loading
         do {
@@ -1640,7 +1696,7 @@ final class LiveSessionModel {
             if let remoteReads = try? await chat.reads(squadId: squad.id) {
                 reads = remoteReads
             }
-            if pendingReveal != nil { await revealPendingMessage() }
+            await chatLoadFinished()
         } catch {
             if !RequestNoise.isCancellation(error) {
                 chatLoad = ChatHistoryState.failure(error)
@@ -2239,6 +2295,11 @@ struct LiveSessionView: View {
                 }
                 guard model.log.ordered.last != nil else { return }
                 Task { @MainActor in
+                    // A pushed message may have been opened in the meantime.
+                    if let id = model.followSend, id != model.log.ordered.last?.id {
+                        proxy.scrollTo(id, anchor: .center)
+                        return
+                    }
                     scrollChatToBottom(proxy)
                     await model.catchUp(pinned: pinnedToBottom)
                 }
@@ -2268,6 +2329,11 @@ struct LiveSessionView: View {
             // for the content-size change instead of reading stale geometry.
             .onAppear {
                 model.scrollHold.onGeometry = { metrics in olderCheck(metrics) }
+                // A drag means the person has taken over: an opened message no
+                // longer holds the list (so new messages can be followed again).
+                model.scrollHold.onUserDrag = {
+                    if let id = model.followSend, id != model.log.ordered.last?.id { model.followSend = nil }
+                }
             }
             .onChange(of: model.olderPaging.state) { _, _ in
                 if let metrics = model.scrollHold.metrics { olderCheck(metrics) }
@@ -2279,6 +2345,12 @@ struct LiveSessionView: View {
             }
             .onChange(of: model.log.ordered.last?.id) { _, id in
                 guard let id else { return }
+                // A pushed message is being opened: it wins over following the newest,
+                // even when the history and the open land in the same update.
+                if let target = model.followSend, target != id, model.log.entries.contains(where: { $0.id == target }) {
+                    proxy.scrollTo(target, anchor: .center)
+                    return
+                }
                 let own = model.followSend == id
                 if ChatFollow.scrolls(pinned: pinnedToBottom, ownSend: own) {
                     scrollChatToBottom(proxy)

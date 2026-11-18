@@ -24,6 +24,8 @@ final class ChatScrollController: NSObject {
     var requestInFlight = false
     /// Fresh geometry after every offset or content-size change.
     var onGeometry: ((ChatScrollMetrics) -> Void)?
+    /// The person started dragging the list.
+    var onUserDrag: (() -> Void)?
 
     /// A page was handed to the list and its rows aren't laid out yet.
     var isSettlingPrepend: Bool {
@@ -118,6 +120,7 @@ final class ChatScrollController: NSObject {
         guard gesture.state == .began else { return }
         userHasScrolled = true
         hold = nil
+        onUserDrag?()
     }
 
     private func geometryChanged(_ view: UIScrollView) {

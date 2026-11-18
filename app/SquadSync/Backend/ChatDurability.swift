@@ -259,6 +259,47 @@ enum ChatReveal {
     }
 }
 
+/// The message a push asked to open, held until the chat's first load for the
+/// squad has finished, then handed out exactly once. Either order works: the
+/// push can arrive before the history (cold launch) or after it (app open).
+struct ChatPendingOpen: Equatable {
+    private(set) var target: UUID?
+    private(set) var chatReady = false
+    /// Targets already handed out, so a repeated settle of the same push doesn't
+    /// open (and page back for) the same message again.
+    private(set) var handled: Set<UUID> = []
+
+    /// A push asked for `id`. Returns it when it should open now.
+    mutating func request(_ id: UUID) -> UUID? {
+        guard !handled.contains(id) else { return nil }
+        target = id
+        return takeIfReady()
+    }
+
+    /// The chat's load finished. Returns the held target when there is one.
+    mutating func chatLoaded() -> UUID? {
+        chatReady = true
+        return takeIfReady()
+    }
+
+    /// A different squad is loading: wait for its first load again.
+    mutating func chatReset() {
+        chatReady = false
+    }
+
+    /// Sign-out.
+    mutating func clear() {
+        self = ChatPendingOpen()
+    }
+
+    private mutating func takeIfReady() -> UUID? {
+        guard chatReady, let target else { return nil }
+        self.target = nil
+        handled.insert(target)
+        return target
+    }
+}
+
 // MARK: Unsent messages on disk
 
 /// One outgoing message that hasn't been confirmed by the server. Its id is the

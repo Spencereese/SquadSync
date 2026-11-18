@@ -538,6 +538,46 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertEqual(midway, .failed)
     }
 
+    // MARK: Pending open (push before or after the chat's first load)
+
+    func testPushBeforeTheFirstLoadOpensWhenItFinishes() {
+        var open = ChatPendingOpen()
+        let id = ChatLongSeed.id(0)
+        XCTAssertNil(open.request(id), "Cold launch: the history isn't here yet, so hold it")
+        XCTAssertEqual(open.target, id)
+        XCTAssertEqual(open.chatLoaded(), id, "Opens when the first load finishes")
+        XCTAssertNil(open.target)
+        XCTAssertNil(open.chatLoaded(), "Exactly once: a later reload doesn't open it again")
+    }
+
+    func testPushAfterTheFirstLoadOpensRightAway() {
+        var open = ChatPendingOpen()
+        XCTAssertNil(open.chatLoaded())
+        let id = ChatLongSeed.id(0)
+        XCTAssertEqual(open.request(id), id)
+        XCTAssertNil(open.request(id), "The same push settling again doesn't reopen it")
+        XCTAssertNil(open.chatLoaded())
+    }
+
+    func testANewerPushReplacesAHeldOne() {
+        var open = ChatPendingOpen()
+        XCTAssertNil(open.request(ChatLongSeed.id(1)))
+        XCTAssertNil(open.request(ChatLongSeed.id(2)))
+        XCTAssertEqual(open.chatLoaded(), ChatLongSeed.id(2))
+    }
+
+    func testSquadChangeWaitsForThatSquadsLoad() {
+        var open = ChatPendingOpen()
+        _ = open.chatLoaded()
+        open.chatReset()
+        XCTAssertNil(open.request(ChatLongSeed.id(3)), "The new squad's history isn't loaded yet")
+        XCTAssertEqual(open.chatLoaded(), ChatLongSeed.id(3))
+        open.clear()
+        XCTAssertFalse(open.chatReady)
+        XCTAssertNil(open.request(ChatLongSeed.id(3)), "Sign-out forgets what was opened; held until the next load")
+        XCTAssertEqual(open.chatLoaded(), ChatLongSeed.id(3))
+    }
+
     func testLongSeedIsMoreThanOneRead() {
         let messages = ChatLongSeed.messages(viewerId: me, squadId: squad, now: base)
         XCTAssertGreaterThan(messages.count, SupabaseChatService.historyLimit)
@@ -616,6 +656,31 @@ final class ChatDurabilityModelTests: XCTestCase {
         XCTAssertEqual(model.followSend, ChatLongSeed.id(0))
         await model.reveal(messageId: UUID())
         XCTAssertEqual(model.chatToast, ChatReveal.notInChatText)
+    }
+
+    func testPushArrivingBeforeTheFirstLoadOpensTheOldMessage() async {
+        let model = model(.chatLongHistory, outbox: tempOutbox())
+        model.requestOpen(messageId: ChatLongSeed.id(0))
+        let early = model.followSend
+        XCTAssertNil(early, "Nothing to open before the history is here")
+        await model.reloadChat()
+        let opened = model.followSend
+        XCTAssertEqual(opened, ChatLongSeed.id(0), "Opened from the end of the first load")
+        XCTAssertEqual(model.log.entries.count, 260)
+    }
+
+    func testPushArrivingAfterTheFirstLoadOpensTheOldMessage() async {
+        let model = model(.chatLongHistory, outbox: tempOutbox())
+        await model.reloadChat()
+        model.requestOpen(messageId: ChatLongSeed.id(0))
+        await model.openTask?.value
+        let opened = model.followSend
+        XCTAssertEqual(opened, ChatLongSeed.id(0))
+        // Once: a reload doesn't page back and open it again.
+        model.followSend = nil
+        await model.reloadChat()
+        let again = model.followSend
+        XCTAssertNil(again)
     }
 
     func testUnsentMessageIsRestoredAndRetriedWithItsId() async {

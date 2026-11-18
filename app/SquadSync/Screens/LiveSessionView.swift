@@ -35,8 +35,12 @@ final class LiveSessionModel {
     var chatLoad = ChatHistoryState.idle
     /// The row at the top of the thread that pages older messages.
     var olderPaging = ChatOlderPaging()
-    /// Older pages that came back for the open squad (the UI tests' paging probe).
+    /// Older pages that came back for the open squad: the layout generation the
+    /// tracked rows report positions in, and the UI tests' paging probe.
     var olderPagesLoaded = 0
+    /// The previous oldest message while an older page goes in above it; its row
+    /// keeps reporting where it is so the list can hold it in place.
+    var olderHoldAnchor: UUID?
     /// The message list's scroll view: paging trigger and place-keeping geometry.
     let scrollHold = ChatScrollController()
     /// Bumped when the viewer calls spots, so the list brings the card into view.
@@ -1302,6 +1306,7 @@ final class LiveSessionModel {
         olderPaging = ChatOlderPaging()
         olderPagesLoaded = 0
         olderPagedThisSquad = false
+        olderHoldAnchor = nil
         pendingOpen.clear()
         realtime?.stop()
         realtime = nil
@@ -1561,7 +1566,8 @@ final class LiveSessionModel {
             // when something new is going in, so the hold always sees the growth).
             let known = Set(log.entries.map(\.id))
             if rows.contains(where: { !known.contains($0.id) }) {
-                scrollHold.prepareForPrepend(generation: olderPagesLoaded + 1)
+                olderHoldAnchor = cursor.id
+                scrollHold.prepareForPrepend(anchor: cursor.id, generation: olderPagesLoaded + 1)
             }
             log.ingest(rows.map { $0.entry() })
             olderPagedThisSquad = true
@@ -1680,6 +1686,7 @@ final class LiveSessionModel {
             olderPaging = ChatOlderPaging()
             olderPagesLoaded = 0
             olderPagedThisSquad = false
+            olderHoldAnchor = nil
             scrollHold.reset()
             pendingOpen.chatReset()
         }
@@ -2241,6 +2248,7 @@ struct LiveSessionView: View {
                             }
                         }
                         let generation = model.olderPagesLoaded
+                        let tracked = scrollTrackedIds
                         ForEach(chatRows) { row in
                             switch row {
                             case .day(_, let label):
@@ -2251,7 +2259,12 @@ struct LiveSessionView: View {
                                 messageRow(bubble)
                                     .id(bubble.entry.id)
                                     .background {
-                                        ChatRowYReporter(id: bubble.entry.id, generation: generation)
+                                        // Two rows at most, not every row: a preference
+                                        // merged over the whole lazy stack on every layout
+                                        // pass kept the main thread busy.
+                                        if tracked.contains(bubble.entry.id) {
+                                            ChatRowYReporter(id: bubble.entry.id, generation: generation)
+                                        }
                                     }
                             case .spot(let call):
                                 if let outcome = SpotThread.outcome(call, viewerId: spotViewer, now: Date()) {
@@ -2371,10 +2384,10 @@ struct LiveSessionView: View {
                 model.scrollHold.jumped(toBottom: false)
                 proxy.scrollTo(ChatAnchor.spot, anchor: .top)
             }
+            // A pinned list follows the end: a new row, or the last one sending,
+            // failing (its "Not delivered" and Retry stay above the composer), sent.
             .onChange(of: chatEndSignature) { _, _ in
-                guard let last = model.log.ordered.last else { return }
-                let mine = last.senderId == (model.profile?.id ?? model.viewerId)
-                model.scrollHold.endChanged(failedRow: mine && last.delivery == .failed ? last.id : nil)
+                model.scrollHold.endChanged()
             }
             // A row expanding in place where the person tapped stays put.
             .onChange(of: model.selectedMessage) { _, id in
@@ -2436,6 +2449,15 @@ struct LiveSessionView: View {
     /// the list is only a few rows tall, so it keeps just a sliver.
     private var listBottomMargin: CGFloat {
         typeSize.isAccessibilitySize && composerFocused ? SQSpace.xs : SQSpace.l
+    }
+
+    /// Rows whose position the scroll controller needs: the oldest loaded message
+    /// (the paging trigger and the next hold's anchor) and the current hold's anchor.
+    private var scrollTrackedIds: Set<UUID> {
+        var ids = Set<UUID>()
+        if let oldest = ChatOlderPaging.cursor(model.log)?.id { ids.insert(oldest) }
+        if let anchor = model.olderHoldAnchor { ids.insert(anchor) }
+        return ids
     }
 
     /// The thread's end: the last row and its send state. A change means a new

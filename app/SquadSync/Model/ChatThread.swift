@@ -97,14 +97,34 @@ struct ChatClock {
     }
 
     private func format(_ date: Date, template: String) -> String {
+        ChatFormatterCache.shared.formatter(template: template, calendar: calendar, locale: locale).string(from: date)
+            .replacingOccurrences(of: "\u{202F}", with: " ")
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+    }
+}
+
+/// One DateFormatter per template, locale, calendar and time zone. Building one
+/// per message time on every render was a top cost of scrolling a long chat.
+/// A change of locale, calendar or zone gets a new key, so a new formatter.
+final class ChatFormatterCache: @unchecked Sendable {
+    static let shared = ChatFormatterCache()
+    private let lock = NSLock()
+    private var formatters: [String: DateFormatter] = [:]
+    private(set) var built = 0
+
+    func formatter(template: String, calendar: Calendar, locale: Locale) -> DateFormatter {
+        let key = [template, locale.identifier, "\(calendar.identifier)", calendar.timeZone.identifier].joined(separator: "|")
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = formatters[key] { return cached }
         let formatter = DateFormatter()
         formatter.calendar = calendar
         formatter.timeZone = calendar.timeZone
         formatter.locale = locale
         formatter.setLocalizedDateFormatFromTemplate(template)
-        return formatter.string(from: date)
-            .replacingOccurrences(of: "\u{202F}", with: " ")
-            .replacingOccurrences(of: "\u{00A0}", with: " ")
+        formatters[key] = formatter
+        built += 1
+        return formatter
     }
 }
 

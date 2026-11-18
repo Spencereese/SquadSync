@@ -268,6 +268,8 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertEqual(hold.offsetForAnchor(y: 490, metrics: metrics(offset: 3200, content: 11_240)), 3240)
         XCTAssertFalse(hold.settled)
         XCTAssertNil(hold.offsetForAnchor(y: 450.3, metrics: metrics(offset: 3240, content: 11_240)), "Within half a point")
+        XCTAssertFalse(hold.settled, "Checked once more after the next layout")
+        XCTAssertNil(hold.offsetForAnchor(y: 450.1, metrics: metrics(offset: 3240, content: 11_240)))
         XCTAssertTrue(hold.settled)
         XCTAssertNil(hold.offsetForAnchor(y: 200, metrics: metrics(offset: 3240, content: 11_240)), "A settled hold doesn't move the list again")
     }
@@ -687,26 +689,55 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertTrue(pin.pinned, "A new squad opens at the newest message")
     }
 
-    func testFailedRowTallerThanTheListShowsItsTop() {
-        let m = metrics(offset: 7700, content: 8000, viewport: 159)
-        XCTAssertEqual(ChatBottomPin.offsetRevealingTop(rowY: -23, metrics: m), 7677, "Not delivered's row top comes into view")
-        XCTAssertNil(ChatBottomPin.offsetRevealingTop(rowY: 4, metrics: m), "Already in view")
+    // MARK: Holding the place: only fresh positions, until it's still
+
+    func testHoldKeepsCorrectingUntilTheAnchorIsStill() {
+        // Message 60 at y 40 (the reader sees 68-71 below it). Rows above realize in
+        // two passes, each moving it; the hold follows both and ends only after two
+        // in-place readings.
+        var hold = ChatPrependHold(anchor: ChatLongSeed.id(60), offsetBefore: 0, contentHeightBefore: 8000, anchorYBefore: 40, generation: 1)
+        XCTAssertEqual(hold.offsetForInsert(metrics(offset: 0, content: 10_500)), 2500)
+        XCTAssertEqual(hold.offsetForAnchor(y: 75, measuredIn: 1, metrics: metrics(offset: 2500, content: 10_535)), 2535, "First realization pass: 35pt")
+        XCTAssertNil(hold.offsetForAnchor(y: 40, measuredIn: 1, metrics: metrics(offset: 2535, content: 10_535)))
+        XCTAssertFalse(hold.settled, "One in-place reading isn't stable yet")
+        XCTAssertEqual(hold.offsetForAnchor(y: -20, measuredIn: 1, metrics: metrics(offset: 2535, content: 10_475)), 2475, "Second pass moved it the other way")
+        XCTAssertNil(hold.offsetForAnchor(y: 40, measuredIn: 1, metrics: metrics(offset: 2475, content: 10_475)))
+        XCTAssertNil(hold.offsetForAnchor(y: 40.2, measuredIn: 1, metrics: metrics(offset: 2475, content: 10_475)))
+        XCTAssertTrue(hold.settled, "Two in-place readings in a row")
     }
 
-    // MARK: Holding the place: which row, and only fresh positions
+    func testHoldCorrectionsAreBounded() {
+        var hold = ChatPrependHold(anchor: ChatLongSeed.id(60), offsetBefore: 0, contentHeightBefore: 8000, anchorYBefore: 40, generation: 1)
+        _ = hold.offsetForInsert(metrics(offset: 0, content: 10_000))
+        var moves = 0
+        for step in 0..<40 where !hold.settled {
+            let y = step % 2 == 0 ? 60.0 : 20.0
+            if hold.offsetForAnchor(y: y, measuredIn: 1, metrics: metrics(offset: 2000, content: 10_000)) != nil { moves += 1 }
+        }
+        XCTAssertEqual(moves, ChatPrependHold.maxCorrections, "A layout that never settles can't keep moving the list")
+        XCTAssertTrue(hold.settled)
+    }
 
-    func testHoldAnchorsOnTheTopmostRowOnScreen() {
-        let rows: [UUID: Double] = [
-            ChatLongSeed.id(60): -9000,   // the oldest loaded row, far above
-            ChatLongSeed.id(236): -12,    // partly above the top edge
-            ChatLongSeed.id(237): 30,
-            ChatLongSeed.id(238): 90,
-            ChatLongSeed.id(259): 700     // below the screen
-        ]
-        let anchor = ChatPrependHold.anchorRow(screenY: rows, viewportHeight: 600)
-        XCTAssertEqual(anchor?.id, ChatLongSeed.id(237))
-        XCTAssertEqual(anchor?.y, 30)
-        XCTAssertNil(ChatPrependHold.anchorRow(screenY: [ChatLongSeed.id(60): -9000], viewportHeight: 600), "Nothing on screen: step 1 only")
+    func testHoldWithoutTheAnchorLaidOutIsTheInsertStepAlone() {
+        var hold = ChatPrependHold(anchor: ChatLongSeed.id(60), offsetBefore: 9000, contentHeightBefore: 12_000, anchorYBefore: nil, generation: 1)
+        XCTAssertEqual(hold.offsetForInsert(metrics(offset: 9000, content: 14_500)), 11_500)
+        XCTAssertTrue(hold.settled, "Reader far below the insert: nothing they see moves with the new rows")
+    }
+
+    func testOlderCursorMatchesTheOrderedThread() {
+        var log = ChatLog()
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        var generator = SystemRandomNumberGenerator()
+        var entries: [ChatEntry] = []
+        for index in 0..<300 {
+            let tie = index % 7 == 0 ? 0 : Double(Int.random(in: 0..<500, using: &generator))
+            entries.append(ChatEntry(id: UUID(), senderId: UUID(), body: "m\(index)", sentAt: base.addingTimeInterval(tie),
+                                     delivery: index % 11 == 0 ? .sending : .sent))
+        }
+        log.ingest(entries)
+        let expected = log.ordered.first(where: { $0.delivery == .sent })
+        XCTAssertEqual(ChatOlderPaging.cursor(log)?.id, expected?.id, "Same row as the sorted thread, ties by id")
+        XCTAssertNil(ChatOlderPaging.cursor(ChatLog()))
     }
 
     func testStalePositionIsNeverCorrectedFor() {
@@ -717,6 +748,7 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertNil(hold.offsetForAnchor(y: 3230, measuredIn: 0, metrics: metrics(offset: 10_600, content: 11_200)), "Stale: ignored")
         XCTAssertFalse(hold.settled)
         XCTAssertEqual(hold.offsetForAnchor(y: 59, measuredIn: 1, metrics: metrics(offset: 10_600, content: 11_229)), 10_629, "Fresh: corrected exactly")
+        XCTAssertNil(hold.offsetForAnchor(y: 30, measuredIn: 1, metrics: metrics(offset: 10_629, content: 11_229)))
         XCTAssertNil(hold.offsetForAnchor(y: 30, measuredIn: 1, metrics: metrics(offset: 10_629, content: 11_229)))
         XCTAssertTrue(hold.settled)
     }

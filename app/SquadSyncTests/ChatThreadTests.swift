@@ -153,6 +153,18 @@ final class ChatThreadTests: XCTestCase {
         XCTAssertEqual(shown[0].senderName, ChatThread.you)
     }
 
+    func testClockReusesItsFormatters() {
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+        let first = clock.time(date)
+        let built = ChatFormatterCache.shared.built
+        for offset in 1...200 { _ = clock.time(date.addingTimeInterval(Double(offset) * 60)) }
+        XCTAssertEqual(ChatFormatterCache.shared.built, built, "Message times reuse one formatter, not one per row per render")
+        XCTAssertEqual(clock.time(date), first)
+        var paris = clock
+        paris.locale = Locale(identifier: "fr_FR")
+        XCTAssertNotEqual(paris.time(date.addingTimeInterval(13 * 3600)), clock.time(date.addingTimeInterval(13 * 3600)), "Another locale gets its own formatter")
+    }
+
     func testSeenByIsOnlyOnTheLatestMessageAndOnlyCountsRealReads() {
         let entries = [entry(1, riley, at: -300), entry(2, me, at: -100)]
         let reads = [

@@ -56,8 +56,18 @@ struct ChatOlderPaging: Equatable {
 
     /// The oldest confirmed message, which is where the next page starts (strictly
     /// before it by `sent_at`, then by id). Unsent local rows don't count.
+    /// Runs on every scroll-geometry change, so it's one pass with no sort: the
+    /// same row as `log.ordered.first(where: sent)`.
     static func cursor(_ log: ChatLog) -> ChatPageCursor? {
-        guard let oldest = log.ordered.first(where: { $0.delivery == .sent }) else { return nil }
+        var oldest: ChatEntry?
+        for entry in log.entries where entry.delivery == .sent {
+            guard let current = oldest else { oldest = entry; continue }
+            if entry.sentAt < current.sentAt
+                || (entry.sentAt == current.sentAt && entry.id.uuidString < current.id.uuidString) {
+                oldest = entry
+            }
+        }
+        guard let oldest else { return nil }
         return ChatPageCursor(sentAt: oldest.sentAt, id: oldest.id, stamp: oldest.serverStamp)
     }
 }
@@ -121,14 +131,17 @@ enum ChatOlderTrigger {
 /// Keeps the reader's place when a page of older messages goes in above them.
 ///
 /// Made right before the rows are added: the fling is stopped, and the offset,
-/// content height, and the on-screen y of the topmost row on screen (the anchor,
-/// at its live position) are recorded. Then two exact corrections, both from measurements, not timing:
+/// content height, and the on-screen y of the previous oldest message (the
+/// anchor) are recorded. Paging only starts once that row is laid out near the
+/// screen, so it is on screen or just above it, and every row the reader sees is
+/// laid out below it at its real height: holding it holds them. Then two exact corrections, both from measurements, not timing:
 /// 1. When the scroll view's content height changes for the insert, the offset
 ///    moves by exactly that growth. This runs inside the same layout pass
 ///    (contentSize KVO), so no frame shows the new page's top.
 /// 2. Each time the anchor row reports where it is from a layout that has the new
 ///    rows (its generation), the offset moves by however far it is from where it
-///    was. Positions from before the insert are never used. That absorbs estimated heights of
+///    was. Positions from before the insert are never used. It keeps correcting
+///    until two readings in a row, a run-loop turn apart, find it in place. That absorbs estimated heights of
 ///    the lazily laid out new rows. Once it's within half a point, the hold ends.
 /// A drag by the person also ends it.
 struct ChatPrependHold: Equatable {
@@ -141,6 +154,13 @@ struct ChatPrependHold: Equatable {
     let generation: Int
     private(set) var insertApplied = false
     private(set) var settled = false
+    /// In-place readings in a row; the hold ends after `stableReads` (the last one
+    /// taken a run-loop turn later, after any layout the previous one caused).
+    private(set) var inPlaceReads = 0
+    private(set) var corrections = 0
+    static let stableReads = 2
+    /// A layout that never stops moving the anchor can't keep the hold going.
+    static let maxCorrections = 12
 
     init(anchor: UUID, offsetBefore: Double, contentHeightBefore: Double, anchorYBefore: Double?, generation: Int = 0) {
         self.anchor = anchor
@@ -148,16 +168,6 @@ struct ChatPrependHold: Equatable {
         self.contentHeightBefore = contentHeightBefore
         self.anchorYBefore = anchorYBefore
         self.generation = generation
-    }
-
-    /// The row to hold: the topmost one whose top is on screen right now (what the
-    /// reader is looking at), from live positions of laid-out rows only. Nil when
-    /// none is on screen; then the hold is step 1 alone.
-    static func anchorRow(screenY: [UUID: Double], viewportHeight: Double) -> (id: UUID, y: Double)? {
-        screenY
-            .filter { $0.value >= 0 && $0.value < viewportHeight }
-            .min { $0.value != $1.value ? $0.value < $1.value : $0.key.uuidString < $1.key.uuidString }
-            .map { ($0.key, $0.value) }
     }
 
     /// Step 1. Returns the new offset for the first content growth after the hold
@@ -179,9 +189,13 @@ struct ChatPrependHold: Equatable {
         guard insertApplied, !settled, measuredIn >= generation, let before = anchorYBefore else { return nil }
         let drift = y - before
         guard abs(drift) > 0.5 else {
-            settled = true
+            inPlaceReads += 1
+            if inPlaceReads >= Self.stableReads { settled = true }
             return nil
         }
+        inPlaceReads = 0
+        corrections += 1
+        if corrections >= Self.maxCorrections { settled = true }
         return metrics.clamped(metrics.offset + drift)
     }
 }
@@ -277,13 +291,6 @@ struct ChatBottomPin: Equatable {
     }
     /// A run-loop turn is over: the correction budget refills.
     mutating func turnEnded() { corrections = 0 }
-
-    /// A failed row whose top is above the list's top edge: the offset that brings
-    /// its top (and the "Not delivered" under it) into view.
-    static func offsetRevealingTop(rowY: Double, metrics: ChatScrollMetrics) -> Double? {
-        guard rowY < -0.5 else { return nil }
-        return metrics.clamped(metrics.offset + rowY)
-    }
 
     /// A different squad, or signed out.
     mutating func reset() { self = ChatBottomPin() }

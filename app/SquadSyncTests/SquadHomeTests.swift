@@ -46,16 +46,16 @@ final class SquadHomeTests: XCTestCase {
         XCTAssertEqual(SquadPresence.status(memberId: riley, viewerId: nil, spot: nil, now: now), .unknown)
     }
 
-    func testOpenSpotSeatsMapToReadyAndInSpot() {
+    func testOpenSpotSeatsAllMapToInSpotBecauseJoiningIsReady() {
         let call = spot(seats: [seat(alex, "Alex", ready: true), seat(jordan, "Jordan"), seat(sam, "Sam", response: "out")])
-        XCTAssertEqual(SquadPresence.status(memberId: alex, viewerId: viewer, spot: call, now: now), .ready)
+        XCTAssertEqual(SquadPresence.status(memberId: alex, viewerId: viewer, spot: call, now: now), .inSpot)
         XCTAssertEqual(SquadPresence.status(memberId: jordan, viewerId: viewer, spot: call, now: now), .inSpot)
         XCTAssertEqual(SquadPresence.status(memberId: sam, viewerId: viewer, spot: call, now: now), .unknown, "An out RSVP is not a seat")
     }
 
     func testSeatedViewerShowsTheSeatNotYou() {
         let call = spot(seats: [seat(viewer, "You", ready: true)])
-        XCTAssertEqual(SquadPresence.status(memberId: viewer, viewerId: viewer, spot: call, now: now), .ready)
+        XCTAssertEqual(SquadPresence.status(memberId: viewer, viewerId: viewer, spot: call, now: now), .inSpot)
     }
 
     func testExpiredOrClosedSpotNoLongerCountsAsPresence() {
@@ -97,7 +97,7 @@ final class SquadHomeTests: XCTestCase {
         let call = spot(seats: [seat(jordan, "Jordan"), seat(alex, "Alex", ready: true)])
         let entries = SquadPresence.entries(members: members, ownerId: viewer, viewerId: viewer, spot: call, now: now)
         XCTAssertEqual(entries.map(\.name), ["Alex", "Jordan", "You", "riley", "Sam"])
-        XCTAssertEqual(entries.map(\.status), [.ready, .inSpot, .you, .unknown, .unknown])
+        XCTAssertEqual(entries.map(\.status), [.inSpot, .inSpot, .you, .unknown, .unknown])
     }
 
     func testOwnerSortsFirstWithinTheSameStatus() {
@@ -177,8 +177,8 @@ final class SquadHomeTests: XCTestCase {
         XCTAssertEqual(idle.first?.spokenLabel, "Grok Test, you, owner, usually plays Call of Duty")
         let call = spot(seats: [seat(viewer, "Grok Test", ready: true)])
         let seated = SquadPresence.entries(members: members, ownerId: viewer, viewerId: viewer, spot: call, now: now)
-        XCTAssertEqual(seated.first?.status, .ready)
-        XCTAssertEqual(seated.first?.spokenLabel, "Grok Test, you, owner, ready, spot game Warzone")
+        XCTAssertEqual(seated.first?.status, .inSpot)
+        XCTAssertEqual(seated.first?.spokenLabel, "Grok Test, you, owner, in the spot call, spot game Warzone")
         let other = SquadPresence.entries(members: [member(riley, "Riley")], ownerId: nil, viewerId: viewer, spot: nil, now: now)
         XCTAssertFalse(other.first?.spokenLabel.contains("you") ?? true)
     }

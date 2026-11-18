@@ -830,9 +830,6 @@ final class LiveSessionModel {
                     if copy.name == "Player" {
                         copy.name = squad.members.first { $0.id == seat.userId }?.displayName ?? "Player"
                     }
-                    if let previous = spot?.seat(for: seat.userId), mockSpots != nil, previous.response == copy.response {
-                        copy.ready = previous.ready
-                    }
                     return copy
                 }
                 spot = loaded
@@ -913,7 +910,13 @@ final class LiveSessionModel {
         do {
             let session = try requiredSession()
             guard let squad else { return false }
-            _ = try await spotService(session).call(squadId: squad.id, game: game, startsAt: Date())
+            let service = spotService(session)
+            let created = try await service.call(squadId: squad.id, game: game, startsAt: Date())
+            // Calling is joining: sq8_call_spot seats the caller as in with ready off.
+            // If this doesn't go through, the caller's bar offers Join instead of Lock.
+            if await service.serverCapabilities().ready {
+                try? await service.setReady(callId: created, userId: session.userId, ready: true)
+            }
             await loadSpot(session)
             spotNote = "Calling spots: \(game), 8 seats."
             spotCalledSerial += 1
@@ -930,9 +933,19 @@ final class LiveSessionModel {
         }
     }
 
+    /// Join means ready: one tap answers in, then sets 0020's ready when the
+    /// server has it. A seat the server already holds (a check-in starter, or
+    /// the caller) only needs the ready half.
     func joinSpot() async {
         await changeSpot { session, call in
-            try await spotService(session).rsvp(callId: call.id, response: "in")
+            let service = spotService(session)
+            let me = viewerId ?? session.userId
+            if call.seat(for: me)?.isIn != true {
+                try await service.rsvp(callId: call.id, response: "in")
+            }
+            if SpotCallRules.joinMarksReady(call, server: await service.serverCapabilities()) {
+                try await service.setReady(callId: call.id, userId: me, ready: true)
+            }
             spotNote = "You're in."
         }
     }
@@ -941,28 +954,6 @@ final class LiveSessionModel {
         await changeSpot { session, call in
             try await spotService(session).rsvp(callId: call.id, response: "out")
             spotNote = "You left."
-        }
-    }
-
-    func toggleReady() async {
-        guard let call = spot, let user = viewerId ?? profile?.id else { return }
-        let next = !(call.seat(for: user)?.ready ?? false)
-        guard spotGate.begin() else { return }
-        defer { spotGate.finish() }
-        do {
-            let session = try requiredSession()
-            try await spotService(session).setReady(callId: call.id, userId: user, ready: next)
-            await loadSpot(session)
-            if var call = spot, let index = call.rsvps.firstIndex(where: { $0.userId == user }) {
-                call.rsvps[index].ready = next
-                spot = call
-            }
-        } catch let problem as SpotProblem {
-            spotNote = problem.message
-            await reloadSpotAfterFailure()
-        } catch {
-            report(error)
-            await reloadSpotAfterFailure()
         }
     }
 
@@ -1740,7 +1731,6 @@ final class LiveSessionModel {
 
     var usesLiveSocket: Bool { mockChat == nil }
     var showsLiveGaps: Bool { mockSpots == nil }
-    var readyIsLocalOnly: Bool { showsLiveGaps && !spotServer.ready }
 
     private var usesSocket: Bool { usesLiveSocket }
 
@@ -2668,7 +2658,6 @@ struct LiveSessionView: View {
             let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
             let expired = SpotCallRules.showsExpired(spot, now: now)
             let viewer = model.viewerId ?? model.profile?.id
-            let mine = viewer.flatMap { spot.seat(for: $0) }
             VStack(alignment: .leading, spacing: SQSpace.s) {
                 Text("Calling spots: \(spot.game), \(spot.filled) of \(spot.seatTotal) seats")
                     .font(.headline)
@@ -2682,21 +2671,14 @@ struct LiveSessionView: View {
                     .foregroundStyle(SQColor.warning)
                     .accessibilityIdentifier("spot-countdown")
                 ForEach(spot.rsvps.filter(\.isIn)) { seat in
-                    seatChips(seat)
+                    seatChips(seat, in: spot)
                 }
                 Text("Check-in starters can join after the timer. 0013 does not know who is in a game.")
                     .font(.caption2)
                     .foregroundStyle(SQColor.muted)
                     .fixedSize(horizontal: false, vertical: true)
-                if model.showsLiveGaps && !model.spotServer.ready {
-                    Text("Ready isn't stored on the server yet.")
-                        .font(.caption2)
-                        .foregroundStyle(SQColor.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("spot-gap-ready")
-                }
                 if model.showsLiveGaps && !model.spotServer.gatedLock {
-                    Text("Lock doesn't wait for Ready yet.")
+                    Text("Lock doesn't wait for everyone to join yet.")
                         .font(.caption2)
                         .foregroundStyle(SQColor.muted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -2721,11 +2703,12 @@ struct LiveSessionView: View {
                         .disabled(model.spotGate.busy || viewer == nil || !SpotCallRules.canJoin(spot, userId: viewer!, now: now))
                         .accessibilityIdentifier("spot-join")
                         .accessibilityLabel("Join the spot call")
-                    if mine?.isIn == true && now < spot.joinUntil {
-                        Button(mine?.ready == true ? "Ready" : "Ready") { Task { await model.toggleReady() } }
-                            .disabled(model.spotGate.busy || model.readyIsLocalOnly)
-                            .accessibilityIdentifier("spot-ready")
-                            .accessibilityLabel(mine?.ready == true ? "Ready, on" : "Ready, off")
+                    if let waiting = SpotLockRule.waitingLine(spot) {
+                        Text(waiting)
+                            .font(.caption)
+                            .foregroundStyle(SQColor.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("spot-lock-waiting")
                     }
                     if let viewer, SpotCallRules.canLock(spot, actorId: viewer, ownerId: model.squad?.ownerId ?? viewer, now: now) {
                         Button("Lock") {
@@ -2811,8 +2794,8 @@ struct LiveSessionView: View {
         return "\(SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now)) left"
     }
 
-    private func seatChips(_ seat: SpotRsvp) -> some View {
-        let parts = seatParts(seat)
+    private func seatChips(_ seat: SpotRsvp, in spot: SpotCall) -> some View {
+        let parts = seatParts(seat, in: spot)
         return ChipFlow(spacing: SQSpace.xs) {
             ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
                 Text(part)
@@ -2825,12 +2808,13 @@ struct LiveSessionView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(parts.joined(separator: ", "))
+        .accessibilityIdentifier("spot-seat-\(seat.name)")
     }
 
-    private func seatParts(_ seat: SpotRsvp) -> [String] {
+    private func seatParts(_ seat: SpotRsvp, in spot: SpotCall) -> [String] {
         var parts = [seat.name]
         if seat.starter { parts.append("starter") }
-        parts.append(seat.ready ? "Ready" : "In")
+        parts.append(SpotCallRules.hasJoined(seat, in: spot) ? "In" : "Hasn't joined")
         return parts
     }
 
@@ -2902,7 +2886,7 @@ struct LiveSessionView: View {
 
     private func barButton(_ action: SpotBarAction) -> some View {
         Button(action.title) { Task { await runBar(action) } }
-            .disabled(model.spotGate.busy || (action == .ready && model.readyIsLocalOnly))
+            .disabled(model.spotGate.busy)
             .accessibilityIdentifier(action.identifier)
             .accessibilityLabel(barLabel(action))
     }
@@ -2911,10 +2895,6 @@ struct LiveSessionView: View {
         switch action {
         case .join: return "Join the spot call"
         case .leave: return "Leave the spot call"
-        case .ready:
-            let viewer = model.viewerId ?? model.profile?.id
-            let on = viewer.flatMap { model.spot?.seat(for: $0)?.ready } == true
-            return on ? "Ready, on" : "Ready, off"
         case .lock: return "Lock the spot call"
         case .cancel: return "Cancel the spot call"
         }
@@ -2924,7 +2904,6 @@ struct LiveSessionView: View {
         switch action {
         case .join: await model.joinSpot()
         case .leave: await model.leaveSpot()
-        case .ready: await model.toggleReady()
         case .lock: await model.lockSpot()
         case .cancel: await model.cancelSpot()
         }

@@ -240,7 +240,7 @@ struct SquadHomeHeader: View {
 /// Seated status wins; otherwise the game; nothing at all beats a guess.
 private func presenceCaption(_ entry: SquadPresenceEntry) -> String? {
     switch entry.status {
-    case .locked, .ready, .inSpot, .availableNow, .later, .cantPlay:
+    case .locked, .inSpot, .availableNow, .later, .cantPlay:
         return entry.status.shortLabel
     case .you, .unknown, .notCheckedIn:
         return entry.gameCaption
@@ -249,7 +249,7 @@ private func presenceCaption(_ entry: SquadPresenceEntry) -> String? {
 
 private func presenceCaptionColor(_ entry: SquadPresenceEntry) -> Color {
     switch entry.status {
-    case .locked, .ready, .inSpot, .availableNow: SQColor.signal
+    case .locked, .inSpot, .availableNow: SQColor.signal
     case .later: SQColor.warning
     case .cantPlay, .you, .unknown, .notCheckedIn: SQColor.subtle
     }

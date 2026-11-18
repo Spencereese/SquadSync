@@ -110,7 +110,7 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(chip.waitForNonExistence(timeout: 5), "The reaction chip stayed after it was removed")
     }
 
-    func testMockSpotCallJoinAndReady() {
+    func testMockSpotCallJoinIsOneTapWithNoReadyStep() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "spotCall"]
         app.launch()
@@ -129,14 +129,39 @@ final class AccessibilityUITests: XCTestCase {
         reveal(join, in: app)
         join.tap()
 
-        let ready = app.buttons["spot-ready"]
-        XCTAssertTrue(ready.waitForExistence(timeout: 5), "Ready was not on the spot card after joining")
-        XCTAssertEqual(ready.label, "Ready, off")
-        ready.tap()
-        XCTAssertEqual(ready.label, "Ready, on")
-        ready.tap()
-        XCTAssertEqual(ready.label, "Ready, off")
+        let seat = app.descendants(matching: .any)["spot-seat-You"]
+        XCTAssertTrue(seat.waitForExistence(timeout: 5), "Joining did not seat the viewer")
+        XCTAssertEqual(seat.label, "You, In")
+        XCTAssertTrue(waitForLabel(join, "isEnabled == false"), "Join stayed enabled after joining")
+        XCTAssertFalse(app.buttons["spot-ready"].exists, "There is no Ready step any more")
+        XCTAssertFalse(app.buttons["active-call-ready"].exists, "The pinned bar still offers Ready")
+        XCTAssertTrue(app.buttons["active-call-leave"].waitForExistence(timeout: 5), "The pinned bar did not offer Leave after joining")
         assertListClearsComposer(app)
+    }
+
+    func testGatedSpotJoinMarksReadyAndLockWaitsForTheRest() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallNearlyFull"]
+        app.launch()
+
+        let waiting = app.descendants(matching: .any)["spot-lock-waiting"]
+        XCTAssertTrue(waiting.waitForExistence(timeout: 15), "The card did not say who Lock waits for")
+        XCTAssertEqual(waiting.label, "Lock waits for Quinn and Avery to join.")
+        let quinn = app.descendants(matching: .any)["spot-seat-Quinn"]
+        XCTAssertTrue(quinn.exists, "Quinn's seat was not on the card")
+        XCTAssertEqual(quinn.label, "Quinn, Hasn't joined")
+        XCTAssertFalse(app.buttons["spot-lock"].exists, "Lock showed before everyone who is in had joined")
+        let join = app.buttons["spot-join"]
+        XCTAssertTrue(join.waitForExistence(timeout: 5))
+        reveal(join, in: app)
+        join.tap()
+
+        let seat = app.descendants(matching: .any)["spot-seat-You"]
+        XCTAssertTrue(seat.waitForExistence(timeout: 5), "Joining did not seat the viewer")
+        XCTAssertEqual(seat.label, "You, In", "Join on a gated server has to set ready in the same tap")
+        XCTAssertEqual(waiting.label, "Lock waits for Quinn and Avery to join.", "The viewer's own join should not be waited on")
+        XCTAssertFalse(app.buttons["spot-ready"].exists, "There is no Ready step any more")
+        XCTAssertFalse(app.buttons["spot-lock"].exists, "Lock must still follow the server's rule")
     }
 
     func testExpiredSpotStillOffersCallSpots() {
@@ -717,10 +742,11 @@ final class AccessibilityUITests: XCTestCase {
 
         let alex = app.buttons["presence-Alex"]
         XCTAssertTrue(alex.waitForExistence(timeout: 15), "Alex was not in the presence strip")
-        XCTAssertTrue(alex.label.contains("ready"), "A Ready seat did not show as ready: \(alex.label)")
+        XCTAssertTrue(alex.label.contains("in the spot call"), "A joined seat did not show as in the spot: \(alex.label)")
+        XCTAssertFalse(alex.label.contains("ready"), "Presence still shows a separate Ready state: \(alex.label)")
         let sam = app.buttons["presence-Sam"]
         XCTAssertTrue(sam.exists, "Sam was not in the presence strip")
-        XCTAssertTrue(sam.label.contains("in the spot call"), "A seat that is not Ready did not show as in the spot: \(sam.label)")
+        XCTAssertTrue(sam.label.contains("in the spot call"), "A joined seat did not show as in the spot: \(sam.label)")
     }
 
     func testVoicePillStaysAMock() {
@@ -1053,7 +1079,7 @@ final class AccessibilityUITests: XCTestCase {
         }
         XCTAssertTrue(call.isHittable, "The sheet's Call spots was not reachable at AX5")
         call.tap()
-        // The caller's bar offers Lock (mock calls have no Ready gate) or Cancel.
+        // The caller's bar offers Lock (mock calls have no lock gate) or Cancel.
         let lock = app.buttons["active-call-lock"]
         let cancel = app.buttons["active-call-cancel"]
         XCTAssertTrue(lock.waitForExistence(timeout: 5) || cancel.exists, "The pinned bar's action was missing at AX5")

@@ -35,21 +35,10 @@ protocol CheckInServing: AnyObject {
 enum CheckInSelect {
     static let base = "user_id,squad_id,kind,checked_at,until_at"
     static let withDetails = base + ",game,platform"
+    /// The capability probe: one base column plus 0022's two.
+    static let probe = "user_id,game,platform"
 
     static func columns(details: Bool) -> String { details ? withDetails : base }
-
-    /// Whether the proposed 0022 columns are on the server, from a `select=*`
-    /// read: present when a returned row has both `game` and `platform`, missing
-    /// when a row comes back without them. No row (no check-ins you can see yet)
-    /// says nothing, so it's read as missing and the sheet keeps its "not the
-    /// game or console yet" line (`WhosIn.detailsMissing`). Asking for the
-    /// columns by name fails with 42703 on a server without them, which the
-    /// live logs kept showing as an error.
-    static func detailsPresent(in data: Data) -> Bool {
-        guard let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
-              let row = rows.first else { return false }
-        return row.keys.contains("game") && row.keys.contains("platform")
-    }
 }
 
 enum SteamFunction {
@@ -82,29 +71,33 @@ final class SupabaseCheckInService: CheckInServing {
         self.details = knownDetails
     }
 
-    /// One read-only request: `select=*&limit=1`. It answers both questions
-    /// (is the table there, are the 0022 columns there) without naming a column
-    /// the server may not have, so it never fails on a missing one.
+    /// One read-only request that names 0022's columns and asks for no rows
+    /// (`select=user_id,game,platform&limit=0`), so the answer doesn't depend on
+    /// whether you can see any check-ins yet.
+    /// - success: table and details are there
+    /// - missing table: `.unknown` (check-ins aren't set up)
+    /// - 42703 / PGRST204: table is there, details aren't (logged at info)
+    /// - anything else (offline, 500, auth): throws, so nothing is latched off
     func capabilities() async throws -> CheckInCapabilities {
-        let data: Data
         do {
-            data = try await http.send(
+            _ = try await http.send(
                 path: "rest/v1/sq8_check_ins",
                 method: "GET",
                 query: [
-                    URLQueryItem(name: "select", value: "*"),
-                    URLQueryItem(name: "limit", value: "1")
+                    URLQueryItem(name: "select", value: CheckInSelect.probe),
+                    URLQueryItem(name: "limit", value: "0")
                 ],
                 feature: .checkIns,
                 probe: true
             )
         } catch let failure as BackendFailure {
             if case .notSetUp = failure { return .unknown }
-            throw failure
+            guard MissingColumn.matches(failure) else { throw failure }
+            details = false
+            return CheckInCapabilities(table: true, details: false)
         }
-        let found = CheckInSelect.detailsPresent(in: data)
-        details = found
-        return CheckInCapabilities(table: true, details: found)
+        details = true
+        return CheckInCapabilities(table: true, details: true)
     }
 
     func checkIns(squadId: UUID) async throws -> [CheckInRecord] {

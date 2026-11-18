@@ -554,6 +554,8 @@ final class SquadNameTests: XCTestCase {
         let refusal = Data("{\"message\":\"cannot execute FOR UPDATE in a read-only transaction\"}".utf8)
         XCTAssertEqual(HTTPFailureLog.level(status: 405, body: refusal, probe: false), .info)
         XCTAssertEqual(HTTPFailureLog.level(status: 400, body: Data("{\"message\":\"spot_not_member\"}".utf8), probe: false), .error)
+        XCTAssertEqual(HTTPFailureLog.level(status: 500, body: Data("{\"message\":\"boom\"}".utf8), probe: true), .error, "A probe that breaks is still an error")
+        XCTAssertEqual(HTTPFailureLog.level(status: 404, body: Data("{\"code\":\"PGRST202\"}".utf8), probe: true), .info)
     }
 }
 

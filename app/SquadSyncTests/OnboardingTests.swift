@@ -242,27 +242,30 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(present.requests.last?.httpMethod, "PATCH")
         let body = present.requests.last?.httpBody.flatMap { String(data: $0, encoding: .utf8) } ?? ""
         XCTAssertTrue(body.contains("Valorant"), body)
-        XCTAssertEqual(present.requests.first?.url?.query?.contains("select=*"), true)
+        XCTAssertEqual(present.requests.first?.url?.query?.contains("select=games"), true)
     }
 
-    func testLiveProfileWithoutTheGamesKeyStaysOnThePhoneWithoutAnError() async throws {
-        let suite = "onboarding-tests-\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
-        defer { defaults.removePersistentDomain(forName: suite) }
-        let local = LocalGamesStore(defaults: defaults)
-        local.save(user, games: ["Apex Legends"])
-        let live = ScriptedTransport(responses: [
-            (200, json(#"[{"id":"x","display_name":"S","default_game":"Halo"}]"#))
-        ])
-        let service = SupabaseProfileGames(config: config, accessToken: "token", transport: live, local: local)
+    func testColumnPresentWithNoRowYetStillSavesOnTheServer() async throws {
+        let present = ScriptedTransport(responses: [(200, json("[]")), (204, Data())])
+        let service = SupabaseProfileGames(config: config, accessToken: "token", transport: present)
         let loaded = try await service.load(userId: user)
-        XCTAssertEqual(loaded, ProfileGames(games: ["Apex Legends"], home: .phone))
+        XCTAssertEqual(loaded, ProfileGames(games: [], home: .server), "No row yet is not a missing column")
         let home = try await service.save(userId: user, games: ["Halo"])
-        XCTAssertEqual(home, .phone)
-        XCTAssertEqual(live.requests.count, 1)
-        XCTAssertFalse((live.requests.first?.url?.query ?? "").contains("games"), "Never names the missing column")
-        XCTAssertEqual(SupabaseProfileGames.serverGames(in: json(#"[{"games":null}]"#)), [])
-        XCTAssertNil(SupabaseProfileGames.serverGames(in: json("[]")))
+        XCTAssertEqual(home, .server)
+        XCTAssertEqual(present.requests.last?.httpMethod, "PATCH")
+    }
+
+    func testOnlyAMissingColumnMovesGamesToThePhone() async throws {
+        let broken = ScriptedTransport(responses: [(500, json(#"{"message":"boom"}"#)), (200, json(#"[{"games":["Halo"]}]"#))])
+        let service = SupabaseProfileGames(config: config, accessToken: "token", transport: broken)
+        do {
+            _ = try await service.load(userId: user)
+            XCTFail("A 500 must not read as the column missing")
+        } catch {
+            XCTAssertEqual(error as? BackendFailure, .rejected("boom"))
+        }
+        let loaded = try await service.load(userId: user)
+        XCTAssertEqual(loaded, ProfileGames(games: ["Halo"], home: .server), "The failure wasn't remembered")
     }
 
     func testOfflineGamesReadThrowsInsteadOfGuessing() async {

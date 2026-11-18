@@ -47,9 +47,10 @@ final class SupabaseProfileGames: ProfileGamesServing {
         self.local = local
     }
 
-    /// Reads your own profile row with `select=*`, so a server without 0023's
-    /// `games` column answers normally instead of failing with 42703 (which the
-    /// logs report as an error). The row's keys say where the list lives.
+    /// Reads `games` from your own row by name. Only a real missing-column
+    /// answer (42703 / PGRST204) moves the list to this phone, and that answer is
+    /// logged at info. Success means the column is there even when no row comes
+    /// back yet. Any other failure throws and nothing is remembered.
     func load(userId: UUID) async throws -> ProfileGames {
         do {
             let data = try await http.send(
@@ -57,30 +58,19 @@ final class SupabaseProfileGames: ProfileGamesServing {
                 method: "GET",
                 query: [
                     URLQueryItem(name: "id", value: "eq.\(userId.uuidString)"),
-                    URLQueryItem(name: "select", value: "*")
+                    URLQueryItem(name: "select", value: "games")
                 ],
-                feature: .profile
+                feature: .profile,
+                probe: true
             )
-            guard let found = Self.serverGames(in: data) else {
-                home = .phone
-                return ProfileGames(games: local.load(userId), home: .phone)
-            }
             home = .server
-            return ProfileGames(games: found, home: .server)
+            let rows = (try? JSONDecoder().decode([GamesRow].self, from: data)) ?? []
+            return ProfileGames(games: rows.first?.games ?? [], home: .server)
         } catch let failure as BackendFailure {
             guard Self.columnMissing(failure) else { throw failure }
             home = .phone
             return ProfileGames(games: local.load(userId), home: .phone)
         }
-    }
-
-    /// The server's list when the profile row has a `games` key (null reads as
-    /// empty). Nil when the key is missing (0023 not applied) or no row came back,
-    /// so the list stays on this phone.
-    static func serverGames(in data: Data) -> [String]? {
-        guard let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
-              let row = rows.first, row.keys.contains("games") else { return nil }
-        return (row["games"] as? [Any])?.compactMap { $0 as? String } ?? []
     }
 
     func save(userId: UUID, games: [String]) async throws -> GamesHome {
@@ -105,10 +95,7 @@ final class SupabaseProfileGames: ProfileGamesServing {
 
     /// 42703 / PGRST204 / "column ... does not exist" means 0023 isn't applied.
     static func columnMissing(_ failure: BackendFailure) -> Bool {
-        guard case .rejected(let message) = failure else { return false }
-        let text = message.lowercased()
-        if text.contains("42703") || text.contains("pgrst204") { return true }
-        return text.contains("column") && (text.contains("does not exist") || text.contains("could not find"))
+        MissingColumn.matches(failure)
     }
 
     private struct GamesRow: Codable {

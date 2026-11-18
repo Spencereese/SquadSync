@@ -625,6 +625,17 @@ final class SpotServerTests: XCTestCase {
         XCTAssertFalse(queries.contains { $0.contains("00000000-0000-0000-0000-000000000000") }, "No made-up ids")
     }
 
+    func testAnInconclusiveColumnReadIsNotCached() async throws {
+        let broken = Data("{\"message\":\"boom\"}".utf8)
+        let transport = ScriptedTransport(responses: [(200, Data("[]".utf8)), (500, broken)] + presentProbes())
+        let spots = SupabaseSpotService(config: config, accessToken: "access", transport: transport)
+        let first = await spots.serverCapabilities()
+        XCTAssertFalse(first.ready, "Safe answer while unsure")
+        let second = await spots.serverCapabilities()
+        XCTAssertEqual(second, SpotServerCapabilities(ready: true, gatedLock: true, expiry: true, seatTarget: true))
+        XCTAssertEqual(transport.requests.count, 4, "Asked again after the failure")
+    }
+
     func testMissingOpenReadFallsBackToTheTablesEvenWhenTheColumnsAreThere() async throws {
         let missing = Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function public.sq8_read_open_spot(squad) in the schema cache\"}".utf8)
         let transport = ScriptedTransport(responses: presentProbes() + [

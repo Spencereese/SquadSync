@@ -1042,8 +1042,10 @@ final class SupabaseSpotService: SpotServing {
         // Two read-only column reads, nothing else. See SpotServerCapabilities.fromColumns.
         let seatColumn = await columnExists(path: "rest/v1/sq8_spot_calls", column: "seat_target")
         let readyColumn = await columnExists(path: "rest/v1/sq8_spot_rsvps", column: "ready")
-        let found = SpotServerCapabilities.fromColumns(seatTarget: seatColumn, ready: readyColumn)
-        cachedCapabilities = found
+        let found = SpotServerCapabilities.fromColumns(seatTarget: seatColumn ?? false, ready: readyColumn ?? false)
+        // An inconclusive read (offline, 500) isn't evidence a column is missing:
+        // use the safe answer this time and ask again next time.
+        if seatColumn != nil && readyColumn != nil { cachedCapabilities = found }
         return found
     }
 
@@ -1098,7 +1100,9 @@ final class SupabaseSpotService: SpotServing {
         }
     }
 
-    private func columnExists(path: String, column: String) async -> Bool {
+    /// True when the read works, false when the server says the column (or its
+    /// table) isn't there, nil for any other failure.
+    private func columnExists(path: String, column: String) async -> Bool? {
         do {
             _ = try await http.send(
                 path: path,
@@ -1112,12 +1116,10 @@ final class SupabaseSpotService: SpotServing {
             )
             return true
         } catch let failure as BackendFailure {
-            if case .rejected(let message) = failure {
-                return SpotProbe.columnPresent(status: 400, body: message)
-            }
-            return false
+            if case .notSetUp = failure { return false }
+            return MissingColumn.matches(failure) ? false : nil
         } catch {
-            return false
+            return nil
         }
     }
 

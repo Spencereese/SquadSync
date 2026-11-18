@@ -157,6 +157,21 @@ enum RefreshRejection {
     }
 }
 
+/// 42703 / PGRST204 / "column ... does not exist" / "could not find the ...
+/// column": the server answered that a column isn't there. Nothing else counts.
+enum MissingColumn {
+    static func matches(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        if lower.contains("42703") || lower.contains("pgrst204") { return true }
+        return lower.contains("column") && (lower.contains("does not exist") || lower.contains("could not find"))
+    }
+
+    static func matches(_ failure: BackendFailure) -> Bool {
+        guard case .rejected(let message) = failure else { return false }
+        return matches(message)
+    }
+}
+
 enum HTTPFailureLog {
     /// A capability GET is supposed to fail this way. The function is there; the read-only transaction stopped the write.
     static func isExpectedProbeRefusal(status: Int, body: Data) -> Bool {
@@ -167,12 +182,22 @@ enum HTTPFailureLog {
 
     enum Level: Equatable { case info, error }
 
-    /// A request marked `probe` asks the server whether something exists, so any
-    /// answer is information, not a failure; so is the read-only refusal above.
-    /// Everything else that fails is an error.
+    /// A request marked `probe` asks the server whether something exists, so an
+    /// "isn't there" answer (missing column, function, or table) is information,
+    /// not a failure; so is the read-only refusal above. Anything else, probe or
+    /// not (a 500, a permission error), is still an error.
     static func level(status: Int, body: Data, probe: Bool) -> Level {
-        if probe || isExpectedProbeRefusal(status: status, body: body) { return .info }
+        if isExpectedProbeRefusal(status: status, body: body) { return .info }
+        if probe && isAbsenceAnswer(status: status, body: body) { return .info }
         return .error
+    }
+
+    static func isAbsenceAnswer(status: Int, body: Data) -> Bool {
+        if status == 404 { return true }
+        let text = (String(data: body, encoding: .utf8) ?? "").lowercased()
+        return MissingColumn.matches(text)
+            || text.contains("pgrst202") || text.contains("pgrst205") || text.contains("42p01")
+            || text.contains("could not find the function") || text.contains("could not find the table")
     }
 
     static func record(method: String, path: String, status: Int, body: Data, probe: Bool = false) {

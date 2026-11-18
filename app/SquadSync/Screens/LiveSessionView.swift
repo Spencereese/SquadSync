@@ -969,7 +969,7 @@ final class LiveSessionModel {
     func lockSpot() async {
         await changeSpot(reloadAfterFailure: true) { session, call in
             try await spotService(session).lock(callId: call.id)
-            spotNote = "Locked. Open in another app is only a launcher."
+            spotNote = "Locked."
         }
     }
 
@@ -2753,26 +2753,6 @@ struct LiveSessionView: View {
                         .accessibilityIdentifier("spot-end")
                         .accessibilityLabel("End the spot call")
                     }
-                    Text("Open in")
-                        .font(.caption.weight(.semibold))
-                        .accessibilityAddTraits(.isHeader)
-                    ForEach(PartyLauncher.destinations) { destination in
-                        Button {
-                            openLauncher(destination)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Open in \(destination.title)")
-                                    .font(.body)
-                                    .lineLimit(2)
-                                Text(destination.note)
-                                    .font(.caption2)
-                                    .foregroundStyle(SQColor.muted)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        .accessibilityIdentifier("spot-open-\(destination.title.lowercased())")
-                        .accessibilityLabel("Open in \(destination.title). \(destination.note)")
-                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -2844,12 +2824,6 @@ struct LiveSessionView: View {
         if seat.starter { parts.append("starter") }
         parts.append(seat.ready ? "Ready" : "In")
         return parts
-    }
-
-    private func openLauncher(_ destination: PartyLauncher.Destination) {
-        let application = UIApplication.shared
-        let url = application.canOpenURL(destination.scheme) ? destination.scheme : destination.web
-        application.open(url)
     }
 
     /// Pinned spot bar. One row when it fits: game, countdown, and seats beside the

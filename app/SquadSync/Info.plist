@@ -6,12 +6,6 @@
 	<string>SquadSync</string>
 	<key>CFBundleName</key>
 	<string>SquadSync</string>
-	<key>LSApplicationQueriesSchemes</key>
-	<array>
-		<string>discord</string>
-		<string>xbox</string>
-		<string>psapp</string>
-	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

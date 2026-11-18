@@ -536,31 +536,3 @@ enum SpotSeed {
     static let quinn = UUID(uuidString: "00000000-0000-0000-0000-00000000B016")!
     static let avery = UUID(uuidString: "00000000-0000-0000-0000-00000000B017")!
 }
-
-enum PartyLauncher {
-    struct Destination: Equatable, Identifiable {
-        let title: String
-        let scheme: URL
-        let web: URL
-        var id: String { title }
-        var note: String { "Launcher only. This does not show who is already there." }
-    }
-
-    static let destinations: [Destination] = [
-        Destination(
-            title: "Discord",
-            scheme: URL(string: "discord://")!,
-            web: URL(string: "https://discord.com/app")!
-        ),
-        Destination(
-            title: "Xbox",
-            scheme: URL(string: "xbox://")!,
-            web: URL(string: "https://www.xbox.com/")!
-        ),
-        Destination(
-            title: "PlayStation",
-            scheme: URL(string: "psapp://")!,
-            web: URL(string: "https://www.playstation.com/")!
-        )
-    ]
-}

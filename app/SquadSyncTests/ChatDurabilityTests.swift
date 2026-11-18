@@ -872,6 +872,192 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertNil(ChatRowFit.offset(rowTop: -100, rowBottom: 360, metrics: m), "Taller than the list: bottom lines win")
     }
 
+    // MARK: Cycles across run-loop turns, tracked rows, failed-row fit
+
+    func testPinStopsFollowingAContentCycleThatSpansTurns() {
+        // Each turn: a correction, the lazy stack re-estimates, the content size
+        // moves, the next turn corrects again. The per-turn budget refills every
+        // turn, so on its own it never ends that.
+        var (pin, m) = pinnedAtBottom()
+        pin.endChanged()
+        var moves = 0
+        var now = 10.0
+        for turn in 1...20 {
+            m.contentHeight = 8000 + Double(turn % 2 == 0 ? 40 : -40)
+            if let target = pin.observe(m, change: .content, now: now) {
+                moves += 1
+                m.offset = target
+            }
+            pin.turnEnded()
+            now += 0.004
+        }
+        XCTAssertEqual(moves, ChatBottomPin.cycleLimit, "Cut after the limit, not after 20 turns")
+        XCTAssertTrue(pin.suspended)
+        XCTAssertTrue(pin.pinned, "Still pinned: only the automatic following stopped")
+        m.viewportHeight -= 50
+        XCTAssertNil(pin.observe(m, change: .viewport, now: now + 0.2), "Nothing is followed mid-cycle, whatever moved")
+        XCTAssertEqual(pin.observe(m, change: .viewport, now: now + 1.3), m.maxOffset, "A second of quiet ends it")
+        XCTAssertFalse(pin.suspended)
+    }
+
+    func testTheSameCycleThroughTheInsetsIsCutToo() {
+        // contentMargins or the keyboard rewriting the insets on each layout pass:
+        // the inset change re-pins, the move lays out, the insets move back.
+        var (pin, m) = pinnedAtBottom()
+        var moves = 0
+        var now = 3.0
+        for turn in 1...40 {
+            m.bottomInset = turn % 2 == 0 ? 40 : 12
+            let change: ChatBottomPin.Change = turn % 3 == 0 ? .offset : .insets
+            if let target = pin.observe(m, change: change, now: now) {
+                moves += 1
+                m.offset = target
+            }
+            pin.turnEnded()
+            now += 0.002
+        }
+        XCTAssertLessThanOrEqual(moves, ChatBottomPin.cycleLimit)
+        XCTAssertTrue(pin.suspended)
+    }
+
+    func testTheKeyboardOpeningAndClosingNeverLooksLikeACycle() {
+        var (pin, m) = pinnedAtBottom()
+        var now = 0.0
+        for _ in 1...30 {
+            m.viewportHeight = m.viewportHeight == 600 ? 300 : 600
+            if let target = pin.observe(m, change: .viewport, now: now) { m.offset = target }
+            XCTAssertEqual(m.offset, m.maxOffset, "Every open and close is followed")
+            pin.turnEnded()
+            now += 0.6
+        }
+        XCTAssertFalse(pin.suspended)
+    }
+
+    func testDiscreteEventsResumeFollowing() {
+        var (pin, m) = pinnedAtBottom()
+        pin.endChanged()
+        for turn in 1...ChatBottomPin.cycleLimit + 1 {
+            m.contentHeight = 8000 + Double(turn) * 10
+            if let target = pin.observe(m, change: .content) { m.offset = target }
+            pin.turnEnded()
+        }
+        XCTAssertTrue(pin.suspended)
+        pin.endChanged()
+        XCTAssertFalse(pin.suspended, "A new row at the end is a new event")
+        m.contentHeight += 30
+        XCTAssertEqual(pin.observe(m, change: .content), m.maxOffset)
+        for turn in 1...ChatBottomPin.cycleLimit {
+            m.contentHeight += Double(turn)
+            if let target = pin.observe(m, change: .content) { m.offset = target }
+            pin.turnEnded()
+        }
+        XCTAssertTrue(pin.suspended)
+        pin.jumped(toBottom: true)
+        XCTAssertFalse(pin.suspended, "Jump to latest resumes")
+        _ = pin.observe(m, change: .offset, interacting: true)
+        XCTAssertFalse(pin.suspended, "So does the person's own scroll")
+    }
+
+    func testASendThatFailsAtAX5StaysUnderTheCycleLimit() {
+        // The real sequence: new row, failed (both end changes), then header and
+        // composer settling: a few content and inset-driven corrections.
+        var (pin, m) = pinnedAtBottom()
+        pin.endChanged()
+        m.contentHeight += 60
+        XCTAssertNotNil(pin.observe(m, change: .content))
+        m.offset = m.maxOffset
+        pin.endChanged()
+        for _ in 0..<2 {
+            m.contentHeight += 27
+            XCTAssertNotNil(pin.observe(m, change: .content))
+            m.offset = m.maxOffset
+        }
+        pin.turnEnded()
+        m.topInset += 55
+        m.offset += 55
+        XCTAssertNotNil(pin.observe(m, change: .offset), "Next turn: the header coming back")
+        XCTAssertFalse(pin.suspended)
+    }
+
+    func testTrackedRowsAreStampedWithTheGenerationWhenTheyReport() {
+        var rows = ChatTrackedRows()
+        let a = ChatLongSeed.id(68), b = ChatLongSeed.id(69)
+        rows.moved(a, frame: ChatRowFrame(minY: 1000, height: 40))
+        rows.moved(b, frame: ChatRowFrame(minY: 1042, height: 40))
+        XCTAssertEqual(rows.framesMeasured(since: 0).count, 2)
+        // Page 1 is handed to the list: what was measured before is generation 0.
+        rows.begin(generation: 1)
+        XCTAssertTrue(rows.framesMeasured(since: 1).isEmpty, "Nothing measured in the new layout yet")
+        rows.moved(b, frame: ChatRowFrame(minY: 3542, height: 40))
+        XCTAssertEqual(rows.measured(b)?.generation, 1, "A report after the page went in is from a layout that has it")
+        XCTAssertEqual(rows.measured(a)?.generation, 0)
+        XCTAssertEqual(Set(rows.framesMeasured(since: 1).keys), [b])
+    }
+
+    func testHoldAnchorSurvivesATransientDisappear() {
+        var rows = ChatTrackedRows()
+        let anchor = ChatLongSeed.id(69), other = ChatLongSeed.id(70)
+        rows.moved(anchor, frame: ChatRowFrame(minY: 1042, height: 40))
+        rows.moved(other, frame: ChatRowFrame(minY: 1084, height: 40))
+        XCTAssertFalse(rows.gone(anchor, holdAnchor: anchor), "The lazy stack re-creating it mid-insert keeps its reading")
+        XCTAssertNotNil(rows.frames[anchor])
+        XCTAssertTrue(rows.gone(other, holdAnchor: anchor))
+        XCTAssertNil(rows.frames[other], "Any other row that leaves can't claim it's on screen")
+        XCTAssertTrue(rows.gone(anchor, holdAnchor: nil), "Without a hold it leaves like any row")
+        XCTAssertNil(rows.frames[anchor])
+    }
+
+    func testVisibleAnchorHoldMarksTheInsertWithoutMovingSoStepTwoCanRun() {
+        // The controller has to store the hold after offsetForInsert even when it
+        // returns nil: until 1c7fe9f it dropped that copy, insertApplied never
+        // stuck, step 2 never ran, and the scroll to the anchor's unit point left
+        // -0.3 to -1.7pt of drift on every visible row.
+        var hold = ChatPrependHold(anchor: ChatLongSeed.id(69), offsetBefore: 1300, contentHeightBefore: 8000,
+                                   anchorYBefore: 250.33, generation: 1, insertMovesOffset: false)
+        XCTAssertNil(hold.offsetForInsert(metrics(offset: 1300, content: 10500)), "No move on estimated growth")
+        XCTAssertTrue(hold.insertApplied)
+        let landed = metrics(offset: 3800, content: 10500)
+        XCTAssertEqual(hold.offsetForAnchor(y: 249.33, measuredIn: 1, metrics: landed, confirming: false) ?? 0, 3799, accuracy: 0.0001,
+                       "The 1pt the scroll left is corrected exactly")
+        XCTAssertNil(hold.offsetForAnchor(y: 250.33, measuredIn: 1, metrics: metrics(offset: 3799, content: 10500)))
+        XCTAssertFalse(hold.settled, "One still reading isn't enough")
+    }
+
+    func testFailedFitWithoutAFrameGoesToTheBottom() {
+        // AX5, keyboard up, the 279 landing: the list stopped 28pt short of the end
+        // and the row's frame never came in.
+        let short = ChatScrollMetrics(offset: 1105, topInset: 0, bottomInset: 4, contentHeight: 1500, viewportHeight: 159)
+        let decision = ChatFailedFit.decide(contentTop: nil, height: nil, metrics: short)
+        XCTAssertEqual(decision.reason, .bottom)
+        XCTAssertEqual(decision.offset, short.maxOffset)
+        XCTAssertEqual(short.maxOffset, 1345, "Content end with the bottom inset applied")
+        let there = ChatScrollMetrics(offset: 1345, topInset: 0, bottomInset: 4, contentHeight: 1500, viewportHeight: 159)
+        XCTAssertNil(ChatFailedFit.decide(contentTop: nil, height: nil, metrics: there).offset)
+        XCTAssertEqual(ChatFailedFit.decide(contentTop: nil, height: nil, metrics: there).reason, .atBottom)
+        XCTAssertEqual(ChatFailedFit.decide(contentTop: 1400, height: 0, metrics: short).reason, .bottom, "A zero first report isn't a frame")
+    }
+
+    func testFailedFitFromAFrameMovesRetryInside() {
+        // Row measured in content coordinates: "Not delivered" + Retry end 11pt
+        // below the list (Retry 382 vs 371 in screen terms, list 159pt tall).
+        let m = ChatScrollMetrics(offset: 1200, topInset: 0, bottomInset: 4, contentHeight: 1500, viewportHeight: 159)
+        let decision = ChatFailedFit.decide(contentTop: 1200 + 67, height: 103, metrics: m)
+        XCTAssertEqual(decision.reason, .fitFromFrame)
+        XCTAssertEqual(decision.offset ?? 0, 1200 + (67 + 103 - 155), accuracy: 0.0001, "Up by exactly what sticks out")
+        let inside = ChatFailedFit.decide(contentTop: 1200 + 40, height: 103, metrics: m)
+        XCTAssertNil(inside.offset)
+        XCTAssertEqual(inside.reason, .fits)
+    }
+
+    func testFailedFitSaysWhenTheContentEndsTooSoon() {
+        // At the end already and the row still sticks out: the content size is
+        // behind the row (logged as clamped, not silently skipped).
+        let m = ChatScrollMetrics(offset: 1345, topInset: 0, bottomInset: 4, contentHeight: 1500, viewportHeight: 159)
+        let decision = ChatFailedFit.decide(contentTop: 1345 + 80, height: 103, metrics: m)
+        XCTAssertNil(decision.offset)
+        XCTAssertEqual(decision.reason, .clamped)
+    }
+
     func testViewportStickUsesThePinSlack() {
         XCTAssertEqual(ChatViewportStick.pinnedSlack, 32)
         let near = metrics(offset: 7670, content: 8000, viewport: 300)

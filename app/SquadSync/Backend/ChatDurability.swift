@@ -234,6 +234,94 @@ struct ChatRowFrame: Equatable, Sendable {
     var height: Double
 }
 
+/// The tracked rows' content-space frames, each stamped with the layout
+/// generation (older pages in) the controller was in when the row reported.
+///
+/// The generation is stamped here on receipt, not carried by the row's view: a
+/// report that arrives after a page was handed to the list comes from a layout
+/// that has the page (`begin(generation:)` is called right before the rows go
+/// in), whatever the row's closure captured.
+///
+/// A row the lazy stack drops leaves (`gone`), so a stale position can't claim
+/// it's on screen, except the row a hold is anchored on: the lazy stack can
+/// drop and re-create it while it lays out the insert, and the hold's pre-insert
+/// reading must survive that (its next report replaces it).
+struct ChatTrackedRows: Equatable {
+    private(set) var frames: [UUID: ChatRowFrame] = [:]
+    private(set) var generations: [UUID: Int] = [:]
+    private(set) var generation = 0
+
+    mutating func moved(_ id: UUID, frame: ChatRowFrame) {
+        frames[id] = frame
+        generations[id] = generation
+    }
+
+    /// False when the row was kept because the hold is anchored on it.
+    @discardableResult
+    mutating func gone(_ id: UUID, holdAnchor: UUID?) -> Bool {
+        guard id != holdAnchor else { return false }
+        frames[id] = nil
+        generations[id] = nil
+        return true
+    }
+
+    /// Frames measured in `generation` or later.
+    func framesMeasured(since generation: Int) -> [UUID: ChatRowFrame] {
+        frames.filter { (generations[$0.key] ?? -1) >= generation }
+    }
+
+    func measured(_ id: UUID) -> (frame: ChatRowFrame, generation: Int)? {
+        guard let frame = frames[id], let generation = generations[id] else { return nil }
+        return (frame, generation)
+    }
+
+    /// A page is about to go in: later reports belong to this generation.
+    mutating func begin(generation: Int) { self.generation = generation }
+
+    mutating func reset() { self = ChatTrackedRows() }
+}
+
+/// Where the list goes so your failed last message's "Not delivered" and Retry
+/// are inside it, run on fixed checks after the send fails and after every
+/// keyboard/header/composer change while it's still the last row.
+///
+/// `contentTop`/`height` are the failed row's frame converted to content
+/// coordinates when it was measured (list-visible y plus the offset then), so a
+/// move by the list itself doesn't make it stale. Without a frame, the row is
+/// the last one, so the bottom (content end, bottom inset applied) is where its
+/// last lines fit.
+enum ChatFailedFit {
+    enum Reason: String, Equatable {
+        /// Frame known and the row is inside the list.
+        case fits
+        /// Frame known; the list moves by what sticks out.
+        case fitFromFrame
+        /// Frame known but the content ends before the row's bottom can come in.
+        case clamped
+        /// No frame yet: to the bottom.
+        case bottom
+        /// No frame, already at the bottom.
+        case atBottom
+    }
+
+    static func decide(contentTop: Double?, height: Double?, metrics: ChatScrollMetrics) -> (offset: Double?, reason: Reason) {
+        guard let contentTop, let height, height > 0 else {
+            let off = abs(metrics.maxOffset - metrics.offset) > ChatRowFit.tolerance ? metrics.maxOffset : nil
+            return (off, off == nil ? .atBottom : .bottom)
+        }
+        let top = contentTop - metrics.offset
+        let bottom = top + height
+        guard let target = ChatRowFit.offset(rowTop: top, rowBottom: bottom, metrics: metrics) else {
+            let visibleBottom = metrics.viewportHeight - metrics.bottomInset
+            let stuck = bottom > visibleBottom + ChatRowFit.tolerance
+            return (nil, stuck ? .clamped : .fits)
+        }
+        let after = bottom - (target - metrics.offset)
+        let visibleBottom = metrics.viewportHeight - metrics.bottomInset
+        return (target, after > visibleBottom + ChatRowFit.tolerance ? .clamped : .fitFromFrame)
+    }
+}
+
 /// Where to put the visible anchor back after an older page goes in: scroll to
 /// `id` with the unit point (0.5, `unitY`), which puts its top at `y` again.
 struct ChatPrependRestore: Equatable {
@@ -301,15 +389,30 @@ enum ChatViewportStick {
 /// Any other content growth (a row in the middle expanding) leaves the offset
 /// alone, and so does an offset change that isn't the person's (`.scroll`). At
 /// most `budget` corrections per run-loop turn (`turnEnded()`), each only when
-/// more than half a point off, so it can't feed back into a layout loop. While
-/// an older page is being held in place the pin doesn't move anything.
+/// more than half a point off.
+///
+/// The per-turn budget can't stop a cycle that spans turns: a correction makes
+/// the lazy stack lay out again, the insets or content size move, the next turn
+/// corrects again, and the budget has refilled. So automatic corrections are
+/// also counted over a short window (`cycleWindow`): more than `cycleLimit` in it
+/// is a cycle, not layout settling, and the pin stops moving the list
+/// (`suspended`) until the next discrete event (the person's drag, a jump, the
+/// end changing, an expansion) or `cycleQuiet` seconds without one being asked
+/// for. A send that fails at AX5 with the keyboard up needs about five; a cycle
+/// asks for hundreds a second. While an older page is being held in place the
+/// pin doesn't move anything.
 struct ChatBottomPin: Equatable {
     static let slack = 32.0
     static let budget = 3
+    static let cycleLimit = 8
+    static let cycleWindow = 0.5
+    static let cycleQuiet = 1.0
 
     enum Change: Equatable {
         /// The scroll view's size changed (keyboard, header, composer).
         case viewport
+        /// The content insets changed (contentMargins, keyboard).
+        case insets
         /// The content height changed.
         case content
         /// The offset changed; upgraded to a layout change when the insets moved.
@@ -322,43 +425,75 @@ struct ChatBottomPin: Equatable {
     private(set) var endPending = false
     private var insets: [Double]?
     private var corrections = 0
+    /// Times of the automatic corrections in the current window.
+    private var recent: [Double] = []
+    /// A cycle was cut; nothing is followed until a discrete event or quiet.
+    private(set) var suspended = false
+    private var lastAsked = 0.0
 
-    /// Feed every geometry change. Returns the offset to move to, if any.
-    mutating func observe(_ metrics: ChatScrollMetrics, change: Change, interacting: Bool = false, holding: Bool = false) -> Double? {
-        let now = [metrics.topInset, metrics.bottomInset]
-        let insetsMoved = insets.map { $0 != now } ?? false
-        insets = now
+    /// Feed every geometry change. Returns the offset to move to, if any. `now`
+    /// is a monotonic clock in seconds (only differences matter).
+    mutating func observe(_ metrics: ChatScrollMetrics, change: Change, interacting: Bool = false, holding: Bool = false, now: Double = 0) -> Double? {
+        let current = [metrics.topInset, metrics.bottomInset]
+        let insetsMoved = insets.map { $0 != current } ?? false
+        insets = current
         guard !holding else { return nil }
         if interacting {
             pinned = metrics.distanceFromBottom <= Self.slack
+            discreteEvent()
             return nil
         }
         guard pinned else { return nil }
         let follows: Bool
         switch change {
-        case .viewport: follows = true
+        case .viewport, .insets: follows = true
         case .content: follows = endPending
         case .offset: follows = insetsMoved
         }
-        guard follows, corrections < Self.budget, abs(metrics.maxOffset - metrics.offset) > 0.5 else { return nil }
+        guard follows, abs(metrics.maxOffset - metrics.offset) > 0.5 else { return nil }
+        if suspended {
+            guard now - lastAsked >= Self.cycleQuiet else {
+                lastAsked = now
+                return nil
+            }
+            discreteEvent()
+        }
+        lastAsked = now
+        guard corrections < Self.budget else { return nil }
+        recent.removeAll { now - $0 > Self.cycleWindow }
+        guard recent.count < Self.cycleLimit else {
+            suspended = true
+            return nil
+        }
+        recent.append(now)
         corrections += 1
         return metrics.maxOffset
     }
 
+    private mutating func discreteEvent() {
+        recent = []
+        suspended = false
+    }
+
     /// The thread's last row is new, or its send state changed.
-    mutating func endChanged() { endPending = true }
+    mutating func endChanged() {
+        endPending = true
+        discreteEvent()
+    }
     /// The layout for that change is done.
     mutating func endSettled() { endPending = false }
     /// The person tapped something that grows in place.
     mutating func expanded() {
         pinned = false
         endPending = false
+        discreteEvent()
     }
     /// The app scrolled the list itself: to the newest message (pins) or to
     /// something else (unpins).
     mutating func jumped(toBottom: Bool) {
         pinned = toBottom
         if !toBottom { endPending = false }
+        discreteEvent()
     }
     /// A run-loop turn is over: the correction budget refills.
     mutating func turnEnded() { corrections = 0 }

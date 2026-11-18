@@ -2233,11 +2233,16 @@ struct LiveSessionView: View {
     }
 
     private var chatList: some View {
-        ScrollViewReader { proxy in
+        let _ = ChatScrollTrace.counted(.listBody)
+        return ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
-                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                        // Ticks only while there's a call whose countdown it shows: with
+                        // no call the slot is the call form, which doesn't change with
+                        // time, and a once-a-second update inside the lazy stack is work
+                        // on a settled thread for nothing.
+                        TimelineView(ChatSlotSchedule(ticks: model.spot != nil)) { context in
                             let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
                             spotSlot(now: now)
                         }
@@ -2257,10 +2262,10 @@ struct LiveSessionView: View {
                                 Task { await model.retryOlder() }
                             }
                         }
-                        let generation = model.olderPagesLoaded
                         let tracked = scrollTrackedIds
                         let failed = failedEndRow
                         ForEach(chatRowItems) { item in
+                            let _ = ChatScrollTrace.counted(.rowBody)
                             switch item.row {
                             case .day(_, let label):
                                 ChatDaySeparator(label: label)
@@ -2269,11 +2274,11 @@ struct LiveSessionView: View {
                             case .message(let bubble):
                                 messageRow(bubble)
                                     .id(bubble.entry.id)
-                                    // Only tracked rows get a geometry observer at all;
-                                    // the rest have no modifier (see ChatRowGeometry).
+                                    // Only tracked rows get a geometry observer, in the
+                                    // row's background, so tracking never changes the
+                                    // row's own identity (see ChatRowGeometry).
                                     .modifier(ChatRowGeometry(
                                         id: bubble.entry.id,
-                                        generation: generation,
                                         tracksPosition: tracked.contains(bubble.entry.id),
                                         tracksFit: failed == bubble.entry.id,
                                         controller: model.scrollHold
@@ -2553,7 +2558,11 @@ struct LiveSessionView: View {
     /// Thread rows with day separators, the unread divider, and message groups.
     /// Built once per change of the thread's inputs (ChatRowMemo), not per render.
     private var chatRowItems: [ChatRowItem] {
-        rowMemo.rows(
+        #if DEBUG
+        let builds = rowMemo.builds
+        defer { if rowMemo.builds != builds { ChatScrollTrace.count(.memoBuild) } }
+        #endif
+        return rowMemo.rows(
             items: threadItems,
             context: ChatThread.Context(
                 viewerId: model.profile?.id ?? model.viewerId,
@@ -3489,17 +3498,25 @@ private enum ChatAnchor {
 }
 
 /// Feeds a message row's geometry to the scroll controller with
-/// `onGeometryChange`, which calls back per row after layout, only when the
-/// value changes. It replaced a PreferenceKey: with an `onPreferenceChange` on
-/// the list, SwiftUI recomputed that preference over the whole lazy stack on
-/// every update, walking every row (copying it and reading its id) and merging
-/// the reports, and the reports themselves moved whenever the lazy stack
-/// re-estimated heights, which asked for another pass.
+/// `onGeometryChange`, which calls back per row after layout (and once when it
+/// appears), only when the value changes. It replaced a PreferenceKey: with an
+/// `onPreferenceChange` on the list, SwiftUI recomputed that preference over the
+/// whole lazy stack on every update, walking every row (copying it and reading
+/// its id) and merging the reports.
 ///
-/// A row with nothing tracked gets no observer at all. Tracked rows report:
+/// The observer sits in the row's background, behind an `if`, and the row itself
+/// is always the same view. 1c7fe9f put the `if` around the row (`content` vs
+/// `content.onGeometryChange…`): when an older page went in, the tracked window
+/// (the first 40 messages) moved up the thread, every visible row stopped being
+/// tracked, and SwiftUI swapped each one for a new view, mid-insert. The lazy
+/// stack lost their measured heights and the hold's neighbours, and every visible
+/// row left the tree. A row's failed send flipped it the same way. Now tracking
+/// on or off only adds or removes the clear background.
+///
+/// Tracked rows report:
 /// - `tracksPosition`: the frame in the message stack's own space (doesn't move
-///   while the list scrolls), with the layout generation, for paging and the
-///   prepend hold;
+///   while the list scrolls), for paging and the prepend hold (the controller
+///   stamps the layout generation on receipt);
 /// - `tracksFit`: the frame in the list's visible space, for the failed-send fit.
 /// The callbacks write no SwiftUI state.
 private struct ChatRowGeometry: ViewModifier {
@@ -3507,49 +3524,73 @@ private struct ChatRowGeometry: ViewModifier {
     static let listSpace = "chat"
 
     let id: UUID
-    let generation: Int
     let tracksPosition: Bool
     let tracksFit: Bool
     let controller: ChatScrollController
 
-    @ViewBuilder
     func body(content: Content) -> some View {
-        if tracksPosition || tracksFit {
-            let id = self.id
-            let generation = self.generation
-            let tracksPosition = self.tracksPosition
-            let tracksFit = self.tracksFit
-            let controller = self.controller
-            content
-                .onGeometryChange(for: ChatRowSample.self) { proxy in
-                    let inContent = proxy.frame(in: .named(Self.contentSpace))
-                    let inList = proxy.frame(in: .named(Self.listSpace))
-                    return ChatRowSample(
-                        content: tracksPosition ? ChatRowFrame(minY: inContent.minY, height: inContent.height) : nil,
-                        list: tracksFit ? ChatRowFrame(minY: inList.minY, height: inList.height) : nil,
-                        generation: generation
-                    )
-                } action: { sample in
-                    if let frame = sample.content {
-                        controller.rowMoved(id, frame: frame, generation: sample.generation)
-                    }
-                    if let frame = sample.list {
-                        controller.failedRowMoved(id, frame: frame)
-                    }
-                }
-                .onDisappear {
-                    controller.rowGone(id)
-                }
-        } else {
-            content
+        content.background {
+            if tracksPosition || tracksFit {
+                ChatRowGeometryProbe(id: id, tracksPosition: tracksPosition, tracksFit: tracksFit, controller: controller)
+            }
         }
+    }
+}
+
+/// Clear, the row's size (it's the row's background), and hidden from VoiceOver.
+private struct ChatRowGeometryProbe: View {
+    let id: UUID
+    let tracksPosition: Bool
+    let tracksFit: Bool
+    let controller: ChatScrollController
+
+    var body: some View {
+        let id = self.id
+        let tracksPosition = self.tracksPosition
+        let tracksFit = self.tracksFit
+        let controller = self.controller
+        Color.clear
+            .onGeometryChange(for: ChatRowSample.self) { proxy in
+                let inContent = proxy.frame(in: .named(ChatRowGeometry.contentSpace))
+                let inList = proxy.frame(in: .named(ChatRowGeometry.listSpace))
+                return ChatRowSample(
+                    content: tracksPosition ? ChatRowFrame(minY: inContent.minY, height: inContent.height) : nil,
+                    list: tracksFit ? ChatRowFrame(minY: inList.minY, height: inList.height) : nil
+                )
+            } action: { sample in
+                if let frame = sample.content {
+                    controller.rowMoved(id, frame: frame)
+                }
+                if let frame = sample.list {
+                    controller.failedRowMoved(id, frame: frame)
+                }
+            }
+            .onDisappear {
+                controller.rowGone(id)
+            }
+            .accessibilityHidden(true)
     }
 }
 
 private struct ChatRowSample: Equatable, Sendable {
     var content: ChatRowFrame?
     var list: ChatRowFrame?
-    var generation: Int
+}
+
+/// The spot slot's clock: once a second while `ticks`, else a single entry (the
+/// view renders once and only re-renders when its inputs change).
+private struct ChatSlotSchedule: TimelineSchedule {
+    let ticks: Bool
+
+    func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnyIterator<Date> {
+        var next: Date? = startDate
+        let ticks = self.ticks
+        return AnyIterator {
+            guard let current = next else { return nil }
+            next = ticks ? current.addingTimeInterval(1) : nil
+            return current
+        }
+    }
 }
 
 private struct ChatFrameKey: PreferenceKey {

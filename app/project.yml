@@ -17,8 +17,8 @@ targets:
     sources:
       - SquadSync
     configFiles:
-      Debug: Config.xcconfig
-      Release: Config.xcconfig
+      Debug: Base.xcconfig
+      Release: Base.xcconfig
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.spencereese.squadsync
       GENERATE_INFOPLIST_FILE: YES

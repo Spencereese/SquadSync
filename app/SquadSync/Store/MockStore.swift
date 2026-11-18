@@ -318,6 +318,9 @@ enum LaunchScenario: String {
     case chatHistoryFailed
     /// The history read takes a few seconds, so the loading row shows.
     case chatHistorySlow
+    /// 260 messages: more than one history read, so scrolling up pages older ones
+    /// until "Start of chat".
+    case chatLongHistory
     /// Who's in with every source: check-ins with game and console (proposed 0022),
     /// Steam deployed, and a mix of on now, later, and can't play.
     case whosIn
@@ -366,7 +369,7 @@ enum LaunchScenario: String {
 
     var isChatScenario: Bool {
         switch self {
-        case .chatPolish, .chatNoReplies, .chatEmpty, .chatHistoryFailed, .chatHistorySlow: true
+        case .chatPolish, .chatNoReplies, .chatEmpty, .chatHistoryFailed, .chatHistorySlow, .chatLongHistory: true
         default: false
         }
     }
@@ -414,7 +417,7 @@ enum Seed {
                 Seat(userId: "quinn", status: .ready)
             ]
         case .noSquad, .invite, .spotCall, .spotCallMine, .spotCallNearlyFull, .spotCallExpired, .almostFull, .spotHistory, .spotServerMissing,
-             .chatPolish, .chatNoReplies, .chatEmpty, .chatHistoryFailed, .chatHistorySlow,
+             .chatPolish, .chatNoReplies, .chatEmpty, .chatHistoryFailed, .chatHistorySlow, .chatLongHistory,
              .whosIn, .whosInBasic, .whosInEmpty, .whosInFailed, .whosInSlow, .whosInNoServer,
              .onboarding, .onboardingOffline, .onboardingSlow, .onboardingProfile:
             seats = []

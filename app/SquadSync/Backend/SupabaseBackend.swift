@@ -614,6 +614,42 @@ final class SupabaseChatService: ChatService {
         try await fetch(squadId: squadId, after: nil)
     }
 
+    /// `sent_at < t OR (sent_at = t AND id < cursor id)`, newest first with the
+    /// paging index's order, then flipped to oldest first. Values are quoted so the
+    /// timestamp's colons and offset can't be read as filter syntax.
+    func older(squadId: UUID, before: ChatPageCursor, limit: Int) async throws -> [RemoteMessage] {
+        guard let stamp = before.filterStamp else { return [] }
+        let id = before.id.uuidString.lowercased()
+        let data = try await http.send(
+            path: "rest/v1/sq8_messages",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "squad_id", value: "eq.\(squadId.uuidString)"),
+                URLQueryItem(name: "or", value: "(sent_at.lt.\"\(stamp)\",and(sent_at.eq.\"\(stamp)\",id.lt.\(id)))"),
+                URLQueryItem(name: "select", value: messageColumns),
+                URLQueryItem(name: "order", value: "sent_at.desc,id.desc"),
+                URLQueryItem(name: "limit", value: "\(limit)")
+            ],
+            feature: .messages
+        )
+        return try BackendJSON.decoder.decode([RemoteMessage].self, from: data).reversed()
+    }
+
+    func message(squadId: UUID, id: UUID) async throws -> RemoteMessage? {
+        let data = try await http.send(
+            path: "rest/v1/sq8_messages",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "id", value: "eq.\(id.uuidString)"),
+                URLQueryItem(name: "squad_id", value: "eq.\(squadId.uuidString)"),
+                URLQueryItem(name: "select", value: messageColumns),
+                URLQueryItem(name: "limit", value: "1")
+            ],
+            feature: .messages
+        )
+        return try BackendJSON.decoder.decode([RemoteMessage].self, from: data).first
+    }
+
     func send(_ message: RemoteMessage) async throws -> SendReceipt {
         let body = try BackendJSON.encoder.encode(message)
         let data = try await http.send(

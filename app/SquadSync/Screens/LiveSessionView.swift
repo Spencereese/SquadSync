@@ -1,6 +1,11 @@
 import SwiftUI
 import UIKit
 import UserNotifications
+import os
+
+/// Opening a pushed message: each step, so a launch that doesn't open it can be read
+/// back from the device log (subsystem com.spencereese.squadsync, category chat-open).
+private let chatOpenLog = Logger(subsystem: "com.spencereese.squadsync", category: "chat-open")
 
 @MainActor
 @Observable
@@ -28,6 +33,27 @@ final class LiveSessionModel {
     var reacting = false
     /// History read for the open squad: loading, loaded, or why it failed.
     var chatLoad = ChatHistoryState.idle
+    /// The row at the top of the thread that pages older messages.
+    var olderPaging = ChatOlderPaging()
+    /// Older pages that came back for the open squad: the layout generation the
+    /// tracked rows report positions in, and the UI tests' paging probe.
+    var olderPagesLoaded = 0
+    /// The previous oldest message while an older page goes in above it; its row
+    /// keeps reporting where it is so the list can hold it in place.
+    var olderHoldAnchor: UUID?
+    /// Bumped with where to scroll when an older page goes in, so the topmost row
+    /// the reader could fully see stays where it was (see ChatPrependHold).
+    private(set) var olderRestore: ChatPrependRestore?
+    private(set) var olderRestoreSerial = 0
+    /// The message list's scroll view: paging trigger and place-keeping geometry.
+    let scrollHold = ChatScrollController()
+    /// Bumped when the viewer calls spots, so the list brings the card into view.
+    var spotCalledSerial = 0
+    /// An older page has been added for the open squad, so a later full reload
+    /// doesn't decide "start of chat" from the newest 200 alone.
+    @ObservationIgnored private var olderPagedThisSquad = false
+    /// A pushed message to open, held until the chat's first load has finished.
+    @ObservationIgnored private var pendingOpen = ChatPendingOpen()
     /// Where the unread divider sits. Settled on the squad's first load, cleared when you send.
     var unreadMarker = ChatUnreadMarker()
     /// What the server lets the chat do. Replies stay off until `reply_to_id` is found.
@@ -112,6 +138,8 @@ final class LiveSessionModel {
     }
 
     private let config: BackendConfig
+    /// Unsent messages on disk, so a kill doesn't lose them.
+    let outbox: ChatOutbox
     private let voiceRoom: VoiceRoomService = InMemoryVoiceRoomService()
     private let sessionStore: SessionStoring
     private var auth: AuthService
@@ -140,8 +168,19 @@ final class LiveSessionModel {
         case ready
     }
 
-    init(config: BackendConfig, backend: BackendMode = .live, scenario: LaunchScenario = .seated, sessionStore: SessionStoring? = nil) {
+    init(config: BackendConfig, backend: BackendMode = .live, scenario: LaunchScenario = .seated, sessionStore: SessionStoring? = nil, outbox: ChatOutbox? = nil) {
         self.config = config
+        if let outbox {
+            self.outbox = outbox
+        } else if backend == .mock {
+            // Mock launches start with an empty outbox unless a UI test relaunches
+            // with -keepOutbox to check that a failed send survived.
+            let mockOutbox = ChatOutbox.standard(mock: true)
+            if !ProcessInfo.processInfo.arguments.contains("-keepOutbox") { mockOutbox.clearAll() }
+            self.outbox = mockOutbox
+        } else {
+            self.outbox = ChatOutbox.standard(mock: false)
+        }
         if backend == .mock {
             let store = sessionStore ?? MemorySessionStore()
             let session = AuthSession(
@@ -160,6 +199,12 @@ final class LiveSessionModel {
                 historyDown: scenario == .chatHistoryFailed,
                 historyDelay: scenario == .chatHistorySlow ? 3 : 0
             )
+            // UI tests: a slow older page, so "before" and "after" a page lands can
+            // both be read with nothing else moving the list.
+            if let delay = Self.debugOlderDelay() { chat.olderDelay = delay }
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-mock-older-gate") { chat.olderGated = true }
+            #endif
             self.sessionStore = store
             let mockAuth = MockAuthService(
                 store: store,
@@ -206,7 +251,10 @@ final class LiveSessionModel {
                 let seeded = squads.seedSpotSquad(ownerId: session.userId)
                 self.squad = seeded
                 self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: nil)
-                if scenario != .chatEmpty {
+                if scenario == .chatLongHistory {
+                    let long = ChatLongSeed.messages(viewerId: session.userId, squadId: seeded.id, now: Date())
+                    for message in long { chat.seed(message) }
+                } else if scenario != .chatEmpty {
                     let thread = ChatPolishSeed.thread(
                         viewerId: session.userId,
                         squadId: seeded.id,
@@ -868,6 +916,7 @@ final class LiveSessionModel {
             _ = try await spotService(session).call(squadId: squad.id, game: game, startsAt: Date())
             await loadSpot(session)
             spotNote = "Calling spots: \(game), 8 seats."
+            spotCalledSerial += 1
             return true
         } catch let problem as SpotProblem {
             spotNote = problem.message
@@ -982,15 +1031,15 @@ final class LiveSessionModel {
         let id = UUID()
         let now = Date()
         let reply = chatCaps.replies ? replyingTo : nil
+        let message = RemoteMessage(id: id, squadId: squad.id, senderId: session.userId, body: text, sentAt: now, replyToId: reply)
         log.beginSend(id: id, senderId: session.userId, body: text, now: now, replyToId: reply)
+        // On disk before the network, so a kill mid-send still has it.
+        outbox.add(OutboxItem(message))
         followSend = id
         draft = ""
         replyingTo = nil
         unreadMarker.clear()
-        await deliver(
-            RemoteMessage(id: id, squadId: squad.id, senderId: session.userId, body: text, sentAt: now, replyToId: reply),
-            session: session
-        )
+        await deliver(message, session: session)
     }
 
     /// Long-press Copy. Says so for a moment, since the clipboard shows nothing.
@@ -1079,6 +1128,8 @@ final class LiveSessionModel {
             sentAt: entry.sentAt,
             replyToId: entry.replyToId
         )
+        // Same id as the first try, so the server's ignore-duplicates keeps one row.
+        outbox.add(OutboxItem(message))
         await deliver(message, session: session)
     }
 
@@ -1254,6 +1305,13 @@ final class LiveSessionModel {
 
     func signOut() async {
         if voicePill.joined { await toggleVoice() }
+        // Unsent messages belong to this account; the next person doesn't get them.
+        if let user = viewerId ?? profile?.id { outbox.clear(userId: user) }
+        olderPaging = ChatOlderPaging()
+        olderPagesLoaded = 0
+        olderPagedThisSquad = false
+        olderHoldAnchor = nil
+        pendingOpen.clear()
         realtime?.stop()
         realtime = nil
         poll?.cancel()
@@ -1325,6 +1383,7 @@ final class LiveSessionModel {
         switch OutboundSend.result(receipt: receipt, error: error) {
         case .sent:
             log.markSent(id: message.id)
+            outbox.remove(id: message.id, squadId: message.squadId, userId: message.senderId)
             recoverAfterSend()
         case .staySending:
             break
@@ -1405,7 +1464,7 @@ final class LiveSessionModel {
             membershipKnown: signedIn
         )
         if let message = PushCoordinator.shared.focusMessage {
-            followSend = message
+            requestOpen(messageId: message)
         }
         guard signedIn else { return }
         PushCoordinator.shared.askIfReady(signedIn: true, hasSquad: squad != nil)
@@ -1447,6 +1506,164 @@ final class LiveSessionModel {
         await refresh(session)
     }
 
+    // MARK: Older history, unsent messages, pushed messages
+
+    /// The top-of-thread row came into view: add one older page and keep the place.
+    func loadOlder() async {
+        _ = try? await fetchOlderPage(waitForRunning: false)
+    }
+
+    /// `-mock-older-delay <seconds>` (Debug only).
+    private static func debugOlderDelay() -> TimeInterval? {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "-mock-older-delay"),
+              arguments.index(after: index) < arguments.endIndex,
+              let seconds = TimeInterval(arguments[arguments.index(after: index)]),
+              seconds > 0 else { return nil }
+        return seconds
+        #else
+        return nil
+        #endif
+    }
+
+    #if DEBUG
+    /// UI tests: older pages are held until released (`-mock-older-gate`, mock only).
+    var debugOlderGate: Bool { mockChatService?.olderGated ?? false }
+
+    /// UI tests: let one held older page through.
+    func debugReleaseOlderPage() { mockChatService?.releaseOlder() }
+    #endif
+
+    /// Tests: the mock chat server, to slow or fail its reads.
+    var mockChatService: MockChatService? { mockChat as? MockChatService }
+
+    /// Retry on the older-page error row.
+    func retryOlder() async {
+        // The mock server comes back on Retry, so the UI test can see both states.
+        if let mock = mockChat as? MockChatService, mock.olderDown { mock.olderDown = false }
+        await loadOlder()
+    }
+
+    /// One older page, merged by id. Returns false once the start of the chat is
+    /// reached. Throws when the read fails (the row then offers Retry).
+    private func fetchOlderPage(waitForRunning: Bool = true) async throws -> Bool {
+        guard let squad, let session = try? requiredSession() else { return false }
+        // The row asking twice while a page runs is one page, not two.
+        if !waitForRunning, olderPaging.state == .loading { return true }
+        // Opening a pushed message waits for a page the row started, rather than skip.
+        var waits = 0
+        while olderPaging.state == .loading, waits < 200 {
+            try await Task.sleep(nanoseconds: 50_000_000)
+            waits += 1
+        }
+        guard let cursor = ChatOlderPaging.cursor(log) else {
+            olderPaging.finish(rowCount: 0)
+            return false
+        }
+        guard olderPaging.begin() else { return olderPaging.state != .reachedStart }
+        let requested = squad.id
+        do {
+            let rows = try await chatService(session).older(squadId: requested, before: cursor, limit: ChatOlderPaging.pageSize)
+            guard HistoryMerge.accepts(requestSquad: requested, loadedSquad: loadedSquad) else { return false }
+            // Hold the reader's place: record it right before the rows go in (only
+            // when something new is going in, so the hold always sees the growth).
+            let known = Set(log.entries.map(\.id))
+            if rows.contains(where: { !known.contains($0.id) }) {
+                let restore = scrollHold.prepareForPrepend(oldest: cursor.id, generation: olderPagesLoaded + 1)
+                olderHoldAnchor = restore?.id ?? cursor.id
+                olderRestore = restore
+            } else {
+                olderRestore = nil
+            }
+            log.ingest(rows.map { $0.entry() })
+            if olderRestore != nil { olderRestoreSerial += 1 }
+            olderPagedThisSquad = true
+            olderPagesLoaded += 1
+            olderPaging.finish(rowCount: rows.count)
+            return olderPaging.state != .reachedStart
+        } catch {
+            if RequestNoise.isCancellation(error) {
+                olderPaging.reset()
+            } else {
+                olderPaging.fail()
+            }
+            throw error
+        }
+    }
+
+    /// Unsent messages from before a relaunch go back in the thread as failed, with
+    /// their original ids. Any the server already has leave the outbox.
+    private func restoreOutbox(squadId: UUID, userId: UUID) {
+        let items = outbox.load(squadId: squadId, userId: userId)
+        guard !items.isEmpty else { return }
+        let delivered = OutboxRestore.apply(items, to: &log)
+        for id in delivered { outbox.remove(id: id, squadId: squadId, userId: userId) }
+    }
+
+    /// A push asked to open `messageId`. It opens once the chat's first load has
+    /// finished: now if it already has, otherwise from the end of that load.
+    func requestOpen(messageId: UUID) {
+        let ready = pendingOpen.chatReady
+        chatOpenLog.info("target set \(messageId.uuidString, privacy: .public) chatReady=\(ready, privacy: .public)")
+        if let id = pendingOpen.request(messageId) {
+            openTask = Task { await openMessage(id) }
+        }
+    }
+
+    /// The open started by `requestOpen` (tests await it).
+    @ObservationIgnored private(set) var openTask: Task<Void, Never>?
+
+    /// The chat's load finished: open a held target, if any.
+    private func chatLoadFinished() async {
+        let held = pendingOpen.target
+        chatOpenLog.info("chat load done, held=\(held?.uuidString ?? "none", privacy: .public)")
+        if let id = pendingOpen.chatLoaded() {
+            await openMessage(id)
+        }
+    }
+
+    /// Opens a message: scrolls to it when it's loaded, pages back for it (up to
+    /// `ChatReveal.maxPages`) when it isn't, and says so when it can't.
+    private func openMessage(_ id: UUID) async {
+        guard let squad, let session = try? requiredSession() else {
+            chatOpenLog.error("open \(id.uuidString, privacy: .public): no squad or session")
+            return
+        }
+        let chat = chatService(session)
+        let squadId = squad.id
+        var pages = 0
+        let outcome = await ChatReveal.run(
+            loaded: { [self] in log.entries.contains { $0.id == id } },
+            exists: {
+                let found = try await chat.message(squadId: squadId, id: id) != nil
+                chatOpenLog.info("lookup \(id.uuidString, privacy: .public): \(found ? "on server" : "not on server", privacy: .public)")
+                return found
+            },
+            loadOlderPage: { [self] in
+                pages += 1
+                let more = try await fetchOlderPage()
+                let count = log.entries.count
+                chatOpenLog.info("page fetch \(pages, privacy: .public): \(count, privacy: .public) loaded, more=\(more, privacy: .public)")
+                return more
+            }
+        )
+        switch outcome {
+        case .found:
+            chatOpenLog.info("found \(id.uuidString, privacy: .public) after \(pages, privacy: .public) pages")
+            scrollHold.endHold()
+            followSend = id
+        case .notInChat, .tooFarBack, .failed:
+            chatOpenLog.info("not found \(id.uuidString, privacy: .public): \(String(describing: outcome), privacy: .public)")
+            if let text = ChatReveal.text(outcome) { showToast(text) }
+        }
+    }
+
+    /// Tests: open a message directly, as if the chat were ready.
+    func reveal(messageId: UUID) async {
+        await openMessage(messageId)
+    }
+
     func catchUp(pinned: Bool) async {
         guard ReadAdvance.catchesUp(pinned: pinned), let squad, let session = try? requiredSession() else { return }
         let seenAt = max(Date(), log.ordered.last?.sentAt ?? .distantPast)
@@ -1474,6 +1691,12 @@ final class LiveSessionModel {
             replyingTo = nil
             chatCaps = .unknown
             loadedSquad = requested
+            olderPaging = ChatOlderPaging()
+            olderPagesLoaded = 0
+            olderPagedThisSquad = false
+            olderHoldAnchor = nil
+            scrollHold.reset()
+            pendingOpen.chatReset()
         }
         chatLoad = .loading
         do {
@@ -1485,6 +1708,10 @@ final class LiveSessionModel {
             let rows = try await chat.history(squadId: requested)
             guard HistoryMerge.accepts(requestSquad: requested, loadedSquad: loadedSquad) else { return }
             log.adopt(replacingSquad: false, history: rows.map { $0.entry() })
+            if !olderPagedThisSquad {
+                olderPaging.settleFirstRead(rowCount: rows.count, limit: SupabaseChatService.historyLimit)
+            }
+            restoreOutbox(squadId: requested, userId: session.userId)
             chatLoad = .loaded
             if let cursor { log.markRead(at: cursor) }
             unreadMarker.settle(log: log, viewerId: session.userId)
@@ -1495,6 +1722,7 @@ final class LiveSessionModel {
             if let remoteReads = try? await chat.reads(squadId: squad.id) {
                 reads = remoteReads
             }
+            await chatLoadFinished()
         } catch {
             if !RequestNoise.isCancellation(error) {
                 chatLoad = ChatHistoryState.failure(error)
@@ -1722,6 +1950,8 @@ final class LiveSessionModel {
 struct LiveSessionView: View {
     @State private var model: LiveSessionModel
     @State private var pinnedToBottom = true
+    /// The thread's rows, rebuilt only when what they're made of changes.
+    @State private var rowMemo = ChatRowMemo()
     @State private var wentToBackground = false
     @State private var confirmSignOut = false
     @State private var confirmEndSpot = false
@@ -2003,14 +2233,20 @@ struct LiveSessionView: View {
     }
 
     private var chatList: some View {
-        ScrollViewReader { proxy in
+        let _ = ChatScrollTrace.counted(.listBody)
+        return ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 2) {
-                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                        // Ticks only while there's a call whose countdown it shows: with
+                        // no call the slot is the call form, which doesn't change with
+                        // time, and a once-a-second update inside the lazy stack is work
+                        // on a settled thread for nothing.
+                        TimelineView(ChatSlotSchedule(ticks: model.spot != nil)) { context in
                             let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
                             spotSlot(now: now)
                         }
+                        .id(ChatAnchor.spot)
                         if !model.spotHistoryNote.isEmpty {
                             SpotStatusRow(text: model.spotHistoryNote, identifier: "spot-history-note")
                         }
@@ -2019,14 +2255,34 @@ struct LiveSessionView: View {
                                 Task { await model.retryChatLoad() }
                             }
                         }
-                        ForEach(chatRows) { row in
-                            switch row {
+                        if model.chatLoad == .loaded, !model.log.entries.isEmpty {
+                            // Shows the paging state only. Whether to load is decided
+                            // from scroll geometry (olderCheck), not this row appearing.
+                            ChatOlderRow(state: model.olderPaging.state) {
+                                Task { await model.retryOlder() }
+                            }
+                        }
+                        let tracked = scrollTrackedIds
+                        let failed = failedEndRow
+                        ForEach(chatRowItems) { item in
+                            let _ = ChatScrollTrace.counted(.rowBody)
+                            switch item.row {
                             case .day(_, let label):
                                 ChatDaySeparator(label: label)
                             case .unread(let count):
                                 ChatUnreadDivider(count: count)
                             case .message(let bubble):
-                                messageRow(bubble).id(bubble.entry.id)
+                                messageRow(bubble)
+                                    .id(bubble.entry.id)
+                                    // Only tracked rows get a geometry observer, in the
+                                    // row's background, so tracking never changes the
+                                    // row's own identity (see ChatRowGeometry).
+                                    .modifier(ChatRowGeometry(
+                                        id: bubble.entry.id,
+                                        tracksPosition: tracked.contains(bubble.entry.id),
+                                        tracksFit: failed == bubble.entry.id,
+                                        controller: model.scrollHold
+                                    ))
                             case .spot(let call):
                                 if let outcome = SpotThread.outcome(call, viewerId: spotViewer, now: Date()) {
                                     SpotHistoryCard(call: call, outcome: outcome)
@@ -2035,16 +2291,36 @@ struct LiveSessionView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(ChatContentFrame())
+                    .coordinateSpace(name: ChatRowGeometry.contentSpace)
+                    .background {
+                        // iOS 17 only: newer systems read scroll geometry directly
+                        // (ChatPinModifier), so no per-frame preference there.
+                        if #available(iOS 18.0, *) {
+                            EmptyView()
+                        } else {
+                            ChatContentFrame()
+                        }
+                    }
+                    .background(ChatScrollBridge(controller: model.scrollHold))
+                    // The end of the thread: the scroll-to-bottom anchor, and "End of
+                    // messages" for VoiceOver. A real line of (clear) text, as in
+                    // d6921b9, never a 1 pt synthesized element: 6f41b07/6617367's
+                    // `Color.clear.frame(height: 1).accessibilityElement()` here hung
+                    // the main thread under the LazyVStack whenever XCUI snapshotted
+                    // the tree (thread-groups bisect: that switch alone, 8/8). Its type
+                    // size is capped so it doesn't grow to ~51 pt at AX5, and with the
+                    // keyboard up at AX sizes it's the smallest size and no minimum
+                    // height, so "Not delivered" and Retry keep their room.
                     Text("End of messages")
                         .font(.caption)
                         .foregroundStyle(.clear)
-                        .frame(maxWidth: .infinity, minHeight: SQSpace.l)
+                        .dynamicTypeSize(...(endRowCompact ? DynamicTypeSize.xSmall : .large))
+                        .frame(maxWidth: .infinity, minHeight: endRowCompact ? 0 : SQSpace.l)
                         .id(ChatAnchor.end)
                         .accessibilityIdentifier(ChatAnchor.end)
                 }
-                .contentMargins(.bottom, SQSpace.l, for: .scrollContent)
-                .coordinateSpace(name: "chat")
+                .contentMargins(.bottom, listBottomMargin, for: .scrollContent)
+                .coordinateSpace(name: ChatRowGeometry.listSpace)
                 .scrollDismissesKeyboard(.interactively)
                 .modifier(ChatPinModifier(pinned: $pinnedToBottom))
                 .accessibilityIdentifier("message-list")
@@ -2067,15 +2343,31 @@ struct LiveSessionView: View {
                         .padding(SQSpace.s)
                     }
                 }
+                #if DEBUG
+                .overlay(alignment: .bottomLeading) {
+                    if model.debugOlderGate {
+                        ChatOlderDebugProbe(state: model.olderPaging.state, pages: model.olderPagesLoaded) {
+                            model.debugReleaseOlderPage()
+                        }
+                    }
+                }
+                #endif
                 composerBar(proxy)
             }
             .onAppear {
                 if let id = model.followSend {
+                    model.scrollHold.jumped(toBottom: false)
                     proxy.scrollTo(id, anchor: .center)
                     return
                 }
                 guard model.log.ordered.last != nil else { return }
                 Task { @MainActor in
+                    // A pushed message may have been opened in the meantime.
+                    if let id = model.followSend, id != model.log.ordered.last?.id {
+                        model.scrollHold.jumped(toBottom: false)
+                        proxy.scrollTo(id, anchor: .center)
+                        return
+                    }
                     scrollChatToBottom(proxy)
                     await model.catchUp(pinned: pinnedToBottom)
                 }
@@ -2091,6 +2383,9 @@ struct LiveSessionView: View {
             }
             .onChange(of: model.followSend) { _, id in
                 guard let id else { return }
+                model.scrollHold.endHold()
+                // Your own send is the newest row and pins; an opened message unpins.
+                model.scrollHold.jumped(toBottom: id == model.log.ordered.last?.id)
                 proxy.scrollTo(id, anchor: .center)
             }
             .onChange(of: pinnedToBottom) { wasPinned, isPinned in
@@ -2098,8 +2393,60 @@ struct LiveSessionView: View {
                     Task { await model.catchUp(pinned: true) }
                 }
             }
+            // Paging is decided from the scroll view's geometry: on every offset and
+            // content-size change (the controller calls back), and whenever the paging
+            // state changes. While a page's rows aren't laid out yet the check waits
+            // for the content-size change instead of reading stale geometry.
+            .onAppear {
+                model.scrollHold.onGeometry = { metrics in olderCheck(metrics) }
+                // A drag means the person has taken over: an opened message no
+                // longer holds the list (so new messages can be followed again).
+                model.scrollHold.onUserDrag = {
+                    if let id = model.followSend, id != model.log.ordered.last?.id { model.followSend = nil }
+                }
+            }
+            .onChange(of: model.olderPaging.state) { _, _ in
+                if let metrics = model.scrollHold.metrics { olderCheck(metrics) }
+            }
+            // An older page went in: put the topmost row the reader could fully see
+            // back where it was. The framework lays that row out exactly, so the
+            // lazy stack's estimated heights for the new rows don't move it.
+            .onChange(of: model.olderRestoreSerial) { _, _ in
+                guard let restore = model.olderRestore else { return }
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    proxy.scrollTo(restore.id, anchor: UnitPoint(x: 0.5, y: restore.unitY))
+                }
+            }
+            // The viewer called spots: the card is at the top of the thread.
+            .onChange(of: model.spotCalledSerial) { _, _ in
+                model.scrollHold.endHold()
+                model.scrollHold.jumped(toBottom: false)
+                proxy.scrollTo(ChatAnchor.spot, anchor: .top)
+            }
+            // A pinned list follows the end: a new row, or the last one sending,
+            // failing (its "Not delivered" and Retry stay above the composer), sent.
+            .onChange(of: chatEndSignature) { _, _ in
+                model.scrollHold.watchFailedRow(failedEndRow)
+                model.scrollHold.endChanged()
+            }
+            // A row expanding in place where the person tapped stays put.
+            .onChange(of: model.selectedMessage) { _, id in
+                if id != nil { model.scrollHold.expanded() }
+            }
+            .onChange(of: model.reacting) { _, on in
+                if on { model.scrollHold.expanded() }
+            }
             .onChange(of: model.log.ordered.last?.id) { _, id in
                 guard let id else { return }
+                // A pushed message is being opened: it wins over following the newest,
+                // even when the history and the open land in the same update.
+                if let target = model.followSend, target != id, model.log.entries.contains(where: { $0.id == target }) {
+                    model.scrollHold.jumped(toBottom: false)
+                    proxy.scrollTo(target, anchor: .center)
+                    return
+                }
                 let own = model.followSend == id
                 if ChatFollow.scrolls(pinned: pinnedToBottom, ownSend: own) {
                     scrollChatToBottom(proxy)
@@ -2140,7 +2487,77 @@ struct LiveSessionView: View {
         .background(SQColor.surface0)
     }
 
+    /// Room under the last message. At accessibility sizes with the keyboard up
+    /// the list is only a few rows tall, so it keeps just a sliver.
+    private var listBottomMargin: CGFloat {
+        typeSize.isAccessibilitySize && composerFocused ? SQSpace.xs : SQSpace.l
+    }
+
+    /// AX sizes with the keyboard up: the list is only a few rows tall, so the
+    /// end row takes as little height as a line of text can.
+    private var endRowCompact: Bool {
+        typeSize.isAccessibilitySize && composerFocused
+    }
+
+    /// Rows whose position the scroll controller needs: the oldest loaded message
+    /// (the paging trigger and the next hold's anchor) and the current hold's anchor.
+    ///
+    /// Only while older pages can still come (idle or loading): then the first
+    /// `trackedWindow` messages, which covers what's on screen whenever a page is
+    /// asked for (it's asked for once the oldest is laid out near the screen), so
+    /// the hold can anchor on a row the reader sees. Rows report only while laid
+    /// out, and only on layout changes. A whole chat (Start of chat) tracks
+    /// nothing, so a settled list does no reporting work.
+    private var scrollTrackedIds: Set<UUID> {
+        var ids = Set<UUID>()
+        if let anchor = model.olderHoldAnchor { ids.insert(anchor) }
+        // Before the first read is in, there's no paging to track for.
+        guard model.chatLoad == .loaded else { return ids }
+        switch model.olderPaging.state {
+        case .idle, .loading:
+            for entry in model.log.ordered.prefix(Self.trackedWindow) { ids.insert(entry.id) }
+        case .failed, .reachedStart:
+            break
+        }
+        return ids
+    }
+
+    private static let trackedWindow = 40
+
+    /// The thread's end: the last row and its send state. A change means a new
+    /// row at the end, or the last one sending, failing, or sent.
+    private var chatEndSignature: String? {
+        model.log.ordered.last.map { "\($0.id)|\($0.delivery)" }
+    }
+
+    /// The thread's last row when it's a message that failed to send (only your
+    /// own can): its frame is measured so Retry stays inside the list.
+    private var failedEndRow: UUID? {
+        guard let last = model.log.ordered.last, last.delivery == .failed else { return nil }
+        return last.id
+    }
+
+    private func olderCheck(_ metrics: ChatScrollMetrics) {
+        let hold = model.scrollHold
+        guard !hold.requestInFlight else { return }
+        let oldestY = ChatOlderPaging.cursor(model.log).flatMap { hold.screenY(of: $0.id) }
+        guard ChatOlderTrigger.isDue(
+            metrics: metrics,
+            oldestRowY: oldestY,
+            userHasScrolled: hold.userHasScrolled,
+            settlingPrepend: hold.isSettlingPrepend,
+            paging: model.olderPaging,
+            hasMessages: model.chatLoad == .loaded && !model.log.entries.isEmpty
+        ) else { return }
+        hold.requestInFlight = true
+        Task {
+            await model.loadOlder()
+            hold.requestInFlight = false
+        }
+    }
+
     private func scrollChatToBottom(_ proxy: ScrollViewProxy) {
+        model.scrollHold.jumped(toBottom: true)
         proxy.scrollTo(ChatAnchor.end, anchor: .bottom)
     }
 
@@ -2151,8 +2568,13 @@ struct LiveSessionView: View {
     }
 
     /// Thread rows with day separators, the unread divider, and message groups.
-    private var chatRows: [ChatRow] {
-        ChatThread.rows(
+    /// Built once per change of the thread's inputs (ChatRowMemo), not per render.
+    private var chatRowItems: [ChatRowItem] {
+        #if DEBUG
+        let builds = rowMemo.builds
+        defer { if rowMemo.builds != builds { ChatScrollTrace.count(.memoBuild) } }
+        #endif
+        return rowMemo.rows(
             items: threadItems,
             context: ChatThread.Context(
                 viewerId: model.profile?.id ?? model.viewerId,
@@ -2298,7 +2720,10 @@ struct LiveSessionView: View {
                             .accessibilityLabel(mine?.ready == true ? "Ready, on" : "Ready, off")
                     }
                     if let viewer, SpotCallRules.canLock(spot, actorId: viewer, ownerId: model.squad?.ownerId ?? viewer, now: now) {
-                        Button("Lock") { Task { await model.lockSpot() } }
+                        Button("Lock") {
+                            model.scrollHold.expanded()
+                            Task { await model.lockSpot() }
+                        }
                             .disabled(model.spotGate.busy)
                             .accessibilityIdentifier("spot-lock")
                             .accessibilityLabel("Lock the spot call")
@@ -3081,6 +3506,103 @@ private struct WideRowButtonStyle: ButtonStyle {
 
 private enum ChatAnchor {
     static let end = "message-list-end"
+    static let spot = "message-list-spot"
+}
+
+/// Feeds a message row's geometry to the scroll controller with
+/// `onGeometryChange`, which calls back per row after layout (and once when it
+/// appears), only when the value changes. It replaced a PreferenceKey: with an
+/// `onPreferenceChange` on the list, SwiftUI recomputed that preference over the
+/// whole lazy stack on every update, walking every row (copying it and reading
+/// its id) and merging the reports.
+///
+/// The observer sits in the row's background, behind an `if`, and the row itself
+/// is always the same view. 1c7fe9f put the `if` around the row (`content` vs
+/// `content.onGeometryChange…`): when an older page went in, the tracked window
+/// (the first 40 messages) moved up the thread, every visible row stopped being
+/// tracked, and SwiftUI swapped each one for a new view, mid-insert. The lazy
+/// stack lost their measured heights and the hold's neighbours, and every visible
+/// row left the tree. A row's failed send flipped it the same way. Now tracking
+/// on or off only adds or removes the clear background.
+///
+/// Tracked rows report:
+/// - `tracksPosition`: the frame in the message stack's own space (doesn't move
+///   while the list scrolls), for paging and the prepend hold (the controller
+///   stamps the layout generation on receipt);
+/// - `tracksFit`: the frame in the list's visible space, for the failed-send fit.
+/// The callbacks write no SwiftUI state.
+private struct ChatRowGeometry: ViewModifier {
+    static let contentSpace = "chat-content"
+    static let listSpace = "chat"
+
+    let id: UUID
+    let tracksPosition: Bool
+    let tracksFit: Bool
+    let controller: ChatScrollController
+
+    func body(content: Content) -> some View {
+        content.background {
+            if tracksPosition || tracksFit {
+                ChatRowGeometryProbe(id: id, tracksPosition: tracksPosition, tracksFit: tracksFit, controller: controller)
+            }
+        }
+    }
+}
+
+/// Clear, the row's size (it's the row's background), and hidden from VoiceOver.
+private struct ChatRowGeometryProbe: View {
+    let id: UUID
+    let tracksPosition: Bool
+    let tracksFit: Bool
+    let controller: ChatScrollController
+
+    var body: some View {
+        let id = self.id
+        let tracksPosition = self.tracksPosition
+        let tracksFit = self.tracksFit
+        let controller = self.controller
+        Color.clear
+            .onGeometryChange(for: ChatRowSample.self) { proxy in
+                let inContent = proxy.frame(in: .named(ChatRowGeometry.contentSpace))
+                let inList = proxy.frame(in: .named(ChatRowGeometry.listSpace))
+                return ChatRowSample(
+                    content: tracksPosition ? ChatRowFrame(minY: inContent.minY, height: inContent.height) : nil,
+                    list: tracksFit ? ChatRowFrame(minY: inList.minY, height: inList.height) : nil
+                )
+            } action: { sample in
+                if let frame = sample.content {
+                    controller.rowMoved(id, frame: frame)
+                }
+                if let frame = sample.list {
+                    controller.failedRowMoved(id, frame: frame)
+                }
+            }
+            .onDisappear {
+                controller.rowGone(id)
+            }
+            .accessibilityHidden(true)
+    }
+}
+
+private struct ChatRowSample: Equatable, Sendable {
+    var content: ChatRowFrame?
+    var list: ChatRowFrame?
+}
+
+/// The spot slot's clock: once a second while `ticks`, else a single entry (the
+/// view renders once and only re-renders when its inputs change).
+private struct ChatSlotSchedule: TimelineSchedule {
+    let ticks: Bool
+
+    func entries(from startDate: Date, mode: TimelineScheduleMode) -> AnyIterator<Date> {
+        var next: Date? = startDate
+        let ticks = self.ticks
+        return AnyIterator {
+            guard let current = next else { return nil }
+            next = ticks ? current.addingTimeInterval(1) : nil
+            return current
+        }
+    }
 }
 
 private struct ChatFrameKey: PreferenceKey {
@@ -3101,15 +3623,16 @@ private struct ChatViewportKey: PreferenceKey {
 private struct ChatContentFrame: View {
     var body: some View {
         GeometryReader { geo in
-            Color.clear.preference(key: ChatFrameKey.self, value: geo.frame(in: .named("chat")))
+            Color.clear.preference(key: ChatFrameKey.self, value: geo.frame(in: .named(ChatRowGeometry.listSpace)))
         }
     }
 }
 
 private struct ChatPinModifier: ViewModifier {
     @Binding var pinned: Bool
-    @State private var lastOffset: CGFloat = 0
-    @State private var viewport: CGFloat = 0
+    /// iOS 17 only. Plain references, not state: written on every scroll frame,
+    /// and a state write there would render this modifier again each frame.
+    @State private var last = ChatPinLast()
 
     func body(content: Content) -> some View {
         if #available(iOS 18.0, *) {
@@ -3119,9 +3642,8 @@ private struct ChatPinModifier: ViewModifier {
                     content: geo.contentSize.height,
                     viewport: geo.containerSize.height
                 )
-            }, action: { _, sample in
-                pinned = ChatFollow.pinned(previous: pinned, oldOffset: lastOffset, sample: sample)
-                lastOffset = sample.offset
+            }, action: { old, sample in
+                update(ChatFollow.pinned(previous: pinned, oldOffset: old.offset, sample: sample))
             })
         } else {
             content
@@ -3130,14 +3652,25 @@ private struct ChatPinModifier: ViewModifier {
                         Color.clear.preference(key: ChatViewportKey.self, value: geo.size.height)
                     }
                 }
-                .onPreferenceChange(ChatViewportKey.self) { viewport = $0 }
+                .onPreferenceChange(ChatViewportKey.self) { last.viewport = $0 }
                 .onPreferenceChange(ChatFrameKey.self) { frame in
-                    let sample = ScrollSample(offset: -frame.minY, content: frame.height, viewport: viewport)
-                    pinned = ChatFollow.pinned(previous: pinned, oldOffset: lastOffset, sample: sample)
-                    lastOffset = sample.offset
+                    let sample = ScrollSample(offset: -frame.minY, content: frame.height, viewport: last.viewport)
+                    let next = ChatFollow.pinned(previous: pinned, oldOffset: last.offset, sample: sample)
+                    last.offset = sample.offset
+                    update(next)
                 }
         }
     }
+
+    /// Writes only a change, so a scroll that doesn't flip it renders nothing.
+    private func update(_ next: Bool) {
+        if next != pinned { pinned = next }
+    }
+}
+
+private final class ChatPinLast {
+    var offset: CGFloat = 0
+    var viewport: CGFloat = 0
 }
 
 /// The call sheet, opened from the + menu or a bare `/spots`. Its own view so its
@@ -3236,3 +3769,46 @@ private struct SpotCallSheet: View {
         size.isAccessibilitySize ? .large : .medium
     }
 }
+
+#if DEBUG
+/// UI tests only (mock backend with `-mock-older-gate`): invisible. One element
+/// reports the paging state ("loading pages=0"), the other lets one held older
+/// page through when tapped.
+private struct ChatOlderDebugProbe: View {
+    let state: ChatOlderPaging.State
+    let pages: Int
+    let release: () -> Void
+
+    private var value: String {
+        let name: String
+        switch state {
+        case .idle: name = "idle"
+        case .loading: name = "loading"
+        case .failed: name = "failed"
+        case .reachedStart: name = "reachedStart"
+        }
+        return "\(name) pages=\(pages)"
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // Not Color.clear: a fully clear view can be left out of the
+            // accessibility tree. Nearly clear still draws, so it stays in.
+            Rectangle()
+                .fill(Color.white.opacity(0.001))
+                .frame(width: 44, height: 44)
+                .accessibilityElement()
+                .accessibilityIdentifier("debug-older-paging")
+                .accessibilityValue(value)
+            Button(action: release) {
+                Rectangle()
+                    .fill(Color.white.opacity(0.001))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityIdentifier("debug-older-release")
+            .accessibilityLabel("Release older page")
+        }
+    }
+}
+#endif

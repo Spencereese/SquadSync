@@ -42,19 +42,92 @@ struct ChatBubble: Equatable {
     let reply: ChatReplyQuote?
 }
 
-enum ChatRow: Identifiable, Equatable {
+/// Not Identifiable on purpose: the list iterates `ChatRowItem`, which stores
+/// this identity, so it's worked out once per row build and never per diff.
+enum ChatRow: Equatable {
     case day(key: String, label: String)
     case unread(count: Int)
     case message(ChatBubble)
     case spot(SpotCall)
 
-    var id: String {
+    var identity: String {
         switch self {
         case .day(let key, _): "day-\(key)"
         case .unread: "unread-divider"
         case .message(let bubble): "message-\(bubble.entry.id.uuidString)"
         case .spot(let call): "spot-\(call.id.uuidString)"
         }
+    }
+}
+
+/// A thread row with its identity worked out once, when the row is built. The
+/// list's ForEach reads `id` for every row on every diff; as a computed string
+/// (interpolating a UUID each time) it was the top cost in a profile of the
+/// list, ahead of layout itself.
+///
+/// The row itself sits behind one class reference, so copying an item is a
+/// string and a pointer, not the whole bubble (entry, names, caption, seen line,
+/// reply quote) or spot call (seats array): the lazy stack copies and destroys
+/// every item each time it walks the ForEach (prefetch phases, preferences), and
+/// 6f41b07's thread-groups profile had those copies as its two top frames, with
+/// the reply quote's enum tag checks under them.
+struct ChatRowItem: Identifiable, Equatable {
+    let id: String
+    private let storage: Storage
+    var row: ChatRow { storage.row }
+
+    init(_ row: ChatRow) {
+        self.id = row.identity
+        self.storage = Storage(row)
+    }
+
+    static func == (lhs: ChatRowItem, rhs: ChatRowItem) -> Bool {
+        lhs.id == rhs.id && (lhs.storage === rhs.storage || lhs.storage.row == rhs.storage.row)
+    }
+
+    private final class Storage {
+        let row: ChatRow
+        init(_ row: ChatRow) { self.row = row }
+    }
+}
+
+/// The thread's rows, built once per change of what they're made from (the
+/// messages and calls, names, reads, the unread anchor, the viewer, and the
+/// day, since separators say Today or Yesterday), not on every render of the
+/// list. Not observable: reading or refilling it never asks for a render.
+final class ChatRowMemo {
+    private struct Key: Equatable {
+        let items: [SpotThreadItem]
+        let viewerId: UUID?
+        let names: [UUID: String]
+        let reads: [MemberRead]
+        let unreadAnchor: UUID?
+        let today: String
+        let zone: String
+        let locale: String
+    }
+
+    private var key: Key?
+    private var cached: [ChatRowItem] = []
+    /// How many times the rows were actually built.
+    private(set) var builds = 0
+
+    func rows(items: [SpotThreadItem], context: ChatThread.Context) -> [ChatRowItem] {
+        let key = Key(
+            items: items,
+            viewerId: context.viewerId,
+            names: context.names,
+            reads: context.reads,
+            unreadAnchor: context.unreadAnchor,
+            today: context.clock.dayKey(context.now),
+            zone: context.clock.calendar.timeZone.identifier,
+            locale: context.clock.locale.identifier
+        )
+        if key == self.key { return cached }
+        self.key = key
+        cached = ChatThread.rows(items: items, context: context).map(ChatRowItem.init)
+        builds += 1
+        return cached
     }
 }
 
@@ -97,14 +170,34 @@ struct ChatClock {
     }
 
     private func format(_ date: Date, template: String) -> String {
+        ChatFormatterCache.shared.formatter(template: template, calendar: calendar, locale: locale).string(from: date)
+            .replacingOccurrences(of: "\u{202F}", with: " ")
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+    }
+}
+
+/// One DateFormatter per template, locale, calendar and time zone. Building one
+/// per message time on every render was a top cost of scrolling a long chat.
+/// A change of locale, calendar or zone gets a new key, so a new formatter.
+final class ChatFormatterCache: @unchecked Sendable {
+    static let shared = ChatFormatterCache()
+    private let lock = NSLock()
+    private var formatters: [String: DateFormatter] = [:]
+    private(set) var built = 0
+
+    func formatter(template: String, calendar: Calendar, locale: Locale) -> DateFormatter {
+        let key = [template, locale.identifier, "\(calendar.identifier)", calendar.timeZone.identifier].joined(separator: "|")
+        lock.lock()
+        defer { lock.unlock() }
+        if let cached = formatters[key] { return cached }
         let formatter = DateFormatter()
         formatter.calendar = calendar
         formatter.timeZone = calendar.timeZone
         formatter.locale = locale
         formatter.setLocalizedDateFormatFromTemplate(template)
-        return formatter.string(from: date)
-            .replacingOccurrences(of: "\u{202F}", with: " ")
-            .replacingOccurrences(of: "\u{00A0}", with: " ")
+        formatters[key] = formatter
+        built += 1
+        return formatter
     }
 }
 
@@ -213,9 +306,10 @@ enum ChatThread {
     }
 
     /// Who has read the latest message, not counting you or whoever sent it.
-    /// Unsent messages and a server without read rows get no line.
+    /// Unsent messages and a server without read rows get no line, and neither
+    /// does a render before you're known (your own read would be counted).
     static func seen(for entry: ChatEntry, context: Context) -> String? {
-        guard entry.delivery == .sent else { return nil }
+        guard entry.delivery == .sent, context.viewerId != nil else { return nil }
         let names = context.reads
             .filter { $0.userId != context.viewerId && $0.userId != entry.senderId && $0.lastReadAt >= entry.sentAt }
             .map { context.names[$0.userId] ?? unknownSender }

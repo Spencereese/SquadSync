@@ -1,5 +1,7 @@
 // Copy this file to Config.xcconfig in this same folder.
 // Config.xcconfig is gitignored. Do not commit the anon key.
+// Base.xcconfig includes it with #include?, so without it the build still works
+// and the app shows the not-configured screen.
 // xcconfig treats // as a comment, so the URL is written with an empty $().
 
 SUPABASE_URL = https:/$()/sfckxrnoiwetmzdycqaa.supabase.co

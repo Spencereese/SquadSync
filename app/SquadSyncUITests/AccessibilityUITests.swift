@@ -767,7 +767,7 @@ final class AccessibilityUITests: XCTestCase {
         let whosIn = app.buttons["whos-in-open"]
         XCTAssertTrue(whosIn.waitForExistence(timeout: 5), "Who's in was missing from the large-text roster")
         XCTAssertTrue(whosIn.isHittable)
-        XCTAssertGreaterThanOrEqual(whosIn.frame.height, 44)
+        assertHitSize(whosIn.frame.height)
         XCTAssertLessThanOrEqual(whosIn.frame.maxX, window.maxX + 1, "Who's in is cut off at the right")
         XCTAssertFalse(app.descendants(matching: .any)["presence-untracked"].exists, "Presence is tracked by check-ins here")
         toggle.tap()
@@ -1350,6 +1350,8 @@ final class AccessibilityUITests: XCTestCase {
         let seen = app.descendants(matching: .any).matching(identifier: "seen-by")
         XCTAssertTrue(seen.firstMatch.waitForExistence(timeout: 5), "No Seen by line")
         XCTAssertEqual(seen.count, 1, "Seen by belongs on the latest message only")
+        // The read rows and your profile arrive separately; give them a moment to agree.
+        _ = waitUntil(timeout: 5) { seen.firstMatch.label == "Seen by Alex and Jordan" }
         XCTAssertEqual(seen.firstMatch.label, "Seen by Alex and Jordan")
         XCTAssertTrue(latest.frame.contains(CGPoint(x: seen.firstMatch.frame.midX, y: seen.firstMatch.frame.midY)), "Seen by isn't on the latest message")
         let mine = element(Polish.longLine, in: app)
@@ -1396,8 +1398,8 @@ final class AccessibilityUITests: XCTestCase {
         let chip = app.buttons[Polish.thumbs]
         guard scrollChat(to: chip, in: app) else { return }
         XCTAssertEqual(chip.label, "Thumbs up, 2 reactions, including yours")
-        XCTAssertGreaterThanOrEqual(chip.frame.height, 44, "Chip is too short to hit: \(chip.frame)")
-        XCTAssertGreaterThanOrEqual(chip.frame.width, 44, "Chip is too narrow to hit: \(chip.frame)")
+        assertHitSize(chip.frame.height, "Chip is too short to hit: \(chip.frame)")
+        assertHitSize(chip.frame.width, "Chip is too narrow to hit: \(chip.frame)")
         chip.tap()
         XCTAssertTrue(waitForLabel(chip, "label == 'Thumbs up, 1 reaction'"), "Tapping your chip didn't take yours back: \(chip.label)")
         chip.tap()
@@ -1486,7 +1488,7 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(caption("Not delivered", in: app).waitForExistence(timeout: 5), "No Not delivered caption")
         let retry = app.buttons["retry-send"]
         XCTAssertTrue(retry.waitForExistence(timeout: 5))
-        XCTAssertGreaterThanOrEqual(retry.frame.height, 44, "Retry is too short to hit")
+        assertHitSize(retry.frame.height, "Retry is too short to hit")
         retry.tap()
         XCTAssertTrue(caption("Sent", in: app).waitForExistence(timeout: 5), "The retried message didn't say Sent")
         XCTAssertFalse(caption("Not delivered", in: app).exists)
@@ -1510,7 +1512,7 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertEqual(error.label, "Messages couldn't load.")
         let retry = app.buttons["chat-retry"]
         XCTAssertTrue(waitUntil(timeout: 5) { retry.isHittable }, "Retry isn't on screen: \(retry.frame)")
-        XCTAssertGreaterThanOrEqual(retry.frame.height, 44, "Retry is too short to hit")
+        assertHitSize(retry.frame.height, "Retry is too short to hit")
         retry.tap()
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 10), "Retry didn't load the thread")
         XCTAssertTrue(error.waitForNonExistence(timeout: 5), "The error stayed after loading")
@@ -1528,7 +1530,7 @@ final class AccessibilityUITests: XCTestCase {
         if list.exists {
             XCTAssertLessThanOrEqual(retry.frame.maxY, list.frame.maxY + 1, "Retry is clipped by the list at AX5: \(retry.frame) in \(list.frame)")
         }
-        XCTAssertGreaterThanOrEqual(retry.frame.height, 44)
+        assertHitSize(retry.frame.height)
     }
 
     func testHistoryLoadingShowsThenMessagesArrive() {
@@ -1539,6 +1541,152 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15), "The thread never arrived")
         XCTAssertTrue(loading.waitForNonExistence(timeout: 5), "The loading row stayed")
         XCTAssertFalse(element("chat-empty", in: app).exists, "Loading must not flash the empty state")
+    }
+
+    // MARK: Chat durability
+
+    private enum Long {
+        static func id(_ index: Int) -> String {
+            "message-row-00000000-0000-4000-8000-" + String(format: "%012X", 0x1000 + index)
+        }
+        static let newest = id(259)
+        /// The oldest message in the first history read (the newest 200).
+        static let firstReadTop = id(60)
+        /// The newest message of the first older page.
+        static let firstPageNewest = id(59)
+        static let oldest = id(0)
+    }
+
+    /// Message rows whose frame is fully inside the list, top first.
+    private func visibleMessageRows(in app: XCUIApplication, list: XCUIElement) -> [(id: String, frame: CGRect)] {
+        let bounds = list.frame
+        return app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH 'message-row-'"))
+            .allElementsBoundByIndex
+            .compactMap { row -> (id: String, frame: CGRect)? in
+                let frame = row.frame
+                guard !frame.isEmpty, frame.minY >= bounds.minY, frame.maxY <= bounds.maxY else { return nil }
+                return (row.identifier, frame)
+            }
+            .sorted { $0.frame.minY < $1.frame.minY }
+    }
+
+    func testScrollingUpLoadsOlderMessagesUntilStartOfChat() {
+        // The mock holds every older page until the test releases it
+        // (-mock-older-gate), and a hidden probe reports the paging state, so
+        // "before" and "after" a page lands are read with nothing racing them.
+        // Pages may be asked for before the top (prefetch); what matters is that
+        // what the reader sees doesn't move when one lands.
+        let app = launchChat("chatLongHistory", extra: ["-mock-older-gate"])
+        XCTAssertTrue(element(Long.newest, in: app).waitForExistence(timeout: 15), "The thread never loaded")
+        XCTAssertFalse(element(Long.firstPageNewest, in: app).exists, "More than one read's worth loaded up front")
+        let list = app.scrollViews["message-list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let probe = element("debug-older-paging", in: app)
+        let release = element("debug-older-release", in: app)
+        XCTAssertTrue(probe.waitForExistence(timeout: 5), "No paging probe; is -mock-older-gate wired up?")
+        XCTAssertTrue(release.exists, "No release control")
+        let paging = { (probe.value as? String) ?? "" }
+        let releaseOne = { release.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+        let landed = element(Long.firstPageNewest, in: app)
+        let start = element("chat-start", in: app)
+        let error = element("chat-older-error", in: app)
+        XCTAssertEqual(paging(), "idle pages=0")
+
+        // Phase 1: swipe until page 1 is asked for (and held). It's only asked for
+        // once message 60 comes up near the screen, never from the bottom.
+        var held = false
+        for _ in 0..<40 {
+            list.swipeDown()
+            if paging().hasPrefix("loading") { held = true; break }
+        }
+        guard held else {
+            XCTFail("Scrolling up never asked for an older page: \(paging())")
+            return
+        }
+        XCTAssertEqual(paging(), "loading pages=0")
+        XCTAssertFalse(landed.exists, "Page 1 went in while held")
+        XCTAssertTrue(element(Long.firstReadTop, in: app).exists, "Page 1 was asked for with message 60 nowhere near the screen")
+        // Let the list come to rest (bounded), then record the topmost fully visible row.
+        var previous: [CGRect] = []
+        var rows: [(id: String, frame: CGRect)] = []
+        _ = waitUntil(timeout: 6) {
+            rows = self.visibleMessageRows(in: app, list: list)
+            let frames = rows.map(\.frame)
+            defer { previous = frames }
+            return !rows.isEmpty && frames == previous
+        }
+        guard let reference = rows.first else {
+            XCTFail("No message row fully on screen before page 1")
+            return
+        }
+        XCTAssertFalse(landed.exists, "Page 1 went in while held")
+        releaseOne()
+        XCTAssertTrue(waitUntil(timeout: 10) { paging().contains("pages=1") }, "Page 1 never landed: \(paging())")
+        // Page 1's rows are above the reader and may not be laid out yet; phase 2
+        // reaching message 0 shows they went in.
+        let after = element(reference.id, in: app)
+        XCTAssertTrue(after.exists, "\(reference.id) left the tree when page 1 landed")
+        XCTAssertTrue(after.frame.intersects(list.frame), "\(reference.id) went off screen when page 1 landed: \(after.frame)")
+        XCTAssertEqual(after.frame.minY, reference.frame.minY, accuracy: 1, "\(reference.id) moved when page 1 landed")
+
+        // Phase 2: fast flings, releasing each page as it's asked for, until the
+        // start of the chat. Bounded; an error row fails the test.
+        for _ in 0..<80 {
+            if start.exists || error.exists { break }
+            if paging().hasPrefix("loading") {
+                releaseOne()
+                _ = waitUntil(timeout: 10) { !paging().hasPrefix("loading") }
+                continue
+            }
+            list.swipeDown(velocity: .fast)
+        }
+        XCTAssertFalse(error.exists, "Paging failed: \(error.exists ? error.label : "")")
+        XCTAssertTrue(start.waitForExistence(timeout: 10), "No Start of chat after paging back: \(paging())")
+        XCTAssertEqual(start.label, "Start of chat")
+        XCTAssertEqual(paging(), "reachedStart pages=2")
+        XCTAssertTrue(element(Long.oldest, in: app).exists, "The first message isn't there at the start of the chat")
+    }
+
+    func testColdLaunchFromAPushOpensAnOldMessage() {
+        // Message 1 of 260 is outside the first read: the push has to wait for the
+        // chat's first load, page back for it, then scroll to it.
+        let app = XCUIApplication()
+        let payload = #"{"type":"squad_message","squad_id":"00000000-0000-0000-0000-000000000010","message_id":"00000000-0000-4000-8000-000000001000"}"#
+        app.launchArguments = ["-backend", "mock", "-scenario", "chatLongHistory", "-debug-push-open", payload]
+        app.launch()
+        let opened = element("push-opened-chat", in: app)
+        XCTAssertTrue(opened.waitForExistence(timeout: 15), "The chat from the notification did not open")
+        let list = app.scrollViews["message-list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let oldest = element(Long.oldest, in: app)
+        XCTAssertTrue(waitUntil(timeout: 15) { oldest.exists && oldest.frame.intersects(list.frame) },
+                      "The pushed message (1 of 260) wasn't opened: \(oldest.exists ? "\(oldest.frame)" : "not loaded")")
+        XCTAssertFalse(element("chat-older-error", in: app).exists)
+    }
+
+    func testFailedMessageIsStillThereAfterRelaunch() {
+        let first = launchChat("chatPolish", extra: ["-debug-fail-sends", "1"])
+        XCTAssertTrue(element(Polish.reply, in: first).waitForExistence(timeout: 15))
+        let field = first.textFields["Message"]
+        field.tap()
+        field.typeText("survives a kill")
+        first.buttons["send-message"].tap()
+        XCTAssertTrue(caption("Not delivered", in: first).waitForExistence(timeout: 5), "The send didn't fail")
+        first.terminate()
+
+        // Same mock outbox on disk; the relaunch doesn't fail sends.
+        let app = launchChat("chatPolish", extra: ["-keepOutbox"])
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
+        let restored = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "You, survives a kill, "))
+        XCTAssertTrue(restored.firstMatch.waitForExistence(timeout: 5), "The failed message was lost on relaunch")
+        XCTAssertTrue(caption("Not delivered", in: app).exists, "The restored message doesn't say Not delivered")
+        let retry = app.buttons["retry-send"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5), "No Retry on the restored message")
+        scrollChat(to: retry, in: app)
+        retry.tap()
+        XCTAssertTrue(caption("Sent", in: app).waitForExistence(timeout: 5), "The restored message didn't send on Retry")
+        XCTAssertEqual(restored.count, 1, "Retry made a second bubble")
     }
 
     func testMessagePolishStaysUsableAtLargeText() {
@@ -1561,7 +1709,7 @@ final class AccessibilityUITests: XCTestCase {
 
         let chip = app.buttons[Polish.thumbs]
         guard scrollChat(to: chip, in: app) else { return }
-        XCTAssertGreaterThanOrEqual(chip.frame.height, 44)
+        assertHitSize(chip.frame.height)
         XCTAssertLessThanOrEqual(chip.frame.maxX, width + 1, "A chip runs off screen at AX5")
 
         let jump = app.buttons["jump-to-latest"]
@@ -1587,7 +1735,7 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(cancel.waitForExistence(timeout: 5))
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5), "Reply should focus the composer")
         XCTAssertTrue(cancel.isHittable, "Cancel reply is covered at AX5: \(cancel.frame)")
-        XCTAssertGreaterThanOrEqual(cancel.frame.height, 44)
+        assertHitSize(cancel.frame.height)
         let send = app.buttons["send-message"]
         XCTAssertTrue(send.isHittable, "Send is covered at AX5 while replying: \(send.frame)")
         let banner = element("reply-banner", in: app)
@@ -1688,9 +1836,16 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(element("whos-in-sheet", in: app).waitForExistence(timeout: 5), "Who's in didn't open", file: file, line: line)
     }
 
-    /// Floating point puts a 44pt frame at 43.99999999999994, so size checks allow 0.5pt.
+    /// Floating point puts a 44pt frame at 43.99999999999994, so every 44pt size
+    /// check goes through here and allows 0.5pt.
+    private static let minimumHitSize: CGFloat = 44 - 0.5
+
+    private func assertHitSize(_ value: CGFloat, _ message: @autoclosure () -> String = "", file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertGreaterThanOrEqual(value, Self.minimumHitSize, message(), file: file, line: line)
+    }
+
     private func assertHitTarget(_ target: XCUIElement, _ what: String, file: StaticString = #filePath, line: UInt = #line) {
-        XCTAssertGreaterThanOrEqual(target.frame.height, 43.5, "\(what) is too short to hit: \(target.frame)", file: file, line: line)
+        assertHitSize(target.frame.height, "\(what) is too short to hit: \(target.frame)", file: file, line: line)
     }
 
     /// Drags Who's in up to its large detent. iOS 26 draws a medium sheet's content
@@ -2197,7 +2352,7 @@ final class AccessibilityUITests: XCTestCase {
         let remove = app.buttons["onboarding-remove-Warzone"]
         guard revealInOnboarding(remove, in: app) else { return }
         assertHitTarget(remove, "Remove")
-        XCTAssertGreaterThanOrEqual(remove.frame.width, 43.5)
+        assertHitSize(remove.frame.width)
         XCTAssertLessThanOrEqual(remove.frame.maxX, width + 1)
         let save = app.buttons["onboarding-save-profile"]
         guard revealInOnboarding(save, in: app) else { return }

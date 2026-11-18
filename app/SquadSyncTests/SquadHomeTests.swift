@@ -207,12 +207,16 @@ final class SquadHomeTests: XCTestCase {
         )
         model.reconnecting = true
         model.status = SessionFailurePolicy.reconnecting
+        // A resume whose refresh failed offline leaves this in the header.
+        model.presenceNote = SessionFailurePolicy.reconnecting
         model.draft = "back"
         await model.send()
         let status = model.status
         let reconnecting = model.reconnecting
+        let header = model.presenceNote
         XCTAssertEqual(status, "", "Reconnecting… stayed after a send went through")
         XCTAssertFalse(reconnecting)
+        XCTAssertEqual(header, "", "The header's Reconnecting… stayed after a send went through")
         XCTAssertEqual(model.log.ordered.last?.body, "back")
         XCTAssertEqual(model.log.ordered.last?.delivery, .sent)
     }

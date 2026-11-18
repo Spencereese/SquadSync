@@ -1400,7 +1400,14 @@ final class LiveSessionModel {
     func recoverAfterSend() {
         status = SendRecovery.status(afterSuccess: status, sendFailure: sendFailureStatus)
         sendFailureStatus = nil
+        connectionProven()
+    }
+
+    /// Any round-trip that worked: clears "Reconnecting…" wherever it is shown.
+    func connectionProven() {
         reconnecting = false
+        status = ConnectionRecovery.status(afterProof: status)
+        presenceNote = ConnectionRecovery.resumeNote(afterProof: presenceNote)
     }
 
     func becameActive() async {
@@ -1416,7 +1423,7 @@ final class LiveSessionModel {
             phase = .ready
             email = session.email
             viewerId = session.userId
-            presenceNote = "Reconnecting…"
+            presenceNote = SessionFailurePolicy.reconnecting
             await refresh(session)
             if squad != nil { startLive(session) }
             if !reconnecting {
@@ -1440,7 +1447,7 @@ final class LiveSessionModel {
             defaultGame = loaded.defaultGame
             let squads = squadService(session)
             squad = try await squads.currentSquad(userId: session.userId)
-            reconnecting = false
+            connectionProven()
             if let marks {
                 // Someone already in a squad never sees the profile step.
                 if squad != nil { marks.confirmProfile(session.userId) }
@@ -1760,6 +1767,7 @@ final class LiveSessionModel {
         case .phase(let next):
             let opened = next == .connected && link != .connected
             link = next
+            if next == .connected { connectionProven() }
             if next.polls {
                 beginPoll(session)
                 await loadChat(session)
@@ -1821,6 +1829,7 @@ final class LiveSessionModel {
             guard HistoryMerge.accepts(requestSquad: requested, loadedSquad: loadedSquad) else { return }
             log.adopt(replacingSquad: false, history: rows.map { $0.entry() })
             chatLoad = .loaded
+            connectionProven()
             await loadSpot(session)
             // Without the socket, check-ins only refresh while someone is looking at them.
             if whosInOpen { await loadWhosIn() }
@@ -2228,8 +2237,7 @@ struct LiveSessionView: View {
 
     private var liveNotice: String? {
         guard model.usesLiveSocket else { return nil }
-        if !model.presenceNote.isEmpty { return model.presenceNote }
-        return model.link.notice
+        return ConnectionRecovery.header(resumeNote: model.presenceNote, link: model.link)
     }
 
     private var chatList: some View {

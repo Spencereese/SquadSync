@@ -259,6 +259,28 @@ enum SendRecovery {
     }
 }
 
+/// The connection line at the top of the chat. A foreground resume sets its
+/// own note ("Reconnecting…") while it refreshes; otherwise the socket's link
+/// notice shows.
+enum ConnectionRecovery {
+    static func header(resumeNote: String, link: RealtimeLink) -> String? {
+        if !resumeNote.isEmpty { return resumeNote }
+        return link.notice
+    }
+
+    /// A proven round-trip (a delivered send, a poll or refresh that came back,
+    /// the channel joining again) ends "Reconnecting…". Before this, only a
+    /// delivered send cleared the status line, and nothing cleared the resume
+    /// note, so a resume that ran while offline left it at the top for good.
+    static func resumeNote(afterProof current: String) -> String {
+        current == SessionFailurePolicy.reconnecting ? "" : current
+    }
+
+    static func status(afterProof current: String) -> String {
+        current == SessionFailurePolicy.reconnecting ? "" : current
+    }
+}
+
 enum HistoryMerge {
     /// A fetch for a squad we have already left must not be written into the new thread.
     static func accepts(requestSquad: UUID, loadedSquad: UUID?) -> Bool {

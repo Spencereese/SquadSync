@@ -547,6 +547,20 @@ final class SquadNameTests: XCTestCase {
         XCTAssertFalse(HTTPFailureLog.isExpectedProbeRefusal(status: 400, body: Data("{\"message\":\"spot_not_ready\"}".utf8)))
     }
 
+    func testReconnectingBannerClearsAfterAProvenRoundTrip() {
+        // Repro from the phone: airplane mode on, back to the app (the resume's
+        // refresh fails, so the header keeps "Reconnecting…"), airplane off,
+        // Retry goes through. The header must clear.
+        var resume = SessionFailurePolicy.reconnecting
+        XCTAssertEqual(ConnectionRecovery.header(resumeNote: resume, link: .reconnecting), "Reconnecting…")
+        resume = ConnectionRecovery.resumeNote(afterProof: resume)
+        XCTAssertNil(ConnectionRecovery.header(resumeNote: resume, link: .connected), "Reconnecting… stayed after the connection came back")
+        XCTAssertEqual(ConnectionRecovery.header(resumeNote: resume, link: .reconnecting), "Reconnecting…", "A socket still retrying says so")
+        XCTAssertEqual(ConnectionRecovery.resumeNote(afterProof: "Back online"), "Back online", "Other notes run their course")
+        XCTAssertEqual(ConnectionRecovery.status(afterProof: SessionFailurePolicy.reconnecting), "")
+        XCTAssertEqual(ConnectionRecovery.status(afterProof: "Renamed."), "Renamed.")
+    }
+
     func testProbeAnswersAreInfoAndRealFailuresStayErrors() {
         let missingColumn = Data("{\"code\":\"42703\",\"message\":\"column sq8_spot_rsvps.ready does not exist\"}".utf8)
         XCTAssertEqual(HTTPFailureLog.level(status: 400, body: missingColumn, probe: true), .info)

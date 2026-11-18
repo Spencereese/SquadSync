@@ -538,6 +538,78 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertEqual(midway, .failed)
     }
 
+    // MARK: Staying at the bottom
+
+    func testFailedLastMessageKeepsAReaderAtTheBottom() {
+        // AX5 with the keyboard up: the reader is at the bottom, their message fails
+        // and grows by "Not delivered" + Retry. The list goes back to the bottom,
+        // however far the row grew (here 27pt, past a distance-only check).
+        var pin = ChatBottomPin()
+        var m = metrics(offset: 7700, content: 8000, viewport: 300)
+        XCTAssertNil(pin.observe(m))
+        XCTAssertTrue(pin.pinned)
+        m.contentHeight += 27
+        XCTAssertEqual(pin.observe(m), 7727, "Back to the bottom after the failed row lays out")
+        m.offset = 7727
+        XCTAssertNil(pin.observe(m))
+        XCTAssertTrue(pin.pinned)
+        m.contentHeight += 120
+        XCTAssertEqual(pin.observe(m), 7847, "Any growth of the last row, not just under the slack")
+    }
+
+    func testReaderWhoScrolledUpIsNotPulledDown() {
+        var pin = ChatBottomPin()
+        var m = metrics(offset: 7700, content: 8000, viewport: 300)
+        _ = pin.observe(m)
+        m.offset = 7600
+        XCTAssertNil(pin.observe(m, interacting: true))
+        XCTAssertFalse(pin.pinned, "100pt up unpins")
+        m.contentHeight += 40
+        XCTAssertNil(pin.observe(m), "A new or failed row doesn't move someone reading up")
+        m.offset = 7720
+        XCTAssertNil(pin.observe(m))
+        XCTAssertTrue(pin.pinned, "Within \(ChatBottomPin.slack)pt of the bottom pins again")
+    }
+
+    func testPinWaitsOutDragsAndOlderPages() {
+        var pin = ChatBottomPin()
+        var m = metrics(offset: 7700, content: 8000, viewport: 300)
+        _ = pin.observe(m)
+        m.contentHeight += 30
+        XCTAssertNil(pin.observe(m, interacting: true), "Never fights a finger or a fling")
+        m.contentHeight += 2000
+        XCTAssertNil(pin.observe(m, holding: true), "An older page being held in place wins")
+        m.offset = 3000
+        XCTAssertNil(pin.observe(m))
+        XCTAssertFalse(pin.pinned, "A programmatic scroll (open a message) unpins")
+        pin.reset()
+        XCTAssertTrue(pin.pinned, "A new squad opens at the newest message")
+        XCTAssertNil(pin.observe(m), "The first reading only records")
+    }
+
+    func testInsetsMovingWithAScrollCountAsAScroll() {
+        var pin = ChatBottomPin()
+        var m = metrics(offset: 7700, content: 8000, viewport: 300)
+        _ = pin.observe(m)
+        m.offset = 4000
+        m.bottomInset = 10
+        XCTAssertNil(pin.observe(m))
+        XCTAssertFalse(pin.pinned, "Jumping to a message while the safe area settles isn't a layout change")
+        var at = metrics(offset: 7700, content: 8000, viewport: 300)
+        var held = ChatBottomPin()
+        _ = held.observe(at)
+        at.bottomInset = 20
+        XCTAssertEqual(held.observe(at), 7720, "An inset that grew on its own keeps the reader at the bottom")
+    }
+
+    func testViewportStickUsesThePinSlack() {
+        XCTAssertEqual(ChatViewportStick.pinnedSlack, 32)
+        let near = metrics(offset: 7670, content: 8000, viewport: 300)
+        var shorter = near
+        shorter.viewportHeight = 250
+        XCTAssertEqual(ChatViewportStick.offset(before: near, after: shorter), 7750, "30pt from the bottom still sticks")
+    }
+
     // MARK: Pending open (push before or after the chat's first load)
 
     func testPushBeforeTheFirstLoadOpensWhenItFinishes() {

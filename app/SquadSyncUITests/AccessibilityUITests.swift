@@ -1570,11 +1570,12 @@ final class AccessibilityUITests: XCTestCase {
     }
 
     func testScrollingUpLoadsOlderMessagesUntilStartOfChat() {
-        // Older pages take 3s here, so the list is at rest when page 1 lands and
-        // "right before" and "right after" can both be read with nothing else
-        // moving it. Pages may be fetched a little before the top (prefetch); what
-        // matters is that what the reader sees doesn't move when one lands.
-        let app = launchChat("chatLongHistory", extra: ["-mock-older-delay", "3"])
+        // Older pages take 8s here. A page can be asked for mid-swipe (prefetch, a
+        // little before the top); XCUITest's idle wait after a swipe is about 2s and
+        // one snapshot of the visible rows about 1.5s, so the "before" reading is
+        // done well before the page lands. What matters is that what the reader sees
+        // doesn't move when it does.
+        let app = launchChat("chatLongHistory", extra: ["-mock-older-delay", "8"])
         XCTAssertTrue(element(Long.newest, in: app).waitForExistence(timeout: 15), "The thread never loaded")
         XCTAssertFalse(element(Long.firstPageNewest, in: app).exists, "More than one read's worth loaded up front")
         let list = app.scrollViews["message-list"]
@@ -1583,28 +1584,31 @@ final class AccessibilityUITests: XCTestCase {
         let start = element("chat-start", in: app)
         let error = element("chat-older-error", in: app)
 
-        // Phase 1: swipe, let the list come to rest, record the topmost fully visible
-        // row, then give a page up to 5s to land with no input. When one does, that
-        // row must still be on screen, within 1pt of where it was.
+        // Phase 1: swipe until the oldest loaded message is laid out (only then can
+        // a page be asked for). Let the list settle (one cheap frame read, bounded
+        // to 1s), take one snapshot, and record its topmost fully visible row. Then
+        // give the page up to 12s to land with no input: that row must still be on
+        // screen, within 1pt of where it was.
         var checkedLanding = false
+        var waits = 0
         let firstReadTop = element(Long.firstReadTop, in: app)
-        for _ in 0..<40 where !checkedLanding {
+        for _ in 0..<40 where !checkedLanding && waits < 3 {
             list.swipeDown()
-            // A page is only asked for once the oldest loaded message is laid out.
             guard firstReadTop.exists || landed.exists else { continue }
-            var previous: [(id: String, frame: CGRect)] = []
-            var rows: [(id: String, frame: CGRect)] = []
-            _ = waitUntil(timeout: 2) {
-                rows = self.visibleMessageRows(in: app, list: list)
-                defer { previous = rows }
-                return !rows.isEmpty && rows.map(\.frame) == previous.map(\.frame)
+            var lastFrame = firstReadTop.frame
+            _ = waitUntil(timeout: 1) {
+                let frame = firstReadTop.frame
+                defer { lastFrame = frame }
+                return frame == lastFrame
             }
+            let rows = visibleMessageRows(in: app, list: list)
             if landed.exists {
-                XCTFail("Page 1 landed before the list came to rest; can't compare before and after")
+                XCTFail("Page 1 landed before the snapshot finished; can't compare before and after")
                 return
             }
             guard let reference = rows.first else { continue }
-            guard waitUntil(timeout: 5, { landed.exists }) else { continue }
+            waits += 1
+            guard waitUntil(timeout: 12, { landed.exists }) else { continue }
             checkedLanding = true
             let after = element(reference.id, in: app)
             XCTAssertTrue(after.exists, "\(reference.id) left the tree when page 1 landed")
@@ -1619,10 +1623,10 @@ final class AccessibilityUITests: XCTestCase {
         for _ in 0..<80 {
             if start.exists || error.exists { break }
             list.swipeDown(velocity: .fast)
-            if loading.exists { _ = loading.waitForNonExistence(timeout: 10) }
+            if loading.exists { _ = loading.waitForNonExistence(timeout: 15) }
         }
         XCTAssertFalse(error.exists, "Paging failed: \(error.exists ? error.label : "")")
-        XCTAssertTrue(start.waitForExistence(timeout: 10), "No Start of chat after paging back")
+        XCTAssertTrue(start.waitForExistence(timeout: 15), "No Start of chat after paging back")
         XCTAssertEqual(start.label, "Start of chat")
         XCTAssertTrue(element(Long.oldest, in: app).exists, "The first message isn't there at the start of the chat")
     }

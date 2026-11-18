@@ -6,7 +6,7 @@ import UIKit
 /// offset by an exact amount inside the layout pass that inserted rows.
 ///
 /// The decisions themselves are Foundation types (`ChatOlderTrigger`,
-/// `ChatPrependHold`, `ChatViewportStick`) with unit tests; this class only feeds
+/// `ChatPrependHold`, `ChatViewportStick`, `ChatBottomPin`) with unit tests; this class only feeds
 /// them numbers and applies the offsets they return. If the scroll view is never
 /// found, every method is a no-op and the list behaves like a plain ScrollView.
 @MainActor
@@ -14,6 +14,8 @@ final class ChatScrollController: NSObject {
     private weak var scrollView: UIScrollView?
     private var observations: [NSKeyValueObservation] = []
     private var hold: ChatPrependHold?
+    /// Whether the reader is staying at the newest message.
+    private var pin = ChatBottomPin()
     /// Content-space y of the rows the list reports (the oldest message and the
     /// hold's anchor), so a stale report can't claim a row is on screen.
     private var rowContentY: [UUID: Double] = [:]
@@ -73,6 +75,7 @@ final class ChatScrollController: NSObject {
         userHasScrolled = false
         requestInFlight = false
         hold = nil
+        pin.reset()
         rowContentY = [:]
     }
 
@@ -124,7 +127,16 @@ final class ChatScrollController: NSObject {
     }
 
     private func geometryChanged(_ view: UIScrollView) {
+        repin(view)
         onGeometry?(Self.metrics(of: view))
+    }
+
+    /// Back to the bottom after a layout change, when the reader was there.
+    private func repin(_ view: UIScrollView) {
+        let interacting = view.isTracking || view.isDragging || view.isDecelerating
+        if let target = pin.observe(Self.metrics(of: view), interacting: interacting, holding: hold != nil) {
+            set(view, offset: target)
+        }
     }
 
     private func contentSizeChanged(_ view: UIScrollView) {
@@ -142,6 +154,7 @@ final class ChatScrollController: NSObject {
         if let target = ChatViewportStick.offset(before: before, after: after) {
             set(view, offset: target)
         }
+        repin(view)
     }
 
     private func set(_ view: UIScrollView, offset: Double) {

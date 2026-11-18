@@ -98,15 +98,24 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(react.waitForExistence(timeout: 5), "React button was not visible")
         react.tap()
 
+        let picker = app.descendants(matching: .any)["reaction-picker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5), "React did not open the emoji row")
         let thumbs = app.buttons["Thumbs up"]
         XCTAssertTrue(thumbs.waitForExistence(timeout: 5), "Thumbs up was not in the reaction row")
+        XCTAssertEqual(picker.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'tapback-'")).count, 6, "The emoji row should offer the six reactions")
+        assertHitSize(thumbs.frame.height, "An emoji in the row is too short to hit: \(thumbs.frame)")
         thumbs.tap()
+        XCTAssertTrue(picker.waitForNonExistence(timeout: 5), "Picking a reaction should close the emoji row")
 
         let chip = app.buttons["reaction-chip-hand.thumbsup.fill"]
         XCTAssertTrue(chip.waitForExistence(timeout: 5), "The reaction chip was not visible")
-        XCTAssertEqual(chip.label, "Thumbs up, 1 reaction, including yours")
+        XCTAssertEqual(chip.label, "👍 1, you reacted")
+        XCTAssertTrue(chip.isSelected, "Your own reaction should read as selected")
+        let bubble = row.buttons.element(boundBy: 0)
+        XCTAssertLessThanOrEqual(abs(chip.frame.minX - bubble.frame.minX), 2, "Riley's chip should sit under his bubble on the left: chip \(chip.frame), bubble \(bubble.frame)")
 
-        thumbs.tap()
+        // Tapping your own chip again turns it off.
+        chip.tap()
         XCTAssertTrue(chip.waitForNonExistence(timeout: 5), "The reaction chip stayed after it was removed")
     }
 
@@ -1423,15 +1432,86 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
         let chip = app.buttons[Polish.thumbs]
         guard scrollChat(to: chip, in: app) else { return }
-        XCTAssertEqual(chip.label, "Thumbs up, 2 reactions, including yours")
+        XCTAssertEqual(chip.label, "👍 2, you reacted")
+        XCTAssertTrue(chip.isSelected, "Your reaction should be highlighted")
         assertHitSize(chip.frame.height, "Chip is too short to hit: \(chip.frame)")
         assertHitSize(chip.frame.width, "Chip is too narrow to hit: \(chip.frame)")
         chip.tap()
-        XCTAssertTrue(waitForLabel(chip, "label == 'Thumbs up, 1 reaction'"), "Tapping your chip didn't take yours back: \(chip.label)")
+        XCTAssertTrue(waitForLabel(chip, "label == '👍 1'"), "Tapping your chip didn't take yours back: \(chip.label)")
+        XCTAssertFalse(chip.isSelected, "The chip still read as yours after you took it back")
         chip.tap()
-        XCTAssertTrue(waitForLabel(chip, "label == 'Thumbs up, 2 reactions, including yours'"), "Tapping again didn't add yours: \(chip.label)")
+        XCTAssertTrue(waitForLabel(chip, "label == '👍 2, you reacted'"), "Tapping again didn't add yours: \(chip.label)")
         let fire = app.buttons["reaction-chip-exclamationmark"]
-        XCTAssertEqual(fire.label, "Emphasis, 1 reaction")
+        XCTAssertEqual(fire.label, "🔥 1")
+        XCTAssertFalse(fire.isSelected)
+    }
+
+    /// Bubble sides: yours on the right in the accent color, others on the left
+    /// with their name once per run (read from the group identifiers).
+    func testOwnMessagesSitRightAndOthersLeftWithTheirName() {
+        let app = launchChat("chatPolish")
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15), "The seeded thread didn't load")
+        let window = app.windows.firstMatch.frame
+
+        let alex = bubble(Polish.question, in: app)
+        guard scrollChat(to: alex, in: app) else { return }
+        XCTAssertTrue(alex.label.hasPrefix("Alex, "), alex.label)
+        XCTAssertEqual(alex.identifier, "bubble-group-start", "Alex's run should open with his name")
+        XCTAssertLessThan(alex.frame.midX, window.midX, "Alex's message should sit on the left: \(alex.frame)")
+        XCTAssertLessThanOrEqual(alex.frame.maxX, window.maxX - 40, "Alex's bubble should leave room on the right: \(alex.frame)")
+
+        let alexAgain = bubble(Polish.alexSecond, in: app)
+        guard scrollChat(to: alexAgain, in: app) else { return }
+        XCTAssertEqual(alexAgain.identifier, "bubble-group-continues", "Alex's name should show once per run")
+        XCTAssertLessThanOrEqual(abs(alexAgain.frame.minX - alex.frame.minX), 1, "Alex's run should line up on the left")
+
+        let mine = bubble(Polish.mineFirst, in: app)
+        guard scrollChat(to: mine, in: app) else { return }
+        XCTAssertTrue(mine.label.hasPrefix("You, "), mine.label)
+        XCTAssertGreaterThan(mine.frame.midX, window.midX, "Your message should sit on the right: \(mine.frame)")
+        XCTAssertGreaterThanOrEqual(mine.frame.maxX, window.maxX - 40, "Your bubble should hug the right edge: \(mine.frame)")
+        XCTAssertGreaterThanOrEqual(mine.frame.minX, window.minX + 40, "Your bubble should leave room on the left: \(mine.frame)")
+        XCTAssertGreaterThan(mine.frame.maxX, alex.frame.maxX + 20, "Yours and Alex's are on the same side")
+    }
+
+    /// A reaction on your own message sits under it on the right, inside the
+    /// screen at AX5, and the + button opens the emoji row there too.
+    func testReactionsSitUnderTheBubbleOnItsSideAtLargeText() {
+        let app = launchChat("chatPolish", largeText: true)
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
+        let width = app.windows.firstMatch.frame.width
+        let mine = bubble(Polish.mineFirst, in: app)
+        guard scrollChat(to: mine, in: app) else { return }
+        mine.press(forDuration: 1.2)
+        let menuThumbs = app.buttons["Thumbs up"]
+        XCTAssertTrue(menuThumbs.waitForExistence(timeout: 5), "Long-press had no reactions")
+        menuThumbs.tap()
+
+        let row = element(Polish.mineFirst, in: app)
+        let chip = row.buttons["reaction-chip-hand.thumbsup.fill"]
+        guard scrollChat(to: chip, in: app) else { return }
+        XCTAssertEqual(chip.label, "👍 1, you reacted")
+        XCTAssertTrue(chip.isSelected)
+        XCTAssertLessThanOrEqual(abs(chip.frame.maxX - mine.frame.maxX), 2, "Your chip should sit under your bubble on the right: chip \(chip.frame), bubble \(mine.frame)")
+        XCTAssertGreaterThanOrEqual(chip.frame.minX, 0, "The chip is clipped on the left at AX5: \(chip.frame)")
+        XCTAssertLessThanOrEqual(chip.frame.maxX, width + 1, "The chip runs off screen at AX5: \(chip.frame)")
+        XCTAssertGreaterThan(chip.frame.minY, mine.frame.maxY - 1, "The chip overlaps the bubble: chip \(chip.frame), bubble \(mine.frame)")
+        assertHitSize(chip.frame.height)
+
+        let add = row.buttons["reaction-add"]
+        XCTAssertTrue(add.exists, "No + to open the emoji row")
+        XCTAssertEqual(add.label, "Add a reaction")
+        add.tap()
+        let picker = app.descendants(matching: .any)["reaction-picker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5), "+ did not open the emoji row")
+        let selected = picker.buttons["tapback-hand.thumbsup.fill"]
+        XCTAssertTrue(selected.isSelected, "The row should show your current reaction")
+        for option in picker.buttons.allElementsBoundByIndex {
+            XCTAssertGreaterThanOrEqual(option.frame.minX, 0, "An emoji is clipped at AX5: \(option.frame)")
+            XCTAssertLessThanOrEqual(option.frame.maxX, width + 1, "An emoji runs off screen at AX5: \(option.frame)")
+        }
+        selected.tap()
+        XCTAssertTrue(chip.waitForNonExistence(timeout: 5), "Picking your own reaction again should take it back")
     }
 
     func testLongPressOffersReactReplyAndCopy() {

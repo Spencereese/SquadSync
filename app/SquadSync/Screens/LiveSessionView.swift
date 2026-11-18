@@ -31,6 +31,11 @@ final class LiveSessionModel {
     var followSend: UUID?
     var selectedMessage: UUID?
     var reacting = false
+
+    /// Who "mine" means in the thread: the signed-in account, the id sq8 writes
+    /// as sender_id and user_id (auth.uid()). The profile id is the same row key,
+    /// so it's only a fallback before the session is known.
+    var chatViewerId: UUID? { viewerId ?? profile?.id }
     /// History read for the open squad: loading, loaded, or why it failed.
     var chatLoad = ChatHistoryState.idle
     /// The row at the top of the thread that pages older messages.
@@ -2562,7 +2567,7 @@ struct LiveSessionView: View {
     private var spotViewer: UUID? { model.viewerId ?? model.profile?.id }
 
     private var unreadForViewer: Int {
-        model.log.unreadCount(viewerId: model.profile?.id ?? model.viewerId ?? UUID())
+        model.log.unreadCount(viewerId: model.chatViewerId ?? UUID())
     }
 
     /// Thread rows with day separators, the unread divider, and message groups.
@@ -2575,7 +2580,7 @@ struct LiveSessionView: View {
         return rowMemo.rows(
             items: threadItems,
             context: ChatThread.Context(
-                viewerId: model.profile?.id ?? model.viewerId,
+                viewerId: model.chatViewerId,
                 names: model.memberNames,
                 reads: model.reads,
                 unreadAnchor: model.unreadMarker.anchor,
@@ -3256,93 +3261,118 @@ struct LiveSessionView: View {
         }
     }
 
-    private var viewerForChat: UUID? { model.profile?.id ?? model.viewerId }
+    private var viewerForChat: UUID? { model.chatViewerId }
 
     /// One message: group header, reply quote, bubble, reaction chips, then the
-    /// delivery caption or seen line. Long-press for React, Reply, Copy, and Retry.
+    /// delivery caption or seen line. Yours sit on the trailing side in the accent
+    /// color; everyone else's on the leading side with their name and avatar once
+    /// per run. Long-press for reactions, Reply, Copy, and Retry; double-tap or
+    /// React (or + under the chips) opens the emoji row.
     private func messageRow(_ bubble: ChatBubble) -> some View {
         let entry = bubble.entry
         let chipsForRow = ChatReactions.chips(marks: model.board.marks, messageId: entry.id, viewerId: viewerForChat)
         let actions = ChatAction.available(for: entry, repliesAvailable: model.chatCaps.replies)
-        return VStack(alignment: .leading, spacing: 2) {
-            if bubble.startsGroup {
-                ChatGroupHeader(name: bubble.senderName, time: bubble.time, mine: bubble.mine)
+        let trailing = bubble.side == .trailing
+        let edge: HorizontalAlignment = trailing ? .trailing : .leading
+        let frameEdge: Alignment = trailing ? .trailing : .leading
+        return HStack(alignment: .top, spacing: SQSpace.s) {
+            if trailing {
+                Spacer(minLength: ChatRowMetrics.gutter)
+            } else {
+                ChatSenderAvatar(initial: bubble.initial, visible: bubble.showsAvatar)
             }
-            if let reply = bubble.reply {
-                ChatReplyQuoteView(quote: reply)
-            }
-            Button {
-                model.selectedMessage = entry.id
-            } label: {
-                Text(entry.body)
-                    .font(SQType.body)
-                    .foregroundStyle(entry.delivery == .failed ? SQColor.muted : SQColor.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel(ChatSpeech.bubble(bubble))
-            // Not spoken; lets UI tests read sender grouping without measuring gaps.
-            .accessibilityIdentifier(ChatSeed.bubbleIdentifier(startsGroup: bubble.startsGroup))
-            .accessibilityActions {
-                ForEach(actions, id: \.title) { action in
-                    Button(action.title) { run(action, on: entry.id) }
+            VStack(alignment: edge, spacing: 2) {
+                if bubble.startsGroup {
+                    ChatGroupHeader(name: bubble.senderName, time: bubble.time, mine: bubble.mine)
                 }
-            }
-            .buttonStyle(WideRowButtonStyle())
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            if !chipsForRow.isEmpty {
-                ChipFlow(spacing: SQSpace.xs) {
-                    ForEach(chipsForRow) { chip in
-                        ChatReactionChipButton(chip: chip) {
-                            Task { await model.tap(chip.tapback, on: entry.id) }
-                        }
+                if let reply = bubble.reply {
+                    ChatReplyQuoteView(quote: reply)
+                }
+                Button {
+                    model.selectedMessage = entry.id
+                } label: {
+                    Text(entry.body)
+                        .font(SQType.body)
+                        .foregroundStyle(bubbleInk(bubble))
+                        .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.horizontal, SQSpace.m)
+                        .padding(.vertical, SQSpace.s)
+                        .frame(minHeight: 44)
+                        .background(bubbleFill(bubble), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(ChatSpeech.bubble(bubble))
+                // Not spoken; lets UI tests read sender grouping without measuring gaps.
+                .accessibilityIdentifier(ChatSeed.bubbleIdentifier(startsGroup: bubble.startsGroup))
+                .accessibilityActions {
+                    ForEach(actions, id: \.title) { action in
+                        Button(action.title) { run(action, on: entry.id) }
                     }
                 }
-                .padding(.top, 2)
-            }
-            if let caption = bubble.caption {
-                Text(caption)
-                    .font(SQType.micro)
-                    .foregroundStyle(entry.delivery == .failed ? SQColor.danger : SQColor.subtle)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("delivery-caption")
-            }
-            if let seen = bubble.seen {
-                Text(seen)
-                    .font(SQType.micro)
-                    .foregroundStyle(SQColor.subtle)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("seen-by")
-            }
-            if model.selectedMessage == entry.id, actions.contains(.react) {
-                Button { model.reacting = true } label: {
-                    Text("React")
-                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
-                        .contentShape(Rectangle())
+                if !chipsForRow.isEmpty {
+                    ChipFlow(spacing: SQSpace.xs, alignment: edge) {
+                        ForEach(chipsForRow) { chip in
+                            ChatReactionChipButton(chip: chip) {
+                                Task { await model.tap(chip.tapback, on: entry.id) }
+                            }
+                        }
+                        if actions.contains(.react) {
+                            ChatAddReactionButton {
+                                model.selectedMessage = entry.id
+                                model.reacting = true
+                            }
+                        }
+                    }
+                    .padding(.top, 2)
                 }
-                .accessibilityIdentifier("react")
-            }
-            if model.reacting, model.selectedMessage == entry.id {
-                reactionChoices(entry.id)
-            }
-            if entry.delivery == .failed {
-                // The frame sits on the label, not the Button, so the hit target and
-                // the accessibility frame are both at least 44 pt tall.
-                Button { Task { await model.retry(entry.id) } } label: {
-                    Text("Retry")
-                        .font(SQType.label)
-                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
-                        .contentShape(Rectangle())
+                if let caption = bubble.caption {
+                    Text(caption)
+                        .font(SQType.micro)
+                        .foregroundStyle(entry.delivery == .failed ? SQColor.danger : SQColor.subtle)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("delivery-caption")
                 }
-                .accessibilityIdentifier("retry-send")
-                .accessibilityLabel("Retry sending")
+                if let seen = bubble.seen {
+                    Text(seen)
+                        .font(SQType.micro)
+                        .foregroundStyle(SQColor.subtle)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("seen-by")
+                }
+                if model.selectedMessage == entry.id, actions.contains(.react), !model.reacting {
+                    Button { model.reacting = true } label: {
+                        Text("React")
+                            .frame(minWidth: 44, minHeight: 44, alignment: frameEdge)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityIdentifier("react")
+                }
+                if model.reacting, model.selectedMessage == entry.id {
+                    reactionChoices(entry.id, alignment: edge)
+                }
+                if entry.delivery == .failed {
+                    // The frame sits on the label, not the Button, so the hit target and
+                    // the accessibility frame are both at least 44 pt tall.
+                    Button { Task { await model.retry(entry.id) } } label: {
+                        Text("Retry")
+                            .font(SQType.label)
+                            .frame(minWidth: 44, minHeight: 44, alignment: frameEdge)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityIdentifier("retry-send")
+                    .accessibilityLabel("Retry sending")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: frameEdge)
+            if !trailing {
+                Spacer(minLength: ChatRowMetrics.gutter)
             }
         }
         .padding(.top, bubble.startsGroup ? SQSpace.s : 0)
         .padding(.bottom, bubble.endsGroup ? SQSpace.xs : 0)
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: frameEdge)
         .contentShape(Rectangle())
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(ChatSeed.rowIdentifier(for: entry.id))
@@ -3350,6 +3380,10 @@ struct LiveSessionView: View {
             guard actions.contains(.react) else { return }
             model.selectedMessage = entry.id
             model.reacting = true
+        }
+        // A tap beside a short bubble still picks the message, as the full-width row did.
+        .onTapGesture {
+            model.selectedMessage = entry.id
         }
         .contextMenu {
             if actions.contains(.react) {
@@ -3371,6 +3405,16 @@ struct LiveSessionView: View {
         }
     }
 
+    private func bubbleFill(_ bubble: ChatBubble) -> Color {
+        guard bubble.mine else { return SQColor.theirs }
+        return bubble.entry.delivery == .failed ? SQColor.mine.opacity(0.55) : SQColor.mine
+    }
+
+    private func bubbleInk(_ bubble: ChatBubble) -> Color {
+        if bubble.mine { return .white }
+        return bubble.entry.delivery == .failed ? SQColor.muted : SQColor.ink
+    }
+
     private func run(_ action: ChatAction, on id: UUID) {
         switch action {
         case .react:
@@ -3386,25 +3430,46 @@ struct LiveSessionView: View {
         }
     }
 
-    private func reactionChoices(_ id: UUID) -> some View {
-        VStack(alignment: .leading, spacing: SQSpace.xs) {
-            ForEach(ChatReactions.order) { reaction in
-                Button { Task { await model.tap(reaction, on: id) } } label: {
-                    Text("\(SquadReaction.emoji(for: reaction))  \(reaction.spoken)")
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(minHeight: 44, alignment: .leading)
-                        .contentShape(Rectangle())
+    /// The emoji row: one 44 pt button per reaction, on the bubble's side, wrapping
+    /// at large text. Your current one is selected; picking it again takes it back.
+    /// Picking closes the row.
+    private func reactionChoices(_ id: UUID, alignment: HorizontalAlignment) -> some View {
+        let options = ChatReactions.options(marks: model.board.marks, messageId: id, viewerId: viewerForChat)
+        return ChipFlow(spacing: SQSpace.xs, alignment: alignment) {
+            ForEach(options) { option in
+                Button {
+                    model.reacting = false
+                    Task { await model.tap(option.tapback, on: id) }
+                } label: {
+                    Text(option.emoji)
+                        .font(SQType.body)
+                        .fixedSize()
+                        .frame(minWidth: 44, minHeight: 44)
+                        .background(option.selected ? SQColor.surface3 : SQColor.surface2, in: Circle())
+                        .overlay {
+                            Circle().stroke(option.selected ? SQColor.accent : SQColor.hairline, lineWidth: option.selected ? 1.5 : 1)
+                        }
+                        .contentShape(Circle())
                 }
-                .accessibilityLabel(reaction.spoken)
-                .accessibilityIdentifier("tapback-\(reaction.rawValue)")
+                .buttonStyle(.plain)
+                .accessibilityLabel(option.tapback.spoken)
+                .accessibilityHint(option.hint)
+                .accessibilityAddTraits(option.selected ? .isSelected : [])
+                .accessibilityIdentifier("tapback-\(option.tapback.rawValue)")
             }
         }
+        .padding(SQSpace.xs)
+        .background(SQColor.surface1, in: RoundedRectangle(cornerRadius: SQRadius.l, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("reaction-picker")
     }
 
 }
 
 private struct ChipFlow: Layout {
     var spacing: CGFloat = 4
+    /// Which side ragged rows hug. Trailing for reactions under your own bubble.
+    var alignment: HorizontalAlignment = .leading
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? 0
@@ -3417,7 +3482,13 @@ private struct ChipFlow: Layout {
         let rows = rows(width: width, subviews: subviews)
         let height = rows.map { $0.map(\.height).max() ?? 0 }.reduce(0, +)
             + spacing * CGFloat(max(rows.count - 1, 0))
-        return CGSize(width: width, height: height)
+        // As wide as the widest row, so a parent stack can put it on either side.
+        let widest = rows.map(rowWidth).max() ?? 0
+        return CGSize(width: min(width, widest), height: height)
+    }
+
+    private func rowWidth(_ row: [CGSize]) -> CGFloat {
+        row.map(\.width).reduce(0, +) + spacing * CGFloat(max(row.count - 1, 0))
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -3426,7 +3497,7 @@ private struct ChipFlow: Layout {
         var index = 0
         for row in rows {
             let rowHeight = row.map(\.height).max() ?? 0
-            var x = bounds.minX
+            var x = alignment == .trailing ? max(bounds.minX, bounds.maxX - rowWidth(row)) : bounds.minX
             for size in row {
                 subviews[index].place(
                     at: CGPoint(x: x, y: y),
@@ -3454,14 +3525,6 @@ private struct ChipFlow: Layout {
             }
         }
         return rows
-    }
-}
-
-private struct WideRowButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
     }
 }
 

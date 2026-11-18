@@ -93,6 +93,16 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(model.chatLoad.display(hasMessages: !model.log.entries.isEmpty), .empty)
     }
 
+    func testChatViewerIsTheSessionUserSoYourOwnMessagesAreMine() async {
+        let model = model(.chatPolish)
+        await model.reloadChat()
+        XCTAssertNotNil(model.chatViewerId)
+        XCTAssertEqual(model.chatViewerId, model.viewerId)
+        let mineSent = model.log.ordered.filter { $0.senderId == model.chatViewerId }
+        XCTAssertFalse(mineSent.isEmpty, "The polish seed has messages from you")
+        XCTAssertTrue(model.log.ordered.contains { $0.senderId != model.chatViewerId }, "and from others")
+    }
+
     func testTappingAReactionChipTogglesYoursOnly() async {
         let model = model(.chatPolish)
         await model.reloadChat()

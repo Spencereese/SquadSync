@@ -40,6 +40,29 @@ struct ChatBubble: Equatable {
     /// Only on the latest message in the thread, and only when someone read it.
     let seen: String?
     let reply: ChatReplyQuote?
+
+    /// Your messages sit on the trailing side in the accent color; everyone
+    /// else's on the leading side. Reactions and the picker follow the bubble.
+    var side: ChatBubbleSide { mine ? .trailing : .leading }
+
+    /// Someone else's run shows their name once, on its first message.
+    var showsName: Bool { !mine && startsGroup }
+
+    /// Their avatar sits beside the first message of the run, next to the name.
+    var showsAvatar: Bool { showsName }
+
+    var initial: String { ChatBubbleSide.initial(senderName) }
+}
+
+enum ChatBubbleSide: Equatable {
+    case leading
+    case trailing
+
+    /// First letter of the name, upper-cased, for the avatar. "?" when blank.
+    static func initial(_ name: String) -> String {
+        guard let first = name.trimmingCharacters(in: .whitespacesAndNewlines).first else { return "?" }
+        return String(first).uppercased()
+    }
 }
 
 /// Not Identifiable on purpose: the list iterates `ChatRowItem`, which stores
@@ -383,13 +406,26 @@ struct ChatReactionChip: Equatable, Identifiable {
 
     var id: String { tapback.rawValue }
 
+    /// "👍 2, you reacted" or "🔥 1".
     var spoken: String {
-        let people = count == 1 ? "1 reaction" : "\(count) reactions"
-        return mine ? "\(tapback.spoken), \(people), including yours" : "\(tapback.spoken), \(people)"
+        mine ? "\(emoji) \(count), you reacted" : "\(emoji) \(count)"
     }
 
     var hint: String {
         mine ? "Removes your reaction" : "Adds your \(tapback.spoken) reaction"
+    }
+}
+
+/// One emoji in the reaction picker.
+struct ChatReactionOption: Equatable, Identifiable {
+    let tapback: Tapback
+    let emoji: String
+    let selected: Bool
+
+    var id: String { tapback.rawValue }
+
+    var hint: String {
+        selected ? "Removes your reaction" : "Reacts with \(tapback.spoken)"
     }
 }
 
@@ -408,6 +444,16 @@ enum ChatReactions {
                 count: Set(matching.map(\.userId)).count,
                 mine: matching.contains { $0.userId == viewerId }
             )
+        }
+    }
+
+    /// The picker's emoji row. One reaction per person (ReactionBoard.toggle):
+    /// your current one is selected, and picking it again takes it back.
+    static func options(marks: [ReactionMark], messageId: UUID, viewerId: UUID?) -> [ChatReactionOption] {
+        let yours = Set(marks.filter { $0.messageId == messageId && $0.userId == viewerId }.map(\.emoji))
+        return order.map { tapback in
+            let emoji = SquadReaction.emoji(for: tapback)
+            return ChatReactionOption(tapback: tapback, emoji: emoji, selected: viewerId != nil && yours.contains(emoji))
         }
     }
 

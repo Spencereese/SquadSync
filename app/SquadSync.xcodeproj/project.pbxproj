@@ -6,6 +6,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A10000000000000000001002 /* ChatScrollController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000001001 /* ChatScrollController.swift */; };
 		A10000000000000000000999 /* ChatDurabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000001000 /* ChatDurabilityTests.swift */; };
 		A10000000000000000000998 /* ChatDurability.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000988 /* ChatDurability.swift */; };
 		A10000000000000000000997 /* LaunchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000987 /* LaunchTests.swift */; };
@@ -66,6 +67,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		A10000000000000000001001 /* ChatScrollController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatScrollController.swift; sourceTree = "<group>"; };
 		A10000000000000000001000 /* ChatDurabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDurabilityTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000988 /* ChatDurability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChatDurability.swift; sourceTree = "<group>"; };
 		A10000000000000000000987 /* LaunchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchTests.swift; sourceTree = "<group>"; };
@@ -205,6 +207,7 @@
 				A10000000000000000000984 /* OnboardingView.swift */,
 				A10000000000000000000078 /* SpotCardViews.swift */,
 				A1000000000000000000007B /* ChatRows.swift */,
+				A10000000000000000001001 /* ChatScrollController.swift */,
 			);
 			path = Screens;
 			sourceTree = "<group>";
@@ -419,6 +422,7 @@
 				A10000000000000000000085 /* SquadHomeHeader.swift in Sources */,
 				A10000000000000000000088 /* SpotCardViews.swift in Sources */,
 				A1000000000000000000008B /* ChatRows.swift in Sources */,
+				A10000000000000000001002 /* ChatScrollController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

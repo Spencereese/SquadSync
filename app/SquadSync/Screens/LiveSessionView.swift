@@ -30,6 +30,13 @@ final class LiveSessionModel {
     var chatLoad = ChatHistoryState.idle
     /// The row at the top of the thread that pages older messages.
     var olderPaging = ChatOlderPaging()
+    /// The previous oldest message while an older page goes in above it; its row
+    /// reports where it is so the list can hold it in place.
+    var olderHoldAnchor: UUID?
+    /// The message list's scroll view: paging trigger and place-keeping geometry.
+    let scrollHold = ChatScrollController()
+    /// Bumped when the viewer calls spots, so the list brings the card into view.
+    var spotCalledSerial = 0
     /// An older page has been added for the open squad, so a later full reload
     /// doesn't decide "start of chat" from the newest 200 alone.
     @ObservationIgnored private var olderPagedThisSquad = false
@@ -892,6 +899,7 @@ final class LiveSessionModel {
             _ = try await spotService(session).call(squadId: squad.id, game: game, startsAt: Date())
             await loadSpot(session)
             spotNote = "Calling spots: \(game), 8 seats."
+            spotCalledSerial += 1
             return true
         } catch let problem as SpotProblem {
             spotNote = problem.message
@@ -1520,6 +1528,13 @@ final class LiveSessionModel {
         do {
             let rows = try await chatService(session).older(squadId: requested, before: cursor, limit: ChatOlderPaging.pageSize)
             guard HistoryMerge.accepts(requestSquad: requested, loadedSquad: loadedSquad) else { return false }
+            // Hold the reader's place: record it right before the rows go in (only
+            // when something new is going in, so the hold always sees the growth).
+            let known = Set(log.entries.map(\.id))
+            if rows.contains(where: { !known.contains($0.id) }) {
+                olderHoldAnchor = cursor.id
+                scrollHold.prepareForPrepend(anchor: cursor.id)
+            }
             log.ingest(rows.map { $0.entry() })
             olderPagedThisSquad = true
             olderPaging.finish(rowCount: rows.count)
@@ -1556,6 +1571,7 @@ final class LiveSessionModel {
             loadOlderPage: { [self] in try await fetchOlderPage() }
         )
         if outcome == .found {
+            scrollHold.endHold()
             followSend = id
         } else if let text = ChatReveal.text(outcome) {
             showToast(text)
@@ -1597,6 +1613,8 @@ final class LiveSessionModel {
             loadedSquad = requested
             olderPaging = ChatOlderPaging()
             olderPagedThisSquad = false
+            olderHoldAnchor = nil
+            scrollHold.reset()
         }
         chatLoad = .loading
         do {
@@ -1850,8 +1868,6 @@ final class LiveSessionModel {
 struct LiveSessionView: View {
     @State private var model: LiveSessionModel
     @State private var pinnedToBottom = true
-    /// Whether the older-history row is on screen, and when to ask for a page.
-    @State private var olderTrigger = ChatOlderTrigger()
     @State private var wentToBackground = false
     @State private var confirmSignOut = false
     @State private var confirmEndSpot = false
@@ -2141,6 +2157,7 @@ struct LiveSessionView: View {
                             let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
                             spotSlot(now: now)
                         }
+                        .id(ChatAnchor.spot)
                         if !model.spotHistoryNote.isEmpty {
                             SpotStatusRow(text: model.spotHistoryNote, identifier: "spot-history-note")
                         }
@@ -2150,12 +2167,13 @@ struct LiveSessionView: View {
                             }
                         }
                         if model.chatLoad == .loaded, !model.log.entries.isEmpty {
+                            // Shows the paging state only. Whether to load is decided
+                            // from scroll geometry (olderCheck), not this row appearing.
                             ChatOlderRow(state: model.olderPaging.state) {
                                 Task { await model.retryOlder() }
                             }
-                            .onAppear { olderEvent(.rowAppeared) }
-                            .onDisappear { olderEvent(.rowDisappeared) }
                         }
+                        let tracked = scrollTrackedIds
                         ForEach(chatRows) { row in
                             switch row {
                             case .day(_, let label):
@@ -2163,7 +2181,13 @@ struct LiveSessionView: View {
                             case .unread(let count):
                                 ChatUnreadDivider(count: count)
                             case .message(let bubble):
-                                messageRow(bubble).id(bubble.entry.id)
+                                messageRow(bubble)
+                                    .id(bubble.entry.id)
+                                    .background {
+                                        if tracked.contains(bubble.entry.id) {
+                                            ChatRowYReporter(id: bubble.entry.id)
+                                        }
+                                    }
                             case .spot(let call):
                                 if let outcome = SpotThread.outcome(call, viewerId: spotViewer, now: Date()) {
                                     SpotHistoryCard(call: call, outcome: outcome)
@@ -2173,6 +2197,7 @@ struct LiveSessionView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(ChatContentFrame())
+                    .background(ChatScrollBridge(controller: model.scrollHold))
                     Text("End of messages")
                         .font(.caption)
                         .foregroundStyle(.clear)
@@ -2183,8 +2208,7 @@ struct LiveSessionView: View {
                 .contentMargins(.bottom, SQSpace.l, for: .scrollContent)
                 .coordinateSpace(name: "chat")
                 .scrollDismissesKeyboard(.interactively)
-                // Older pages go in above the reader; this keeps what's on screen still.
-                .modifier(ChatBottomAnchoring())
+                .onPreferenceChange(ChatRowYKey.self) { model.scrollHold.rowsMoved($0) }
                 .modifier(ChatPinModifier(pinned: $pinnedToBottom))
                 .accessibilityIdentifier("message-list")
                 .overlay(alignment: .top) {
@@ -2230,21 +2254,28 @@ struct LiveSessionView: View {
             }
             .onChange(of: model.followSend) { _, id in
                 guard let id else { return }
+                model.scrollHold.endHold()
                 proxy.scrollTo(id, anchor: .center)
             }
             .onChange(of: pinnedToBottom) { wasPinned, isPinned in
                 if ChatCatchUp.requests(becamePinned: isPinned && !wasPinned, tappedNewMessages: false) {
                     Task { await model.catchUp(pinned: true) }
                 }
-                olderEvent(.pinned(isPinned))
             }
-            // A page finished (or failed, or was reset) while the row may still be on
-            // screen; onAppear won't fire again, so check here. Deferred to the next
-            // main-queue turn (ordering, not a delay): by then the update that
-            // inserted the page has laid out and the row's onDisappear has run.
-            .onChange(of: model.olderPaging.state) { _, state in
-                guard state == .idle else { return }
-                DispatchQueue.main.async { olderEvent(.pagingChanged) }
+            // Paging is decided from the scroll view's geometry: on every offset and
+            // content-size change (the controller calls back), and whenever the paging
+            // state changes. While a page's rows aren't laid out yet the check waits
+            // for the content-size change instead of reading stale geometry.
+            .onAppear {
+                model.scrollHold.onGeometry = { metrics in olderCheck(metrics) }
+            }
+            .onChange(of: model.olderPaging.state) { _, _ in
+                if let metrics = model.scrollHold.metrics { olderCheck(metrics) }
+            }
+            // The viewer called spots: the card is at the top of the thread.
+            .onChange(of: model.spotCalledSerial) { _, _ in
+                model.scrollHold.endHold()
+                proxy.scrollTo(ChatAnchor.spot, anchor: .top)
             }
             .onChange(of: model.log.ordered.last?.id) { _, id in
                 guard let id else { return }
@@ -2288,9 +2319,33 @@ struct LiveSessionView: View {
         .background(SQColor.surface0)
     }
 
-    private func olderEvent(_ event: ChatOlderTrigger.Event) {
-        guard olderTrigger.handle(event, paging: model.olderPaging, hasMessages: !model.log.entries.isEmpty) else { return }
-        Task { await model.loadOlder() }
+    /// Rows whose on-screen position the scroll controller needs: the oldest
+    /// loaded message (the paging trigger and the next hold's anchor) and the
+    /// current hold's anchor.
+    private var scrollTrackedIds: Set<UUID> {
+        var ids = Set<UUID>()
+        if let oldest = ChatOlderPaging.cursor(model.log)?.id { ids.insert(oldest) }
+        if let anchor = model.olderHoldAnchor { ids.insert(anchor) }
+        return ids
+    }
+
+    private func olderCheck(_ metrics: ChatScrollMetrics) {
+        let hold = model.scrollHold
+        guard !hold.requestInFlight else { return }
+        let oldestY = ChatOlderPaging.cursor(model.log).flatMap { hold.screenY(of: $0.id) }
+        guard ChatOlderTrigger.isDue(
+            metrics: metrics,
+            oldestRowY: oldestY,
+            userHasScrolled: hold.userHasScrolled,
+            settlingPrepend: hold.isSettlingPrepend,
+            paging: model.olderPaging,
+            hasMessages: model.chatLoad == .loaded && !model.log.entries.isEmpty
+        ) else { return }
+        hold.requestInFlight = true
+        Task {
+            await model.loadOlder()
+            hold.requestInFlight = false
+        }
     }
 
     private func scrollChatToBottom(_ proxy: ScrollViewProxy) {
@@ -3234,6 +3289,20 @@ private struct WideRowButtonStyle: ButtonStyle {
 
 private enum ChatAnchor {
     static let end = "message-list-end"
+    static let spot = "message-list-spot"
+}
+
+/// Reports a tracked row's top in the list's coordinate space (0 is the list's
+/// top edge) for the scroll controller.
+private struct ChatRowYReporter: View {
+    let id: UUID
+
+    var body: some View {
+        GeometryReader { geo in
+            Color.clear.preference(key: ChatRowYKey.self, value: [id: geo.frame(in: .named("chat")).minY])
+        }
+        .accessibilityHidden(true)
+    }
 }
 
 private struct ChatFrameKey: PreferenceKey {

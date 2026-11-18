@@ -346,27 +346,3 @@ struct ChatOlderRow: View {
             .fixedSize(horizontal: false, vertical: true)
     }
 }
-
-/// Keeps the reader's place when older messages are added above them.
-///
-/// The scroll view holds its distance from the bottom of the content when the
-/// content's size changes, instead of its distance from the top. A page of older
-/// messages makes the content taller above the reader, so what they're looking at
-/// stays where it is, in the same layout pass that adds the rows, whatever the
-/// fling momentum is doing. Nothing is re-pinned afterwards, so there's no race
-/// with the lazy stack measuring 50 new rows. Rows measured lazily above the
-/// screen don't move it either.
-///
-/// iOS 18 and later apply this to size changes only, so the first position and
-/// short-thread alignment stay as they were. iOS 17 has a single anchor for all
-/// three, so there a short thread sits at the bottom, as most chat apps do.
-struct ChatBottomAnchoring: ViewModifier {
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(iOS 18.0, *) {
-            content.defaultScrollAnchor(.bottom, for: .sizeChanges)
-        } else {
-            content.defaultScrollAnchor(.bottom)
-        }
-    }
-}

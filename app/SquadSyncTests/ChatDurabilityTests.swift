@@ -124,18 +124,10 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertFalse(paging.begin(), "A second page doesn't start while one runs")
         paging.fail()
         XCTAssertEqual(paging.state, .failed(ChatOlderPaging.failedText))
-        XCTAssertFalse(paging.shouldLoad(rowVisible: true, pinnedToBottom: false, hasMessages: true), "Failed waits for Retry, no auto loop")
+        XCTAssertFalse(ChatOlderTrigger.isDue(metrics: atTop, oldestRowY: 40, userHasScrolled: true, settlingPrepend: false, paging: paging, hasMessages: true), "Failed waits for Retry, no auto loop")
         XCTAssertTrue(paging.begin(), "Retry starts the page again")
         paging.finish(rowCount: 50)
         XCTAssertEqual(paging.state, .idle)
-    }
-
-    func testRowOnlyLoadsWhenScrolledUpToIt() {
-        let paging = ChatOlderPaging()
-        XCTAssertTrue(paging.shouldLoad(rowVisible: true, pinnedToBottom: false, hasMessages: true))
-        XCTAssertFalse(paging.shouldLoad(rowVisible: true, pinnedToBottom: true, hasMessages: true), "First render draws the top before jumping down")
-        XCTAssertFalse(paging.shouldLoad(rowVisible: false, pinnedToBottom: false, hasMessages: true))
-        XCTAssertFalse(paging.shouldLoad(rowVisible: true, pinnedToBottom: false, hasMessages: false))
     }
 
     func testMockOlderReadFailsUntilBroughtBack() async throws {
@@ -189,71 +181,141 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertTrue(query.contains("squad_id=eq.\(squad.uuidString)"), query)
     }
 
-    // MARK: Re-triggering (Mac pass: paging stalled with the row still on screen)
+    // MARK: Scroll geometry: when to page (decided from geometry, not onAppear)
 
-    func testRowStillVisibleAfterAPageAsksAgain() {
-        var trigger = ChatOlderTrigger()
-        var paging = ChatOlderPaging()
-        XCTAssertFalse(trigger.handle(.rowAppeared, paging: paging, hasMessages: true), "Pinned at the bottom on first render")
-        XCTAssertTrue(trigger.handle(.pinned(false), paging: paging, hasMessages: true))
-        XCTAssertTrue(paging.begin())
-        XCTAssertFalse(trigger.handle(.pagingChanged, paging: paging, hasMessages: true), "Not while a page runs")
-        paging.finish(rowCount: 50)
-        // The list jumped (or a fling left the row on screen): onAppear won't fire
-        // again, so the page finishing has to ask for the next one.
-        XCTAssertTrue(trigger.handle(.pagingChanged, paging: paging, hasMessages: true))
+    /// A 600pt list over 8000pt of content.
+    private func metrics(offset: Double, content: Double = 8000, viewport: Double = 600) -> ChatScrollMetrics {
+        ChatScrollMetrics(offset: offset, topInset: 0, bottomInset: 0, contentHeight: content, viewportHeight: viewport)
     }
 
-    func testHeldPlaceDoesNotAskAgain() {
-        var trigger = ChatOlderTrigger()
-        var paging = ChatOlderPaging()
-        _ = trigger.handle(.pinned(false), paging: paging, hasMessages: true)
-        XCTAssertTrue(trigger.handle(.rowAppeared, paging: paging, hasMessages: true))
-        XCTAssertTrue(paging.begin())
-        paging.finish(rowCount: 50)
-        XCTAssertFalse(trigger.handle(.rowDisappeared, paging: paging, hasMessages: true), "The new rows pushed the row off screen")
-        XCTAssertFalse(trigger.handle(.pagingChanged, paging: paging, hasMessages: true))
+    private var atTop: ChatScrollMetrics { metrics(offset: 0) }
+
+    func testPageIsDueWhenTheOldestMessageComesIntoView() {
+        let paging = ChatOlderPaging()
+        func due(_ m: ChatScrollMetrics, _ y: Double?) -> Bool {
+            ChatOlderTrigger.isDue(metrics: m, oldestRowY: y, userHasScrolled: true, settlingPrepend: false, paging: paging, hasMessages: true)
+        }
+        XCTAssertFalse(due(metrics(offset: 4000), 900), "Oldest message still below the screen")
+        XCTAssertTrue(due(metrics(offset: 4000), 590), "Its top came up past the bottom edge")
+        XCTAssertTrue(due(metrics(offset: 4000), -300), "Flung past it")
+        XCTAssertTrue(due(metrics(offset: 100), nil), "Near the top with no row geometry yet")
+        XCTAssertFalse(due(metrics(offset: 400), nil), "Not near the top")
     }
 
-    func testNoAskAtTheStartOrAfterAnError() {
-        var trigger = ChatOlderTrigger()
+    func testFirstRenderAtTheTopDoesNotPage() {
+        // The list draws its top before jumping to the newest message.
+        let due = ChatOlderTrigger.isDue(metrics: atTop, oldestRowY: 40, userHasScrolled: false, settlingPrepend: false, paging: ChatOlderPaging(), hasMessages: true)
+        XCTAssertFalse(due)
+    }
+
+    func testNoPageWhileTheLastOneIsStillGoingIn() {
         var paging = ChatOlderPaging()
-        _ = trigger.handle(.pinned(false), paging: paging, hasMessages: true)
-        _ = trigger.handle(.rowAppeared, paging: paging, hasMessages: true)
+        let base = { (settling: Bool, paging: ChatOlderPaging) in
+            ChatOlderTrigger.isDue(metrics: self.atTop, oldestRowY: 40, userHasScrolled: true, settlingPrepend: settling, paging: paging, hasMessages: true)
+        }
         XCTAssertTrue(paging.begin())
-        paging.fail()
-        XCTAssertFalse(trigger.handle(.pagingChanged, paging: paging, hasMessages: true), "Failed waits for Retry")
-        XCTAssertTrue(paging.begin())
+        XCTAssertFalse(base(false, paging), "Loading")
+        paging.finish(rowCount: 50)
+        XCTAssertFalse(base(true, paging), "Rows handed over but not laid out: geometry is stale")
+        XCTAssertTrue(base(false, paging), "Laid out and still at the top: the next page is due")
         paging.finish(rowCount: 3)
-        XCTAssertFalse(trigger.handle(.pagingChanged, paging: paging, hasMessages: true), "Start of chat")
-        XCTAssertFalse(trigger.handle(.rowAppeared, paging: paging, hasMessages: true), "Start of chat")
+        XCTAssertFalse(base(false, paging), "Start of chat")
+        XCTAssertFalse(ChatOlderTrigger.isDue(metrics: atTop, oldestRowY: 40, userHasScrolled: true, settlingPrepend: false, paging: ChatOlderPaging(), hasMessages: false))
     }
 
-    func testRowThatNeverLeavesTheScreenStillReachesTheStart() async throws {
-        // Worst case for a fling: the row stays visible the whole time and the
-        // only signals are pages finishing. Paging must run to the start, not stall.
+    func testReaderParkedAtTheTopPagesToTheStartWithoutScrolling() async throws {
+        // The Mac-pass stall: after a page the reader is still at the top and
+        // doesn't move. Every paging-state change re-reads the geometry, so the
+        // next page is asked for until the start, with no scroll events at all.
         let chat = await longMock()
         var log = ChatLog()
         log.adopt(replacingSquad: true, history: try await chat.history(squadId: squad).map { $0.entry() })
         var paging = ChatOlderPaging()
         paging.settleFirstRead(rowCount: log.entries.count, limit: SupabaseChatService.historyLimit)
-        var trigger = ChatOlderTrigger()
-        _ = trigger.handle(.pinned(false), paging: paging, hasMessages: true)
-        var due = trigger.handle(.rowAppeared, paging: paging, hasMessages: true)
         var pages = 0
-        while due {
+        while ChatOlderTrigger.isDue(metrics: atTop, oldestRowY: 40, userHasScrolled: true, settlingPrepend: false, paging: paging, hasMessages: true) {
             XCTAssertTrue(paging.begin())
             let cursor = try XCTUnwrap(ChatOlderPaging.cursor(log))
             let page = try await chat.older(squadId: squad, before: cursor, limit: ChatOlderPaging.pageSize)
             log.ingest(page.map { $0.entry() })
             paging.finish(rowCount: page.count)
-            due = trigger.handle(.pagingChanged, paging: paging, hasMessages: true)
             pages += 1
             if pages > 10 { XCTFail("Paging never ended"); break }
         }
         XCTAssertEqual(paging.state, .reachedStart)
         XCTAssertEqual(pages, 2)
         XCTAssertEqual(log.ordered.map(\.id), (0..<260).map(ChatLongSeed.id))
+    }
+
+    // MARK: Scroll geometry: holding the place
+
+    func testInsertMovesTheOffsetByExactlyTheGrowth() {
+        // Fling stopped at offset 0 with message 60 at y 450 on screen.
+        var hold = ChatPrependHold(anchor: ChatLongSeed.id(60), offsetBefore: 0, contentHeightBefore: 8000, anchorYBefore: 450)
+        XCTAssertNil(hold.offsetForInsert(metrics(offset: 0, content: 8000)), "No growth yet: not the insert")
+        let target = hold.offsetForInsert(metrics(offset: 0, content: 11_200))
+        XCTAssertEqual(target, 3200, "Same rows on screen: offset moves by the 3200pt added above")
+        XCTAssertTrue(hold.insertApplied)
+        XCTAssertNil(hold.offsetForInsert(metrics(offset: 3200, content: 11_300)), "Later growth (rows below measuring) isn't the insert")
+    }
+
+    func testAnchorDriftIsCorrectedExactlyThenSettles() {
+        var hold = ChatPrependHold(anchor: ChatLongSeed.id(60), offsetBefore: 0, contentHeightBefore: 8000, anchorYBefore: 450)
+        XCTAssertNil(hold.offsetForAnchor(y: 300, metrics: metrics(offset: 0, content: 8000)), "Nothing before the insert")
+        _ = hold.offsetForInsert(metrics(offset: 0, content: 11_200))
+        // Estimated heights for the new rows were 40pt short in total: the anchor
+        // shows up at 490 instead of 450.
+        XCTAssertEqual(hold.offsetForAnchor(y: 490, metrics: metrics(offset: 3200, content: 11_240)), 3240)
+        XCTAssertFalse(hold.settled)
+        XCTAssertNil(hold.offsetForAnchor(y: 450.3, metrics: metrics(offset: 3240, content: 11_240)), "Within half a point")
+        XCTAssertTrue(hold.settled)
+        XCTAssertNil(hold.offsetForAnchor(y: 200, metrics: metrics(offset: 3240, content: 11_240)), "A settled hold doesn't move the list again")
+    }
+
+    func testHoldIsClampedToTheContent() {
+        var hold = ChatPrependHold(anchor: ChatLongSeed.id(60), offsetBefore: 0, contentHeightBefore: 500, anchorYBefore: nil)
+        // Short content: 500pt list, page adds 200pt; the most it can scroll is 100.
+        let target = hold.offsetForInsert(metrics(offset: 0, content: 700, viewport: 600))
+        XCTAssertEqual(target, 100)
+        XCTAssertTrue(hold.settled, "No anchor geometry: the insert step is the whole hold")
+    }
+
+    func testReplayedFlingKeepsMessage60OnScreen() {
+        // Simulates the list: rows of varying height, offset at the top after a
+        // fling, 50 rows inserted above with estimated heights, then real heights.
+        let viewport = 600.0
+        var heights = (60..<260).map { 40.0 + Double($0 % 3) * 20 }
+        func contentHeight() -> Double { heights.reduce(0, +) }
+        func y(ofRow index: Int, offset: Double) -> Double { heights.prefix(index).reduce(0, +) - offset }
+        var offset = 0.0
+        let anchorBefore = y(ofRow: 0, offset: offset)
+        var hold = ChatPrependHold(anchor: ChatLongSeed.id(60), offsetBefore: offset, contentHeightBefore: contentHeight(), anchorYBefore: anchorBefore)
+        heights.insert(contentsOf: Array(repeating: 50.0, count: 50), at: 0)
+        if let next = hold.offsetForInsert(ChatScrollMetrics(offset: offset, topInset: 0, bottomInset: 0, contentHeight: contentHeight(), viewportHeight: viewport)) {
+            offset = next
+        }
+        // The lazy stack measures the new rows: real heights differ from the estimate.
+        for index in 0..<50 { heights[index] = 40.0 + Double(index % 4) * 15 }
+        for _ in 0..<3 {
+            let metrics = ChatScrollMetrics(offset: offset, topInset: 0, bottomInset: 0, contentHeight: contentHeight(), viewportHeight: viewport)
+            if let next = hold.offsetForAnchor(y: y(ofRow: 50, offset: offset), metrics: metrics) { offset = next }
+        }
+        let anchorAfter = y(ofRow: 50, offset: offset)
+        XCTAssertEqual(anchorAfter, anchorBefore, accuracy: 0.5, "Message 60 is where it was")
+        XCTAssertTrue((0..<viewport).contains(anchorAfter), "and on screen")
+        XCTAssertTrue(hold.settled)
+    }
+
+    func testKeyboardKeepsAReaderAtTheBottomThere() {
+        let pinned = metrics(offset: 7400, content: 8000, viewport: 600)
+        var shorter = pinned
+        shorter.viewportHeight = 300
+        XCTAssertEqual(ChatViewportStick.offset(before: pinned, after: shorter), 7700, "Last message stays above the keyboard")
+        let reading = metrics(offset: 3000, content: 8000, viewport: 600)
+        var readingShorter = reading
+        readingShorter.viewportHeight = 300
+        XCTAssertNil(ChatViewportStick.offset(before: reading, after: readingShorter), "Scrolled up: nothing moves")
+        XCTAssertNil(ChatViewportStick.offset(before: pinned, after: pinned), "No size change")
     }
 
     // MARK: Microsecond cursor

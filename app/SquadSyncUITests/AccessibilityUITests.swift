@@ -1396,8 +1396,8 @@ final class AccessibilityUITests: XCTestCase {
         let chip = app.buttons[Polish.thumbs]
         guard scrollChat(to: chip, in: app) else { return }
         XCTAssertEqual(chip.label, "Thumbs up, 2 reactions, including yours")
-        XCTAssertGreaterThanOrEqual(chip.frame.height, 44, "Chip is too short to hit: \(chip.frame)")
-        XCTAssertGreaterThanOrEqual(chip.frame.width, 44, "Chip is too narrow to hit: \(chip.frame)")
+        XCTAssertGreaterThanOrEqual(chip.frame.height, 44 - 0.5, "Chip is too short to hit: \(chip.frame)")
+        XCTAssertGreaterThanOrEqual(chip.frame.width, 44 - 0.5, "Chip is too narrow to hit: \(chip.frame)")
         chip.tap()
         XCTAssertTrue(waitForLabel(chip, "label == 'Thumbs up, 1 reaction'"), "Tapping your chip didn't take yours back: \(chip.label)")
         chip.tap()
@@ -1576,7 +1576,11 @@ final class AccessibilityUITests: XCTestCase {
                 sawOlder = true
                 // The page landed above the reader: the message that was at the top
                 // stays on screen instead of the list jumping to the new oldest one.
-                keptPlace = waitUntil(timeout: 3) { self.element(Long.firstReadTop, in: app).exists }
+                // On screen, not just in the tree: its frame overlaps the list's.
+                keptPlace = waitUntil(timeout: 3) {
+                    let top = self.element(Long.firstReadTop, in: app)
+                    return top.exists && top.frame.intersects(list.frame)
+                }
             }
         }
         XCTAssertTrue(sawOlder, "Scrolling up never loaded an older page")

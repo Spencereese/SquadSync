@@ -30,14 +30,6 @@ struct ChatOlderPaging: Equatable {
         state = rowCount < limit ? .reachedStart : .idle
     }
 
-    /// Whether the row should start a page now. Only while the reader has scrolled
-    /// away from the bottom: on first load the list draws its top before it jumps to
-    /// the newest message, and that must not fire a page.
-    func shouldLoad(rowVisible: Bool, pinnedToBottom: Bool, hasMessages: Bool) -> Bool {
-        guard rowVisible, !pinnedToBottom, hasMessages else { return false }
-        return state == .idle
-    }
-
     /// Starts a page. False when one is already running or the start was reached.
     mutating func begin() -> Bool {
         switch state {
@@ -70,33 +62,122 @@ struct ChatOlderPaging: Equatable {
     }
 }
 
-/// When the list asks for the next older page. The top row's `onAppear` fires
-/// once, so on its own a page that lands while the row is still on screen (a
-/// fast fling, or a page shorter than the screen) would leave paging stuck with
-/// no loading row, error, or "Start of chat". Every event that could make a page
-/// due goes through here, including the page finishing, so a row that stays
-/// visible keeps paging until the start.
-struct ChatOlderTrigger: Equatable {
-    enum Event: Equatable {
-        case rowAppeared
-        case rowDisappeared
-        case pinned(Bool)
-        /// The paging state changed (a page finished, failed, or was reset).
-        case pagingChanged
+// MARK: Scroll geometry (deterministic paging and place-keeping)
+//
+// Both decisions below run on numbers read straight from the message list's
+// UIScrollView (ChatScrollController), never on row onAppear/onDisappear or a
+// delay. That's what made the earlier attempts flaky: onAppear fires once, so a
+// row that stayed on screen stalled paging, and a scrollTo fired "a moment after"
+// the insert raced fling momentum and lazy row measurement.
+
+/// The list's geometry, in points, as UIScrollView reports it.
+struct ChatScrollMetrics: Equatable {
+    var offset: Double
+    var topInset: Double
+    var bottomInset: Double
+    var contentHeight: Double
+    var viewportHeight: Double
+
+    /// How far the visible top is below the top of the content.
+    var distanceFromTop: Double { offset + topInset }
+    /// How far the visible bottom is above the end of the content.
+    var distanceFromBottom: Double { contentHeight + bottomInset - (offset + viewportHeight) }
+    var minOffset: Double { -topInset }
+    var maxOffset: Double { max(minOffset, contentHeight + bottomInset - viewportHeight) }
+
+    func clamped(_ value: Double) -> Double { min(max(value, minOffset), maxOffset) }
+}
+
+/// Whether to start the next older page. Evaluated on every scroll-offset change,
+/// every content-size change, and every paging-state change, so there's no state
+/// in which a page is due and nothing asks for it.
+enum ChatOlderTrigger {
+    /// Prefetch when the top of the content is within this share of a screen.
+    static let nearTopShare = 0.25
+
+    /// - Parameters:
+    ///   - oldestRowY: where the oldest loaded message's top is on screen (0 is the
+    ///     list's top edge), or nil when it hasn't been laid out.
+    ///   - userHasScrolled: the person has dragged the list since this squad loaded,
+    ///     so the first render (which starts at the top before jumping to the newest
+    ///     message) never pages.
+    ///   - settlingPrepend: a page has been handed to the list but its rows aren't
+    ///     laid out yet, so the geometry is stale.
+    static func isDue(
+        metrics: ChatScrollMetrics,
+        oldestRowY: Double?,
+        userHasScrolled: Bool,
+        settlingPrepend: Bool,
+        paging: ChatOlderPaging,
+        hasMessages: Bool
+    ) -> Bool {
+        guard userHasScrolled, !settlingPrepend, hasMessages, paging.state == .idle, metrics.viewportHeight > 0 else { return false }
+        // The oldest message has come up into view from the bottom edge.
+        if let oldestRowY, oldestRowY < metrics.viewportHeight { return true }
+        return metrics.distanceFromTop <= metrics.viewportHeight * nearTopShare
+    }
+}
+
+/// Keeps the reader's place when a page of older messages goes in above them.
+///
+/// Made right before the rows are added: the fling is stopped, and the offset,
+/// content height, and the on-screen y of the previous oldest message (the anchor)
+/// are recorded. Then two exact corrections, both from measurements, not timing:
+/// 1. When the scroll view's content height changes for the insert, the offset
+///    moves by exactly that growth. This runs inside the same layout pass
+///    (contentSize KVO), so no frame shows the new page's top.
+/// 2. Each time the anchor row reports where it is after layout, the offset moves
+///    by however far it is from where it was. That absorbs estimated heights of
+///    the lazily laid out new rows. Once it's within half a point, the hold ends.
+/// A drag by the person also ends it.
+struct ChatPrependHold: Equatable {
+    let anchor: UUID
+    let offsetBefore: Double
+    let contentHeightBefore: Double
+    let anchorYBefore: Double?
+    private(set) var insertApplied = false
+    private(set) var settled = false
+
+    init(anchor: UUID, offsetBefore: Double, contentHeightBefore: Double, anchorYBefore: Double?) {
+        self.anchor = anchor
+        self.offsetBefore = offsetBefore
+        self.contentHeightBefore = contentHeightBefore
+        self.anchorYBefore = anchorYBefore
     }
 
-    private(set) var rowVisible = false
-    private(set) var pinnedToBottom = true
+    /// Step 1. Returns the new offset for the first content growth after the hold
+    /// was made, or nil when this change isn't it.
+    mutating func offsetForInsert(_ metrics: ChatScrollMetrics) -> Double? {
+        guard !insertApplied else { return nil }
+        let growth = metrics.contentHeight - contentHeightBefore
+        guard growth > 0 else { return nil }
+        insertApplied = true
+        if anchorYBefore == nil { settled = true }
+        return metrics.clamped(offsetBefore + growth)
+    }
 
-    /// Records the event and says whether to start a page now.
-    mutating func handle(_ event: Event, paging: ChatOlderPaging, hasMessages: Bool) -> Bool {
-        switch event {
-        case .rowAppeared: rowVisible = true
-        case .rowDisappeared: rowVisible = false
-        case .pinned(let pinned): pinnedToBottom = pinned
-        case .pagingChanged: break
+    /// Step 2. Returns the corrected offset when the anchor has drifted, nil when
+    /// it's in place (which settles the hold).
+    mutating func offsetForAnchor(y: Double, metrics: ChatScrollMetrics) -> Double? {
+        guard insertApplied, !settled, let before = anchorYBefore else { return nil }
+        let drift = y - before
+        guard abs(drift) > 0.5 else {
+            settled = true
+            return nil
         }
-        return paging.shouldLoad(rowVisible: rowVisible, pinnedToBottom: pinnedToBottom, hasMessages: hasMessages)
+        return metrics.clamped(metrics.offset + drift)
+    }
+}
+
+/// When the list gets shorter or taller (the keyboard), a reader at the bottom
+/// stays at the bottom. Anyone scrolled up keeps their offset.
+enum ChatViewportStick {
+    static let pinnedSlack = 24.0
+
+    static func offset(before: ChatScrollMetrics, after: ChatScrollMetrics) -> Double? {
+        guard before.viewportHeight != after.viewportHeight else { return nil }
+        guard before.distanceFromBottom <= pinnedSlack else { return nil }
+        return after.maxOffset
     }
 }
 

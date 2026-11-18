@@ -213,9 +213,10 @@ enum ChatThread {
     }
 
     /// Who has read the latest message, not counting you or whoever sent it.
-    /// Unsent messages and a server without read rows get no line.
+    /// Unsent messages and a server without read rows get no line, and neither
+    /// does a render before you're known (your own read would be counted).
     static func seen(for entry: ChatEntry, context: Context) -> String? {
-        guard entry.delivery == .sent else { return nil }
+        guard entry.delivery == .sent, context.viewerId != nil else { return nil }
         let names = context.reads
             .filter { $0.userId != context.viewerId && $0.userId != entry.senderId && $0.lastReadAt >= entry.sentAt }
             .map { context.names[$0.userId] ?? unknownSender }

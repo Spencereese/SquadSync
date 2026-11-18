@@ -37,9 +37,6 @@ final class LiveSessionModel {
     var olderPaging = ChatOlderPaging()
     /// Older pages that came back for the open squad (the UI tests' paging probe).
     var olderPagesLoaded = 0
-    /// The previous oldest message while an older page goes in above it; its row
-    /// reports where it is so the list can hold it in place.
-    var olderHoldAnchor: UUID?
     /// The message list's scroll view: paging trigger and place-keeping geometry.
     let scrollHold = ChatScrollController()
     /// Bumped when the viewer calls spots, so the list brings the card into view.
@@ -1564,8 +1561,7 @@ final class LiveSessionModel {
             // when something new is going in, so the hold always sees the growth).
             let known = Set(log.entries.map(\.id))
             if rows.contains(where: { !known.contains($0.id) }) {
-                olderHoldAnchor = cursor.id
-                scrollHold.prepareForPrepend(anchor: cursor.id)
+                scrollHold.prepareForPrepend(generation: olderPagesLoaded + 1)
             }
             log.ingest(rows.map { $0.entry() })
             olderPagedThisSquad = true
@@ -1684,7 +1680,6 @@ final class LiveSessionModel {
             olderPaging = ChatOlderPaging()
             olderPagesLoaded = 0
             olderPagedThisSquad = false
-            olderHoldAnchor = nil
             scrollHold.reset()
             pendingOpen.chatReset()
         }
@@ -2245,7 +2240,7 @@ struct LiveSessionView: View {
                                 Task { await model.retryOlder() }
                             }
                         }
-                        let tracked = scrollTrackedIds
+                        let generation = model.olderPagesLoaded
                         ForEach(chatRows) { row in
                             switch row {
                             case .day(_, let label):
@@ -2256,9 +2251,7 @@ struct LiveSessionView: View {
                                 messageRow(bubble)
                                     .id(bubble.entry.id)
                                     .background {
-                                        if tracked.contains(bubble.entry.id) {
-                                            ChatRowYReporter(id: bubble.entry.id)
-                                        }
+                                        ChatRowYReporter(id: bubble.entry.id, generation: generation)
                                     }
                             case .spot(let call):
                                 if let outcome = SpotThread.outcome(call, viewerId: spotViewer, now: Date()) {
@@ -2268,16 +2261,21 @@ struct LiveSessionView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .coordinateSpace(name: ChatRowYReporter.space)
                     .background(ChatContentFrame())
                     .background(ChatScrollBridge(controller: model.scrollHold))
-                    Text("End of messages")
-                        .font(.caption)
-                        .foregroundStyle(.clear)
-                        .frame(maxWidth: .infinity, minHeight: SQSpace.l)
+                    // Takes (almost) no height, so at AX5 with the keyboard up the
+                    // last message's caption isn't pushed out by an invisible row;
+                    // VoiceOver still reads it.
+                    Color.clear
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 1)
+                        .accessibilityElement()
+                        .accessibilityLabel("End of messages")
                         .id(ChatAnchor.end)
                         .accessibilityIdentifier(ChatAnchor.end)
                 }
-                .contentMargins(.bottom, SQSpace.l, for: .scrollContent)
+                .contentMargins(.bottom, listBottomMargin, for: .scrollContent)
                 .coordinateSpace(name: "chat")
                 .scrollDismissesKeyboard(.interactively)
                 .onPreferenceChange(ChatRowYKey.self) { model.scrollHold.rowsMoved($0) }
@@ -2373,6 +2371,18 @@ struct LiveSessionView: View {
                 model.scrollHold.jumped(toBottom: false)
                 proxy.scrollTo(ChatAnchor.spot, anchor: .top)
             }
+            .onChange(of: chatEndSignature) { _, _ in
+                guard let last = model.log.ordered.last else { return }
+                let mine = last.senderId == (model.profile?.id ?? model.viewerId)
+                model.scrollHold.endChanged(failedRow: mine && last.delivery == .failed ? last.id : nil)
+            }
+            // A row expanding in place where the person tapped stays put.
+            .onChange(of: model.selectedMessage) { _, id in
+                if id != nil { model.scrollHold.expanded() }
+            }
+            .onChange(of: model.reacting) { _, on in
+                if on { model.scrollHold.expanded() }
+            }
             .onChange(of: model.log.ordered.last?.id) { _, id in
                 guard let id else { return }
                 // A pushed message is being opened: it wins over following the newest,
@@ -2422,14 +2432,16 @@ struct LiveSessionView: View {
         .background(SQColor.surface0)
     }
 
-    /// Rows whose on-screen position the scroll controller needs: the oldest
-    /// loaded message (the paging trigger and the next hold's anchor) and the
-    /// current hold's anchor.
-    private var scrollTrackedIds: Set<UUID> {
-        var ids = Set<UUID>()
-        if let oldest = ChatOlderPaging.cursor(model.log)?.id { ids.insert(oldest) }
-        if let anchor = model.olderHoldAnchor { ids.insert(anchor) }
-        return ids
+    /// Room under the last message. At accessibility sizes with the keyboard up
+    /// the list is only a few rows tall, so it keeps just a sliver.
+    private var listBottomMargin: CGFloat {
+        typeSize.isAccessibilitySize && composerFocused ? SQSpace.xs : SQSpace.l
+    }
+
+    /// The thread's end: the last row and its send state. A change means a new
+    /// row at the end, or the last one sending, failing, or sent.
+    private var chatEndSignature: String? {
+        model.log.ordered.last.map { "\($0.id)|\($0.delivery)" }
     }
 
     private func olderCheck(_ metrics: ChatScrollMetrics) {
@@ -2610,7 +2622,10 @@ struct LiveSessionView: View {
                             .accessibilityLabel(mine?.ready == true ? "Ready, on" : "Ready, off")
                     }
                     if let viewer, SpotCallRules.canLock(spot, actorId: viewer, ownerId: model.squad?.ownerId ?? viewer, now: now) {
-                        Button("Lock") { Task { await model.lockSpot() } }
+                        Button("Lock") {
+                            model.scrollHold.expanded()
+                            Task { await model.lockSpot() }
+                        }
                             .disabled(model.spotGate.busy)
                             .accessibilityIdentifier("spot-lock")
                             .accessibilityLabel("Lock the spot call")
@@ -3396,14 +3411,21 @@ private enum ChatAnchor {
     static let spot = "message-list-spot"
 }
 
-/// Reports a tracked row's top in the list's coordinate space (0 is the list's
-/// top edge) for the scroll controller.
+/// Reports a message row's top in content space, with the layout generation, for
+/// the scroll controller.
 private struct ChatRowYReporter: View {
+    /// The message stack's own coordinate space: positions don't change while the
+    /// list scrolls, only when layout does.
+    static let space = "chat-content"
     let id: UUID
+    let generation: Int
 
     var body: some View {
         GeometryReader { geo in
-            Color.clear.preference(key: ChatRowYKey.self, value: [id: geo.frame(in: .named("chat")).minY])
+            Color.clear.preference(
+                key: ChatRowYKey.self,
+                value: ChatRowReport(rows: [id: geo.frame(in: .named(Self.space)).minY], generation: generation)
+            )
         }
         .accessibilityHidden(true)
     }

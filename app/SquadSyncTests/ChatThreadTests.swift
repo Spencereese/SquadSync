@@ -174,6 +174,10 @@ final class ChatThreadTests: XCTestCase {
         XCTAssertNil(bubbles(ChatThread.rows(items: items(pending), context: context(reads: reads)))[0].seen, "An unsent message can't be seen")
         XCTAssertNil(bubbles(ChatThread.rows(items: items(entries), context: context()))[1].seen, "No read rows, no claim")
         XCTAssertEqual(ChatThread.seenLine(["Riley"]), "Seen by Riley")
+        var unknownViewer = context(reads: reads)
+        unknownViewer.viewerId = nil
+        XCTAssertNil(bubbles(ChatThread.rows(items: items(entries), context: unknownViewer))[1].seen,
+                     "Before you're known your own read would count (\"Seen by 3\"): no line yet")
     }
 
     func testReplyQuoteUsesTheLoadedOriginalOrSaysItIsMissing() {

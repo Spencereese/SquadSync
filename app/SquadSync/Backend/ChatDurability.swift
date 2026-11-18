@@ -121,13 +121,14 @@ enum ChatOlderTrigger {
 /// Keeps the reader's place when a page of older messages goes in above them.
 ///
 /// Made right before the rows are added: the fling is stopped, and the offset,
-/// content height, and the on-screen y of the previous oldest message (the anchor)
-/// are recorded. Then two exact corrections, both from measurements, not timing:
+/// content height, and the on-screen y of the topmost row on screen (the anchor,
+/// at its live position) are recorded. Then two exact corrections, both from measurements, not timing:
 /// 1. When the scroll view's content height changes for the insert, the offset
 ///    moves by exactly that growth. This runs inside the same layout pass
 ///    (contentSize KVO), so no frame shows the new page's top.
-/// 2. Each time the anchor row reports where it is after layout, the offset moves
-///    by however far it is from where it was. That absorbs estimated heights of
+/// 2. Each time the anchor row reports where it is from a layout that has the new
+///    rows (its generation), the offset moves by however far it is from where it
+///    was. Positions from before the insert are never used. That absorbs estimated heights of
 ///    the lazily laid out new rows. Once it's within half a point, the hold ends.
 /// A drag by the person also ends it.
 struct ChatPrependHold: Equatable {
@@ -135,14 +136,28 @@ struct ChatPrependHold: Equatable {
     let offsetBefore: Double
     let contentHeightBefore: Double
     let anchorYBefore: Double?
+    /// Row positions measured in a layout that already has the new page carry
+    /// this generation (or later); older measurements are stale for step 2.
+    let generation: Int
     private(set) var insertApplied = false
     private(set) var settled = false
 
-    init(anchor: UUID, offsetBefore: Double, contentHeightBefore: Double, anchorYBefore: Double?) {
+    init(anchor: UUID, offsetBefore: Double, contentHeightBefore: Double, anchorYBefore: Double?, generation: Int = 0) {
         self.anchor = anchor
         self.offsetBefore = offsetBefore
         self.contentHeightBefore = contentHeightBefore
         self.anchorYBefore = anchorYBefore
+        self.generation = generation
+    }
+
+    /// The row to hold: the topmost one whose top is on screen right now (what the
+    /// reader is looking at), from live positions of laid-out rows only. Nil when
+    /// none is on screen; then the hold is step 1 alone.
+    static func anchorRow(screenY: [UUID: Double], viewportHeight: Double) -> (id: UUID, y: Double)? {
+        screenY
+            .filter { $0.value >= 0 && $0.value < viewportHeight }
+            .min { $0.value != $1.value ? $0.value < $1.value : $0.key.uuidString < $1.key.uuidString }
+            .map { ($0.key, $0.value) }
     }
 
     /// Step 1. Returns the new offset for the first content growth after the hold
@@ -158,8 +173,10 @@ struct ChatPrependHold: Equatable {
 
     /// Step 2. Returns the corrected offset when the anchor has drifted, nil when
     /// it's in place (which settles the hold).
-    mutating func offsetForAnchor(y: Double, metrics: ChatScrollMetrics) -> Double? {
-        guard insertApplied, !settled, let before = anchorYBefore else { return nil }
+    /// `measuredIn` is the generation of the layout the anchor's position came
+    /// from; a position from before the page went in is ignored, not corrected for.
+    mutating func offsetForAnchor(y: Double, measuredIn: Int = .max, metrics: ChatScrollMetrics) -> Double? {
+        guard insertApplied, !settled, measuredIn >= generation, let before = anchorYBefore else { return nil }
         let drift = y - before
         guard abs(drift) > 0.5 else {
             settled = true
@@ -182,38 +199,91 @@ enum ChatViewportStick {
 }
 
 /// Whether the reader is staying at the bottom, as state rather than a distance
-/// read at the moment something changes.
+/// read at the moment something changes, and when a pinned list follows.
 ///
-/// Only the person moves it: while their finger or fling is moving the list
-/// (`interacting`), at the bottom within `slack` pins and anywhere else unpins.
-/// Everything else (content growing because a send failed and shows "Not
-/// delivered", a new row, the keyboard, the header coming back and the composer
-/// shrinking, insets and offset moving together in one layout pass) is layout:
-/// it never changes the state, and a pinned reader goes back to the bottom.
-/// The app's own jumps say where they leave the reader (`jumped(toBottom:)`):
-/// opening an old message or the spot card unpins so it isn't pulled back; jump
-/// to latest and following your own send pin. While an older page is being held
-/// in place the pin doesn't move anything.
+/// Only the person changes the state: while their finger or fling is moving the
+/// list (`interacting`), at the bottom within `slack` pins and anywhere else
+/// unpins. The app's own jumps say where they leave the reader
+/// (`jumped(toBottom:)`), and an in-place expansion the person tapped (the
+/// reaction menu, locking the spot card) unpins (`expanded()`), so the tapped
+/// thing stays where it is.
+///
+/// A pinned list goes back to the bottom only for:
+/// - keyboard, viewport or inset changes (`.layout`), and
+/// - content growth right after the end of the thread changed (`endChanged()`:
+///   a new row appended, or the last row's send state changing to failed, sent),
+///   until `endSettled()`.
+/// Any other content growth (a row in the middle expanding) leaves the offset
+/// alone, and so does an offset change that isn't the person's (`.scroll`). At
+/// most `budget` corrections per run-loop turn (`turnEnded()`), each only when
+/// more than half a point off, so it can't feed back into a layout loop. While
+/// an older page is being held in place the pin doesn't move anything.
 struct ChatBottomPin: Equatable {
     static let slack = 32.0
+    static let budget = 3
+
+    enum Change: Equatable {
+        /// The scroll view's size changed (keyboard, header, composer).
+        case viewport
+        /// The content height changed.
+        case content
+        /// The offset changed; upgraded to a layout change when the insets moved.
+        case offset
+    }
 
     /// A new chat opens at its newest message.
     private(set) var pinned = true
+    /// The end of the thread just changed; content growth follows it.
+    private(set) var endPending = false
+    private var insets: [Double]?
+    private var corrections = 0
 
     /// Feed every geometry change. Returns the offset to move to, if any.
-    mutating func observe(_ metrics: ChatScrollMetrics, interacting: Bool = false, holding: Bool = false) -> Double? {
+    mutating func observe(_ metrics: ChatScrollMetrics, change: Change, interacting: Bool = false, holding: Bool = false) -> Double? {
+        let now = [metrics.topInset, metrics.bottomInset]
+        let insetsMoved = insets.map { $0 != now } ?? false
+        insets = now
         guard !holding else { return nil }
         if interacting {
             pinned = metrics.distanceFromBottom <= Self.slack
             return nil
         }
-        guard pinned, abs(metrics.maxOffset - metrics.offset) > 0.5 else { return nil }
+        guard pinned else { return nil }
+        let follows: Bool
+        switch change {
+        case .viewport: follows = true
+        case .content: follows = endPending
+        case .offset: follows = insetsMoved
+        }
+        guard follows, corrections < Self.budget, abs(metrics.maxOffset - metrics.offset) > 0.5 else { return nil }
+        corrections += 1
         return metrics.maxOffset
     }
 
+    /// The thread's last row is new, or its send state changed.
+    mutating func endChanged() { endPending = true }
+    /// The layout for that change is done.
+    mutating func endSettled() { endPending = false }
+    /// The person tapped something that grows in place.
+    mutating func expanded() {
+        pinned = false
+        endPending = false
+    }
     /// The app scrolled the list itself: to the newest message (pins) or to
     /// something else (unpins).
-    mutating func jumped(toBottom: Bool) { pinned = toBottom }
+    mutating func jumped(toBottom: Bool) {
+        pinned = toBottom
+        if !toBottom { endPending = false }
+    }
+    /// A run-loop turn is over: the correction budget refills.
+    mutating func turnEnded() { corrections = 0 }
+
+    /// A failed row whose top is above the list's top edge: the offset that brings
+    /// its top (and the "Not delivered" under it) into view.
+    static func offsetRevealingTop(rowY: Double, metrics: ChatScrollMetrics) -> Double? {
+        guard rowY < -0.5 else { return nil }
+        return metrics.clamped(metrics.offset + rowY)
+    }
 
     /// A different squad, or signed out.
     mutating func reset() { self = ChatBottomPin() }

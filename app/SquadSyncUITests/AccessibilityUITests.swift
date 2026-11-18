@@ -1350,6 +1350,8 @@ final class AccessibilityUITests: XCTestCase {
         let seen = app.descendants(matching: .any).matching(identifier: "seen-by")
         XCTAssertTrue(seen.firstMatch.waitForExistence(timeout: 5), "No Seen by line")
         XCTAssertEqual(seen.count, 1, "Seen by belongs on the latest message only")
+        // The read rows and your profile arrive separately; give them a moment to agree.
+        _ = waitUntil(timeout: 5) { seen.firstMatch.label == "Seen by Alex and Jordan" }
         XCTAssertEqual(seen.firstMatch.label, "Seen by Alex and Jordan")
         XCTAssertTrue(latest.frame.contains(CGPoint(x: seen.firstMatch.frame.midX, y: seen.firstMatch.frame.midY)), "Seen by isn't on the latest message")
         let mine = element(Polish.longLine, in: app)
@@ -1591,7 +1593,8 @@ final class AccessibilityUITests: XCTestCase {
         let error = element("chat-older-error", in: app)
         XCTAssertEqual(paging(), "idle pages=0")
 
-        // Phase 1: swipe until page 1 is asked for (and held).
+        // Phase 1: swipe until page 1 is asked for (and held). It's only asked for
+        // once message 60 comes up near the screen, never from the bottom.
         var held = false
         for _ in 0..<40 {
             list.swipeDown()
@@ -1603,6 +1606,7 @@ final class AccessibilityUITests: XCTestCase {
         }
         XCTAssertEqual(paging(), "loading pages=0")
         XCTAssertFalse(landed.exists, "Page 1 went in while held")
+        XCTAssertTrue(element(Long.firstReadTop, in: app).exists, "Page 1 was asked for with message 60 nowhere near the screen")
         // Let the list come to rest (bounded), then record the topmost fully visible row.
         var previous: [CGRect] = []
         var rows: [(id: String, frame: CGRect)] = []
@@ -1619,7 +1623,8 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertFalse(landed.exists, "Page 1 went in while held")
         releaseOne()
         XCTAssertTrue(waitUntil(timeout: 10) { paging().contains("pages=1") }, "Page 1 never landed: \(paging())")
-        XCTAssertTrue(landed.waitForExistence(timeout: 5), "Page 1's newest message isn't in the thread")
+        // Page 1's rows are above the reader and may not be laid out yet; phase 2
+        // reaching message 0 shows they went in.
         let after = element(reference.id, in: app)
         XCTAssertTrue(after.exists, "\(reference.id) left the tree when page 1 landed")
         XCTAssertTrue(after.frame.intersects(list.frame), "\(reference.id) went off screen when page 1 landed: \(after.frame)")

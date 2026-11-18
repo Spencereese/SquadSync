@@ -365,14 +365,16 @@ final class WhosInTests: XCTestCase {
         let none = try await SupabaseCheckInService(config: config, accessToken: "t", transport: missing).capabilities()
         XCTAssertEqual(none, .unknown)
 
-        let live = ScriptedTransport(responses: [
-            (200, Data("[]".utf8)),
-            (400, Data(#"{"code":"42703","message":"column sq8_check_ins.game does not exist"}"#.utf8))
-        ])
+        let liveRow = """
+        [{"user_id":"\(alex.uuidString)","squad_id":"\(squad.uuidString)","kind":"available_now","checked_at":"2027-01-15T08:00:00Z","until_at":null}]
+        """
+        let live = ScriptedTransport(responses: [(200, Data(liveRow.utf8))])
         let today = try await SupabaseCheckInService(config: config, accessToken: "t", transport: live).capabilities()
         XCTAssertEqual(today, CheckInCapabilities(table: true, details: false), "Live today: 0006 without proposed 0022")
-        XCTAssertEqual(live.requests.count, 2)
-        XCTAssertTrue(live.requests.allSatisfy { $0.httpMethod == "GET" }, "Probes are read-only")
+        XCTAssertEqual(live.requests.count, 1, "One request answers both questions")
+        XCTAssertTrue(live.requests.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil }, "Probes are read-only")
+        let probeQuery = URLComponents(url: try XCTUnwrap(live.requests.first?.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(probeQuery.first { $0.name == "select" }?.value, "*", "Never names a column the server may not have")
 
         let down = FailingTransport()
         do {
@@ -381,6 +383,33 @@ final class WhosInTests: XCTestCase {
         } catch let failure as BackendFailure {
             XCTAssertEqual(failure, .reconnecting)
         }
+    }
+
+    func testDetailColumnsAreReadFromTheRowKeys() async throws {
+        let withDetails = """
+        [{"user_id":"\(alex.uuidString)","squad_id":"\(squad.uuidString)","kind":"available_now","checked_at":"2027-01-15T08:00:00Z","until_at":null,"game":null,"platform":"pc"}]
+        """
+        let applied = ScriptedTransport(responses: [(200, Data(withDetails.utf8)), (200, Data("[]".utf8))])
+        let service = SupabaseCheckInService(config: config, accessToken: "t", transport: applied)
+        let caps = try await service.capabilities()
+        XCTAssertEqual(caps, CheckInCapabilities(table: true, details: true), "0022 applied: the keys are there even when null")
+        _ = try await service.checkIns(squadId: squad)
+        let read = URLComponents(url: try XCTUnwrap(applied.requests.last?.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(read.first { $0.name == "select" }?.value, CheckInSelect.withDetails)
+
+        let empty = ScriptedTransport(responses: [(200, Data("[]".utf8)), (200, Data("[]".utf8))])
+        let unseen = SupabaseCheckInService(config: config, accessToken: "t", transport: empty)
+        let none = try await unseen.capabilities()
+        XCTAssertEqual(none, CheckInCapabilities(table: true, details: false), "No row to look at keeps the not-saved note")
+        _ = try await unseen.checkIns(squadId: squad)
+        let base = URLComponents(url: try XCTUnwrap(empty.requests.last?.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(base.first { $0.name == "select" }?.value, CheckInSelect.base)
+        XCTAssertFalse(empty.requests.contains { ($0.url?.query ?? "").contains("game") }, "The missing columns are never requested")
+
+        XCTAssertFalse(CheckInSelect.detailsPresent(in: Data("not json".utf8)))
+        XCTAssertFalse(CheckInSelect.detailsPresent(in: Data(#"[{"game":"Halo"}]"#.utf8)), "Both columns are needed")
+        XCTAssertTrue(CheckInSelect.detailsPresent(in: Data(#"[{"game":"Halo","platform":"xbox"}]"#.utf8)))
+        XCTAssertEqual(WhosIn.detailsMissing, "This server saves when you're on, not the game or console yet.")
     }
 
     func testReadSelectsOnlyColumnsTheServerHas() async throws {

@@ -37,6 +37,19 @@ enum CheckInSelect {
     static let withDetails = base + ",game,platform"
 
     static func columns(details: Bool) -> String { details ? withDetails : base }
+
+    /// Whether the proposed 0022 columns are on the server, from a `select=*`
+    /// read: present when a returned row has both `game` and `platform`, missing
+    /// when a row comes back without them. No row (no check-ins you can see yet)
+    /// says nothing, so it's read as missing and the sheet keeps its "not the
+    /// game or console yet" line (`WhosIn.detailsMissing`). Asking for the
+    /// columns by name fails with 42703 on a server without them, which the
+    /// live logs kept showing as an error.
+    static func detailsPresent(in data: Data) -> Bool {
+        guard let rows = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+              let row = rows.first else { return false }
+        return row.keys.contains("game") && row.keys.contains("platform")
+    }
 }
 
 enum SteamFunction {
@@ -69,46 +82,29 @@ final class SupabaseCheckInService: CheckInServing {
         self.details = knownDetails
     }
 
+    /// One read-only request: `select=*&limit=1`. It answers both questions
+    /// (is the table there, are the 0022 columns there) without naming a column
+    /// the server may not have, so it never fails on a missing one.
     func capabilities() async throws -> CheckInCapabilities {
+        let data: Data
         do {
-            _ = try await http.send(
+            data = try await http.send(
                 path: "rest/v1/sq8_check_ins",
                 method: "GET",
                 query: [
-                    URLQueryItem(name: "select", value: "user_id"),
+                    URLQueryItem(name: "select", value: "*"),
                     URLQueryItem(name: "limit", value: "1")
                 ],
-                feature: .checkIns
+                feature: .checkIns,
+                probe: true
             )
         } catch let failure as BackendFailure {
             if case .notSetUp = failure { return .unknown }
             throw failure
         }
-        let found = await detailColumnsExist()
+        let found = CheckInSelect.detailsPresent(in: data)
         details = found
         return CheckInCapabilities(table: true, details: found)
-    }
-
-    private func detailColumnsExist() async -> Bool {
-        do {
-            _ = try await http.send(
-                path: "rest/v1/sq8_check_ins",
-                method: "GET",
-                query: [
-                    URLQueryItem(name: "select", value: "game,platform"),
-                    URLQueryItem(name: "limit", value: "1")
-                ],
-                feature: .checkIns
-            )
-            return true
-        } catch let failure as BackendFailure {
-            if case .rejected(let message) = failure {
-                return SpotProbe.columnPresent(status: 400, body: message)
-            }
-            return false
-        } catch {
-            return false
-        }
     }
 
     func checkIns(squadId: UUID) async throws -> [CheckInRecord] {

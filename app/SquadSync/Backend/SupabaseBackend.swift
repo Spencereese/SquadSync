@@ -343,7 +343,8 @@ final class SupabaseSquadService: SquadService {
                     URLQueryItem(name: "squad", value: "00000000-0000-0000-0000-000000000000"),
                     URLQueryItem(name: "new_name", value: "null")
                 ],
-                feature: .squad
+                feature: .squad,
+                probe: true
             )
             return true
         } catch let failure as BackendFailure {
@@ -382,7 +383,8 @@ final class SupabaseSquadService: SquadService {
                     URLQueryItem(name: "device_token", value: "probe"),
                     URLQueryItem(name: "device_platform", value: "ios")
                 ],
-                feature: .squad
+                feature: .squad,
+                probe: true
             )
             return true
         } catch let failure as BackendFailure {
@@ -424,7 +426,8 @@ final class SupabaseSquadService: SquadService {
                 path: "rest/v1/rpc/sq8_leave_squad",
                 method: "GET",
                 query: [URLQueryItem(name: "new_owner", value: "null")],
-                feature: .squad
+                feature: .squad,
+                probe: true
             )
             return true
         } catch let failure as BackendFailure {
@@ -814,7 +817,8 @@ final class SupabaseChatService: ChatService {
                     URLQueryItem(name: "select", value: "reply_to_id"),
                     URLQueryItem(name: "limit", value: "1")
                 ],
-                feature: .messages
+                feature: .messages,
+                probe: true
             )
             return true
         } catch let failure as BackendFailure {
@@ -969,8 +973,6 @@ final class SupabaseInviteService: InviteServing {
 final class SupabaseSpotService: SpotServing {
     private let http: SupabaseHTTP
     private var cachedCapabilities: SpotServerCapabilities?
-    /// A nil id. GET names the real arguments. PostgREST runs it read-only, so FOR UPDATE fails and nothing commits.
-    private static let probeId = "00000000-0000-0000-0000-000000000000"
 
     init(
         config: BackendConfig,
@@ -1007,7 +1009,7 @@ final class SupabaseSpotService: SpotServing {
 
     func lock(callId: UUID) async throws {
         // 0020 redefines sq8_lock_spot with the Ready gate. The merged app calls
-        // this name, so this client does too. The when_ready probe only tells
+        // this name, so this client does too. The capability read only tells
         // the UI whether that gate is on the server yet.
         _ = await serverCapabilities()
         let body = try BackendJSON.encoder.encode(CallIdBody(callId: callId))
@@ -1037,29 +1039,10 @@ final class SupabaseSpotService: SpotServing {
 
     func serverCapabilities() async -> SpotServerCapabilities {
         if let cachedCapabilities { return cachedCapabilities }
-        let readyFunction = await functionExists(
-            path: "rest/v1/rpc/sq8_set_spot_ready",
-            query: [
-                URLQueryItem(name: "call_id", value: Self.probeId),
-                URLQueryItem(name: "ready", value: "false")
-            ]
-        )
-        let lockFunction = await functionExists(
-            path: "rest/v1/rpc/sq8_lock_spot_when_ready",
-            query: [URLQueryItem(name: "call_id", value: Self.probeId)]
-        )
-        let expiryFunction = await functionExists(
-            path: "rest/v1/rpc/sq8_read_open_spot",
-            query: [URLQueryItem(name: "squad", value: Self.probeId)]
-        )
+        // Two read-only column reads, nothing else. See SpotServerCapabilities.fromColumns.
         let seatColumn = await columnExists(path: "rest/v1/sq8_spot_calls", column: "seat_target")
         let readyColumn = await columnExists(path: "rest/v1/sq8_spot_rsvps", column: "ready")
-        let found = SpotServerCapabilities(
-            ready: readyFunction && readyColumn,
-            gatedLock: lockFunction,
-            expiry: expiryFunction,
-            seatTarget: seatColumn
-        )
+        let found = SpotServerCapabilities.fromColumns(seatTarget: seatColumn, ready: readyColumn)
         cachedCapabilities = found
         return found
     }
@@ -1115,21 +1098,6 @@ final class SupabaseSpotService: SpotServing {
         }
     }
 
-    private func functionExists(path: String, query: [URLQueryItem]) async -> Bool {
-        do {
-            _ = try await http.send(path: path, method: "GET", query: query, feature: .squad)
-            return true
-        } catch let failure as BackendFailure {
-            if case .notSetUp = failure { return false }
-            if case .rejected(let message) = failure {
-                return SpotProbe.functionPresent(status: 400, body: message)
-            }
-            return false
-        } catch {
-            return false
-        }
-    }
-
     private func columnExists(path: String, column: String) async -> Bool {
         do {
             _ = try await http.send(
@@ -1139,7 +1107,8 @@ final class SupabaseSpotService: SpotServing {
                     URLQueryItem(name: "select", value: column),
                     URLQueryItem(name: "limit", value: "1")
                 ],
-                feature: .squad
+                feature: .squad,
+                probe: true
             )
             return true
         } catch let failure as BackendFailure {

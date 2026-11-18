@@ -165,7 +165,17 @@ enum HTTPFailureLog {
         return text.contains("read-only transaction") || text.contains("read only transaction")
     }
 
-    static func record(method: String, path: String, status: Int, body: Data) {
+    enum Level: Equatable { case info, error }
+
+    /// A request marked `probe` asks the server whether something exists, so any
+    /// answer is information, not a failure; so is the read-only refusal above.
+    /// Everything else that fails is an error.
+    static func level(status: Int, body: Data, probe: Bool) -> Level {
+        if probe || isExpectedProbeRefusal(status: status, body: body) { return .info }
+        return .error
+    }
+
+    static func record(method: String, path: String, status: Int, body: Data, probe: Bool = false) {
         #if DEBUG
         let fields = (try? JSONSerialization.jsonObject(with: body) as? [String: Any]) ?? [:]
         let code = (fields["error_code"] as? String)
@@ -176,8 +186,8 @@ enum HTTPFailureLog {
             ?? (fields["error_description"] as? String)
             ?? (fields["message"] as? String)
             ?? "-"
-        let text = "HTTP \(method) \(path) \(status) \(code) \(message)"
-        if isExpectedProbeRefusal(status: status, body: body) {
+        let text = "\(probe ? "probe " : "")HTTP \(method) \(path) \(status) \(code) \(message)"
+        if level(status: status, body: body, probe: probe) == .info {
             SquadLog.http.info("\(text, privacy: .public)")
         } else {
             SquadLog.http.error("\(text, privacy: .public)")
@@ -213,7 +223,8 @@ struct SupabaseHTTP {
         body: Data? = nil,
         prefer: String? = nil,
         feature: BackendFeature,
-        allowRefresh: Bool = true
+        allowRefresh: Bool = true,
+        probe: Bool = false
     ) async throws -> Data {
         guard config.isConfigured, let base = config.url else { throw BackendFailure.notConfigured }
         var url = base
@@ -257,7 +268,8 @@ struct SupabaseHTTP {
             method: request.httpMethod ?? method,
             path: request.url?.path ?? path,
             status: http.statusCode,
-            body: data
+            body: data,
+            probe: probe
         )
         if allowRefresh, accessToken != nil, AuthFailure.matches(status: http.statusCode, body: data) {
             guard let refresher else {
@@ -274,7 +286,8 @@ struct SupabaseHTTP {
                     body: body,
                     prefer: prefer,
                     feature: feature,
-                    allowRefresh: false
+                    allowRefresh: false,
+                    probe: probe
                 )
             case .rejected:
                 throw BackendFailure.sessionEnded

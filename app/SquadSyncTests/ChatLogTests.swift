@@ -546,6 +546,15 @@ final class SquadNameTests: XCTestCase {
         ))
         XCTAssertFalse(HTTPFailureLog.isExpectedProbeRefusal(status: 400, body: Data("{\"message\":\"spot_not_ready\"}".utf8)))
     }
+
+    func testProbeAnswersAreInfoAndRealFailuresStayErrors() {
+        let missingColumn = Data("{\"code\":\"42703\",\"message\":\"column sq8_spot_rsvps.ready does not exist\"}".utf8)
+        XCTAssertEqual(HTTPFailureLog.level(status: 400, body: missingColumn, probe: true), .info)
+        XCTAssertEqual(HTTPFailureLog.level(status: 400, body: missingColumn, probe: false), .error)
+        let refusal = Data("{\"message\":\"cannot execute FOR UPDATE in a read-only transaction\"}".utf8)
+        XCTAssertEqual(HTTPFailureLog.level(status: 405, body: refusal, probe: false), .info)
+        XCTAssertEqual(HTTPFailureLog.level(status: 400, body: Data("{\"message\":\"spot_not_member\"}".utf8), probe: false), .error)
+    }
 }
 
 final class KeychainFallbackTests: XCTestCase {

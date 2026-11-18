@@ -98,18 +98,6 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertNil(ChatOlderPaging.cursor(ChatLog()))
     }
 
-    func testScrollAnchorHoldsThePreviousTopMessage() {
-        var log = ChatLog()
-        log.ingest([remote(10, at: 100), remote(11, at: 110)].map { $0.entry() })
-        let top = ChatScrollAnchor.before(log)
-        XCTAssertEqual(top, ChatLongSeed.id(10))
-        XCTAssertNil(ChatScrollAnchor.after(previousTop: top, log: log), "Nothing was added above it")
-        log.ingest([remote(8, at: 80), remote(9, at: 90)].map { $0.entry() })
-        XCTAssertEqual(ChatScrollAnchor.after(previousTop: top, log: log), ChatLongSeed.id(10))
-        XCTAssertNil(ChatScrollAnchor.after(previousTop: UUID(), log: log), "Gone (another squad) means no jump")
-        XCTAssertNil(ChatScrollAnchor.after(previousTop: nil, log: log))
-    }
-
     func testFirstReadDecidesWhetherThereIsAnythingOlder() {
         var paging = ChatOlderPaging()
         paging.settleFirstRead(rowCount: 12, limit: 200)
@@ -214,7 +202,6 @@ final class ChatDurabilityTests: XCTestCase {
         // The list jumped (or a fling left the row on screen): onAppear won't fire
         // again, so the page finishing has to ask for the next one.
         XCTAssertTrue(trigger.handle(.pagingChanged, paging: paging, hasMessages: true))
-        XCTAssertTrue(trigger.handle(.landed, paging: paging, hasMessages: true))
     }
 
     func testHeldPlaceDoesNotAskAgain() {
@@ -224,8 +211,7 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertTrue(trigger.handle(.rowAppeared, paging: paging, hasMessages: true))
         XCTAssertTrue(paging.begin())
         paging.finish(rowCount: 50)
-        XCTAssertFalse(trigger.handle(.rowDisappeared, paging: paging, hasMessages: true), "The landing scroll moved the row away")
-        XCTAssertFalse(trigger.handle(.landed, paging: paging, hasMessages: true))
+        XCTAssertFalse(trigger.handle(.rowDisappeared, paging: paging, hasMessages: true), "The new rows pushed the row off screen")
         XCTAssertFalse(trigger.handle(.pagingChanged, paging: paging, hasMessages: true))
     }
 
@@ -240,7 +226,7 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertTrue(paging.begin())
         paging.finish(rowCount: 3)
         XCTAssertFalse(trigger.handle(.pagingChanged, paging: paging, hasMessages: true), "Start of chat")
-        XCTAssertFalse(trigger.handle(.landed, paging: paging, hasMessages: true))
+        XCTAssertFalse(trigger.handle(.rowAppeared, paging: paging, hasMessages: true), "Start of chat")
     }
 
     func testRowThatNeverLeavesTheScreenStillReachesTheStart() async throws {
@@ -529,19 +515,32 @@ final class ChatDurabilityModelTests: XCTestCase {
         XCTAssertEqual(model.olderPaging.state, .idle)
         await model.loadOlder()
         XCTAssertEqual(model.log.entries.count, 250)
-        XCTAssertEqual(model.olderLanding?.anchor, ChatLongSeed.id(60), "The old top message goes back to the top")
+        XCTAssertEqual(model.log.ordered.first?.id, ChatLongSeed.id(10))
         await model.loadOlder()
         XCTAssertEqual(model.log.entries.count, 260)
         XCTAssertEqual(model.olderPaging.state, .reachedStart)
     }
 
-    func testFlingAskingTwiceLoadsOnePageThenTheNext() async {
+    func testFlingAskingTwiceLoadsOnePageThenTheNext() async throws {
         let model = model(.chatLongHistory, outbox: tempOutbox())
         await model.reloadChat()
+        // A slow page, so the second ask really lands while the first is running.
+        let mock = try XCTUnwrap(model.mockChatService)
+        mock.olderDelay = 0.2
         let first = Task { await model.loadOlder() }
-        let second = Task { await model.loadOlder() }
+        var spins = 0
+        while model.olderPaging.state != .loading, spins < 200 {
+            await Task.yield()
+            spins += 1
+        }
+        let running = model.olderPaging.state
+        XCTAssertEqual(running, .loading, "The first page never started")
+        await model.loadOlder()
+        let afterSecond = model.log.entries.count
+        XCTAssertEqual(afterSecond, 200, "The second ask returned without starting a page")
         await first.value
-        await second.value
+        let reads = mock.olderReads
+        XCTAssertEqual(reads, 1, "Two asks during one page are one read")
         XCTAssertEqual(model.log.entries.count, 250, "Two asks during one page are one page")
         XCTAssertEqual(model.olderPaging.state, .idle, "Back to idle, so the list can ask again")
         await model.loadOlder()

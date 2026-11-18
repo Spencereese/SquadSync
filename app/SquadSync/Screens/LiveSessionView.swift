@@ -30,10 +30,6 @@ final class LiveSessionModel {
     var chatLoad = ChatHistoryState.idle
     /// The row at the top of the thread that pages older messages.
     var olderPaging = ChatOlderPaging()
-    /// Set when an older page lands, so the list can put the previous top message
-    /// back at the top instead of jumping.
-    var olderLanding: ChatOlderLanding?
-    @ObservationIgnored private var olderLandingSerial = 0
     /// An older page has been added for the open squad, so a later full reload
     /// doesn't decide "start of chat" from the newest 200 alone.
     @ObservationIgnored private var olderPagedThisSquad = false
@@ -1490,8 +1486,11 @@ final class LiveSessionModel {
 
     /// The top-of-thread row came into view: add one older page and keep the place.
     func loadOlder() async {
-        _ = try? await fetchOlderPage(holdPlace: true, waitForRunning: false)
+        _ = try? await fetchOlderPage(waitForRunning: false)
     }
+
+    /// Tests: the mock chat server, to slow or fail its reads.
+    var mockChatService: MockChatService? { mockChat as? MockChatService }
 
     /// Retry on the older-page error row.
     func retryOlder() async {
@@ -1502,7 +1501,7 @@ final class LiveSessionModel {
 
     /// One older page, merged by id. Returns false once the start of the chat is
     /// reached. Throws when the read fails (the row then offers Retry).
-    private func fetchOlderPage(holdPlace: Bool, waitForRunning: Bool = true) async throws -> Bool {
+    private func fetchOlderPage(waitForRunning: Bool = true) async throws -> Bool {
         guard let squad, let session = try? requiredSession() else { return false }
         // The row asking twice while a page runs is one page, not two.
         if !waitForRunning, olderPaging.state == .loading { return true }
@@ -1518,17 +1517,12 @@ final class LiveSessionModel {
         }
         guard olderPaging.begin() else { return olderPaging.state != .reachedStart }
         let requested = squad.id
-        let top = ChatScrollAnchor.before(log)
         do {
             let rows = try await chatService(session).older(squadId: requested, before: cursor, limit: ChatOlderPaging.pageSize)
             guard HistoryMerge.accepts(requestSquad: requested, loadedSquad: loadedSquad) else { return false }
             log.ingest(rows.map { $0.entry() })
             olderPagedThisSquad = true
             olderPaging.finish(rowCount: rows.count)
-            if holdPlace, let anchor = ChatScrollAnchor.after(previousTop: top, log: log) {
-                olderLandingSerial += 1
-                olderLanding = ChatOlderLanding(anchor: anchor, serial: olderLandingSerial)
-            }
             return olderPaging.state != .reachedStart
         } catch {
             if RequestNoise.isCancellation(error) {
@@ -1559,7 +1553,7 @@ final class LiveSessionModel {
         let outcome = await ChatReveal.run(
             loaded: { [self] in log.entries.contains { $0.id == id } },
             exists: { try await chat.message(squadId: squadId, id: id) != nil },
-            loadOlderPage: { [self] in try await fetchOlderPage(holdPlace: false) }
+            loadOlderPage: { [self] in try await fetchOlderPage() }
         )
         if outcome == .found {
             followSend = id
@@ -2189,6 +2183,8 @@ struct LiveSessionView: View {
                 .contentMargins(.bottom, SQSpace.l, for: .scrollContent)
                 .coordinateSpace(name: "chat")
                 .scrollDismissesKeyboard(.interactively)
+                // Older pages go in above the reader; this keeps what's on screen still.
+                .modifier(ChatBottomAnchoring())
                 .modifier(ChatPinModifier(pinned: $pinnedToBottom))
                 .accessibilityIdentifier("message-list")
                 .overlay(alignment: .top) {
@@ -2242,32 +2238,13 @@ struct LiveSessionView: View {
                 }
                 olderEvent(.pinned(isPinned))
             }
-            // An older page landed above the reader: put the message that was at the
-            // top back at the top, without animation, so the place doesn't jump. The
-            // scroll waits a turn so the new rows are laid out first, then repeats once
-            // they've settled (a fling can still be moving the list).
-            .onChange(of: model.olderLanding) { _, landing in
-                guard let landing else { return }
-                Task { @MainActor in
-                    await Task.yield()
-                    proxy.scrollTo(landing.anchor, anchor: .top)
-                    try? await Task.sleep(nanoseconds: 80_000_000)
-                    guard model.olderLanding == landing else { return }
-                    proxy.scrollTo(landing.anchor, anchor: .top)
-                    // If the row is still on screen (the hold didn't take, or the
-                    // page was short of a screen), page again rather than stall.
-                    olderEvent(.landed)
-                }
-            }
             // A page finished (or failed, or was reset) while the row may still be on
-            // screen; onAppear won't fire again, so check here. After a short wait,
-            // so a landing scroll that moves the row away goes first.
+            // screen; onAppear won't fire again, so check here. Deferred to the next
+            // main-queue turn (ordering, not a delay): by then the update that
+            // inserted the page has laid out and the row's onDisappear has run.
             .onChange(of: model.olderPaging.state) { _, state in
                 guard state == .idle else { return }
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 200_000_000)
-                    olderEvent(.pagingChanged)
-                }
+                DispatchQueue.main.async { olderEvent(.pagingChanged) }
             }
             .onChange(of: model.log.ordered.last?.id) { _, id in
                 guard let id else { return }

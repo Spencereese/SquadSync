@@ -72,10 +72,10 @@ struct ChatOlderPaging: Equatable {
 
 /// When the list asks for the next older page. The top row's `onAppear` fires
 /// once, so on its own a page that lands while the row is still on screen (a
-/// fast fling, or the place-holding scroll not taking) would leave paging stuck
-/// with no loading row, error, or "Start of chat". Every event that could make a
-/// page due goes through here, including the page finishing and the landing
-/// scroll settling, so a row that stays visible keeps paging until the start.
+/// fast fling, or a page shorter than the screen) would leave paging stuck with
+/// no loading row, error, or "Start of chat". Every event that could make a page
+/// due goes through here, including the page finishing, so a row that stays
+/// visible keeps paging until the start.
 struct ChatOlderTrigger: Equatable {
     enum Event: Equatable {
         case rowAppeared
@@ -83,8 +83,6 @@ struct ChatOlderTrigger: Equatable {
         case pinned(Bool)
         /// The paging state changed (a page finished, failed, or was reset).
         case pagingChanged
-        /// The place-holding scroll after a page has run.
-        case landed
     }
 
     private(set) var rowVisible = false
@@ -96,7 +94,7 @@ struct ChatOlderTrigger: Equatable {
         case .rowAppeared: rowVisible = true
         case .rowDisappeared: rowVisible = false
         case .pinned(let pinned): pinnedToBottom = pinned
-        case .pagingChanged, .landed: break
+        case .pagingChanged: break
         }
         return paging.shouldLoad(rowVisible: rowVisible, pinnedToBottom: pinnedToBottom, hasMessages: hasMessages)
     }
@@ -126,24 +124,6 @@ struct ChatPageCursor: Equatable {
     func precedes(sentAt other: Date, id otherId: UUID) -> Bool {
         if other != sentAt { return other < sentAt }
         return otherId.uuidString < id.uuidString
-    }
-}
-
-/// Keeps the reader's place when a page lands above them: the message that was at
-/// the top before the page is scrolled back to the top after it.
-enum ChatScrollAnchor {
-    /// The id to hold on to before a page loads.
-    static func before(_ log: ChatLog) -> UUID? {
-        log.ordered.first?.id
-    }
-
-    /// The id to scroll back to once the page is in, or nil when it's gone
-    /// (a different squad was loaded meanwhile) or nothing was added above it.
-    static func after(previousTop: UUID?, log: ChatLog) -> UUID? {
-        guard let previousTop else { return nil }
-        let ids = log.ordered.map(\.id)
-        guard let index = ids.firstIndex(of: previousTop), index > 0 else { return nil }
-        return previousTop
     }
 }
 
@@ -337,13 +317,6 @@ enum OutboxRestore {
         }
         return delivered
     }
-}
-
-/// An older page landed; the list scrolls `anchor` back to the top. `serial`
-/// makes two landings on the same anchor still count as a change.
-struct ChatOlderLanding: Equatable {
-    let anchor: UUID
-    let serial: Int
 }
 
 /// The `chatLongHistory` mock thread: more than one history read (200), so the

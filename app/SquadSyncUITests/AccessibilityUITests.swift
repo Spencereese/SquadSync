@@ -1565,11 +1565,12 @@ final class AccessibilityUITests: XCTestCase {
         let start = element("chat-start", in: app)
         let error = element("chat-older-error", in: app)
 
-        // First page: ordinary swipes, then check the reader kept their place.
+        // First page: fast flings (the Mac-pass repro), then check the reader kept
+        // their place: message 60 is still on screen right after the page lands.
         var sawOlder = false
         var keptPlace = false
         for _ in 0..<40 where !sawOlder {
-            list.swipeDown()
+            list.swipeDown(velocity: .fast)
             if loading.exists { _ = loading.waitForNonExistence(timeout: 10) }
             if element(Long.firstPageNewest, in: app).exists {
                 sawOlder = true

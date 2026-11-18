@@ -520,6 +520,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A10000000000000000000989 /* Base.xcconfig */;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SquadSync/SquadSync.entitlements;
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "";
@@ -545,6 +546,7 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A10000000000000000000989 /* Base.xcconfig */;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SquadSync/SquadSync.entitlements;
 				CODE_SIGNING_ALLOWED = NO;
 				CODE_SIGNING_REQUIRED = NO;
 				CODE_SIGN_IDENTITY = "";

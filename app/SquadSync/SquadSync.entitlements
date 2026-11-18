@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<!-- Not attached to the unsigned Debug and Release configs. When you turn on Push Notifications for a signed build, set CODE_SIGN_ENTITLEMENTS to this file. aps-environment is development. -->
+<!-- CODE_SIGN_ENTITLEMENTS points here for Debug and Release. Unsigned simulator builds (CODE_SIGNING_ALLOWED = NO) don't sign it in; a signed device build does, which is what lets it get an APNs token. aps-environment is development. -->
 <plist version="1.0">
 <dict>
 	<key>aps-environment</key>

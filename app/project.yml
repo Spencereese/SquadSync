@@ -23,6 +23,7 @@ targets:
       PRODUCT_BUNDLE_IDENTIFIER: com.spencereese.squadsync
       GENERATE_INFOPLIST_FILE: YES
       INFOPLIST_FILE: SquadSync/Info.plist
+      CODE_SIGN_ENTITLEMENTS: SquadSync/SquadSync.entitlements
       PRODUCT_NAME: SquadSync
       TARGETED_DEVICE_FAMILY: "1"
     scheme:

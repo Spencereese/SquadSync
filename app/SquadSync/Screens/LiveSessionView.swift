@@ -2232,66 +2232,83 @@ struct LiveSessionView: View {
         return model.link.notice
     }
 
+    /// What the message stack holds: the spot slot, history notes, the paging
+    /// row, and the thread's rows.
+    @ViewBuilder
+    private var chatStackRows: some View {
+        // Ticks only while there's a call whose countdown it shows: with
+        // no call the slot is the call form, which doesn't change with
+        // time, and a once-a-second update inside the lazy stack is work
+        // on a settled thread for nothing.
+        Group {
+            if ChatBisect.off(.noTimeline) {
+                spotSlot(now: SpotClock.now(timeline: Date(), resumedAt: model.resumedAt))
+            } else {
+                TimelineView(ChatSlotSchedule(ticks: model.spot != nil)) { context in
+                    let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
+                    spotSlot(now: now)
+                }
+            }
+        }
+        .id(ChatAnchor.spot)
+        if !model.spotHistoryNote.isEmpty {
+            SpotStatusRow(text: model.spotHistoryNote, identifier: "spot-history-note")
+        }
+        if let display = model.chatLoad.display(hasMessages: !model.log.entries.isEmpty) {
+            ChatHistoryRow(display: display) {
+                Task { await model.retryChatLoad() }
+            }
+        }
+        if model.chatLoad == .loaded, !model.log.entries.isEmpty, !ChatBisect.off(.noOlderTrigger) {
+            // Shows the paging state only. Whether to load is decided
+            // from scroll geometry (olderCheck), not this row appearing.
+            ChatOlderRow(state: model.olderPaging.state) {
+                Task { await model.retryOlder() }
+            }
+        }
+        let tracked = scrollTrackedIds
+        let failed = failedEndRow
+        ForEach(chatRowItems) { item in
+            let _ = ChatScrollTrace.counted(.rowBody)
+            switch item.row {
+            case .day(_, let label):
+                ChatDaySeparator(label: label)
+            case .unread(let count):
+                ChatUnreadDivider(count: count)
+            case .message(let bubble):
+                messageRow(bubble)
+                    .id(bubble.entry.id)
+                    // Only tracked rows get a geometry observer, in the
+                    // row's background, so tracking never changes the
+                    // row's own identity (see ChatRowGeometry).
+                    .modifier(ChatRowGeometry(
+                        id: bubble.entry.id,
+                        tracksPosition: tracked.contains(bubble.entry.id),
+                        tracksFit: failed == bubble.entry.id,
+                        controller: model.scrollHold
+                    ))
+            case .spot(let call):
+                if let outcome = SpotThread.outcome(call, viewerId: spotViewer, now: Date()) {
+                    SpotHistoryCard(call: call, outcome: outcome)
+                }
+            }
+        }
+    }
+
     private var chatList: some View {
         let _ = ChatScrollTrace.counted(.listBody)
         return ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        // Ticks only while there's a call whose countdown it shows: with
-                        // no call the slot is the call form, which doesn't change with
-                        // time, and a once-a-second update inside the lazy stack is work
-                        // on a settled thread for nothing.
-                        TimelineView(ChatSlotSchedule(ticks: model.spot != nil)) { context in
-                            let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
-                            spotSlot(now: now)
-                        }
-                        .id(ChatAnchor.spot)
-                        if !model.spotHistoryNote.isEmpty {
-                            SpotStatusRow(text: model.spotHistoryNote, identifier: "spot-history-note")
-                        }
-                        if let display = model.chatLoad.display(hasMessages: !model.log.entries.isEmpty) {
-                            ChatHistoryRow(display: display) {
-                                Task { await model.retryChatLoad() }
-                            }
-                        }
-                        if model.chatLoad == .loaded, !model.log.entries.isEmpty {
-                            // Shows the paging state only. Whether to load is decided
-                            // from scroll geometry (olderCheck), not this row appearing.
-                            ChatOlderRow(state: model.olderPaging.state) {
-                                Task { await model.retryOlder() }
-                            }
-                        }
-                        let tracked = scrollTrackedIds
-                        let failed = failedEndRow
-                        ForEach(chatRowItems) { item in
-                            let _ = ChatScrollTrace.counted(.rowBody)
-                            switch item.row {
-                            case .day(_, let label):
-                                ChatDaySeparator(label: label)
-                            case .unread(let count):
-                                ChatUnreadDivider(count: count)
-                            case .message(let bubble):
-                                messageRow(bubble)
-                                    .id(bubble.entry.id)
-                                    // Only tracked rows get a geometry observer, in the
-                                    // row's background, so tracking never changes the
-                                    // row's own identity (see ChatRowGeometry).
-                                    .modifier(ChatRowGeometry(
-                                        id: bubble.entry.id,
-                                        tracksPosition: tracked.contains(bubble.entry.id),
-                                        tracksFit: failed == bubble.entry.id,
-                                        controller: model.scrollHold
-                                    ))
-                            case .spot(let call):
-                                if let outcome = SpotThread.outcome(call, viewerId: spotViewer, now: Date()) {
-                                    SpotHistoryCard(call: call, outcome: outcome)
-                                }
-                            }
+                    Group {
+                        if ChatBisect.off(.noLazy) {
+                            VStack(alignment: .leading, spacing: 2) { chatStackRows }
+                        } else {
+                            LazyVStack(alignment: .leading, spacing: 2) { chatStackRows }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .coordinateSpace(name: ChatRowGeometry.contentSpace)
+                    .chatBisect(.noContentSpace) { $0.coordinateSpace(name: ChatRowGeometry.contentSpace) }
                     .background {
                         // iOS 17 only: newer systems read scroll geometry directly
                         // (ChatPinModifier), so no per-frame preference there.
@@ -2301,22 +2318,31 @@ struct LiveSessionView: View {
                             ChatContentFrame()
                         }
                     }
-                    .background(ChatScrollBridge(controller: model.scrollHold))
+                    .chatBisect(.noBridge) { $0.background(ChatScrollBridge(controller: model.scrollHold)) }
                     // Takes (almost) no height, so at AX5 with the keyboard up the
                     // last message's caption isn't pushed out by an invisible row;
                     // VoiceOver still reads it.
-                    Color.clear
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 1)
-                        .accessibilityElement()
-                        .accessibilityLabel("End of messages")
-                        .id(ChatAnchor.end)
-                        .accessibilityIdentifier(ChatAnchor.end)
+                    Group {
+                        if ChatBisect.off(.endText) {
+                            Text("End of messages")
+                                .font(.caption)
+                                .foregroundStyle(.clear)
+                                .frame(maxWidth: .infinity, minHeight: SQSpace.l)
+                        } else {
+                            Color.clear
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 1)
+                                .accessibilityElement()
+                                .accessibilityLabel("End of messages")
+                        }
+                    }
+                    .id(ChatAnchor.end)
+                    .accessibilityIdentifier(ChatAnchor.end)
                 }
                 .contentMargins(.bottom, listBottomMargin, for: .scrollContent)
                 .coordinateSpace(name: ChatRowGeometry.listSpace)
                 .scrollDismissesKeyboard(.interactively)
-                .modifier(ChatPinModifier(pinned: $pinnedToBottom))
+                .chatBisect(.noPinModifier) { $0.modifier(ChatPinModifier(pinned: $pinnedToBottom)) }
                 .accessibilityIdentifier("message-list")
                 .overlay(alignment: .top) {
                     // Floats over the message list only: the pinned spot bar above and
@@ -2392,7 +2418,10 @@ struct LiveSessionView: View {
             // state changes. While a page's rows aren't laid out yet the check waits
             // for the content-size change instead of reading stale geometry.
             .onAppear {
-                model.scrollHold.onGeometry = { metrics in olderCheck(metrics) }
+                ChatBisect.announce()
+                if !ChatBisect.off(.noOlderTrigger) {
+                    model.scrollHold.onGeometry = { metrics in olderCheck(metrics) }
+                }
                 // A drag means the person has taken over: an opened message no
                 // longer holds the list (so new messages can be followed again).
                 model.scrollHold.onUserDrag = {
@@ -2400,6 +2429,7 @@ struct LiveSessionView: View {
                 }
             }
             .onChange(of: model.olderPaging.state) { _, _ in
+                guard !ChatBisect.off(.noOlderTrigger) else { return }
                 if let metrics = model.scrollHold.metrics { olderCheck(metrics) }
             }
             // An older page went in: put the topmost row the reader could fully see
@@ -2422,14 +2452,17 @@ struct LiveSessionView: View {
             // A pinned list follows the end: a new row, or the last one sending,
             // failing (its "Not delivered" and Retry stay above the composer), sent.
             .onChange(of: chatEndSignature) { _, _ in
+                guard !ChatBisect.off(.noEndObservers) else { return }
                 model.scrollHold.watchFailedRow(failedEndRow)
                 model.scrollHold.endChanged()
             }
             // A row expanding in place where the person tapped stays put.
             .onChange(of: model.selectedMessage) { _, id in
+                guard !ChatBisect.off(.noEndObservers) else { return }
                 if id != nil { model.scrollHold.expanded() }
             }
             .onChange(of: model.reacting) { _, on in
+                guard !ChatBisect.off(.noEndObservers) else { return }
                 if on { model.scrollHold.expanded() }
             }
             .onChange(of: model.log.ordered.last?.id) { _, id in
@@ -2561,17 +2594,22 @@ struct LiveSessionView: View {
         #if DEBUG
         let builds = rowMemo.builds
         defer { if rowMemo.builds != builds { ChatScrollTrace.count(.memoBuild) } }
+        if ChatBisect.off(.noMemo) {
+            ChatScrollTrace.count(.memoBuild)
+            return ChatThread.rows(items: threadItems, context: chatRowContext).map(ChatRowItem.init)
+        }
         #endif
-        return rowMemo.rows(
-            items: threadItems,
-            context: ChatThread.Context(
-                viewerId: model.profile?.id ?? model.viewerId,
-                names: model.memberNames,
-                reads: model.reads,
-                unreadAnchor: model.unreadMarker.anchor,
-                clock: .current,
-                now: Date()
-            )
+        return rowMemo.rows(items: threadItems, context: chatRowContext)
+    }
+
+    private var chatRowContext: ChatThread.Context {
+        ChatThread.Context(
+            viewerId: model.profile?.id ?? model.viewerId,
+            names: model.memberNames,
+            reads: model.reads,
+            unreadAnchor: model.unreadMarker.anchor,
+            clock: .current,
+            now: Date()
         )
     }
 
@@ -3295,7 +3333,7 @@ struct LiveSessionView: View {
             if bubble.startsGroup {
                 ChatGroupHeader(name: bubble.senderName, time: bubble.time, mine: bubble.mine)
             }
-            if let reply = bubble.reply {
+            if let reply = bubble.reply, !ChatBisect.off(.noReplyQuote) {
                 ChatReplyQuoteView(quote: reply)
             }
             Button {
@@ -3311,9 +3349,11 @@ struct LiveSessionView: View {
             .accessibilityLabel(ChatSpeech.bubble(bubble))
             // Not spoken; lets UI tests read sender grouping without measuring gaps.
             .accessibilityIdentifier(ChatSeed.bubbleIdentifier(startsGroup: bubble.startsGroup))
-            .accessibilityActions {
-                ForEach(actions, id: \.title) { action in
-                    Button(action.title) { run(action, on: entry.id) }
+            .chatBisect(.noAXActions) {
+                $0.accessibilityActions {
+                    ForEach(actions, id: \.title) { action in
+                        Button(action.title) { run(action, on: entry.id) }
+                    }
                 }
             }
             .buttonStyle(WideRowButtonStyle())
@@ -3378,7 +3418,7 @@ struct LiveSessionView: View {
             model.selectedMessage = entry.id
             model.reacting = true
         }
-        .contextMenu {
+        .chatBisect(.noContextMenu) { $0.contextMenu {
             if actions.contains(.react) {
                 Section {
                     ForEach(Tapback.allCases) { reaction in
@@ -3395,7 +3435,7 @@ struct LiveSessionView: View {
                     Button { run(.retry, on: entry.id) } label: { Label("Retry sending", systemImage: "arrow.clockwise") }
                 }
             }
-        }
+        } }
     }
 
     private func run(_ action: ChatAction, on id: UUID) {
@@ -3530,7 +3570,7 @@ private struct ChatRowGeometry: ViewModifier {
 
     func body(content: Content) -> some View {
         content.background {
-            if tracksPosition || tracksFit {
+            if tracksPosition || tracksFit, !ChatBisect.off(.noProbe) {
                 ChatRowGeometryProbe(id: id, tracksPosition: tracksPosition, tracksFit: tracksFit, controller: controller)
             }
         }

@@ -1058,6 +1058,75 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertEqual(decision.reason, .clamped)
     }
 
+    // MARK: Prepend landing and settling (6f41b07 paging residual)
+
+    func testScrollToTheVisibleAnchorLandsItBackExactlyWithABottomMargin() {
+        // 6f41b07 paging, msg 70: top at 48.57, unitY 0.10, 16 pt content margin.
+        // Against the whole viewport the framework landed it 1.67 pt up; against the
+        // visible part it lands where it was.
+        let id = UUID()
+        let frames = [id: ChatRowFrame(minY: 6248.57, height: 60)]
+        let viewport = 520.0
+        let whole = ChatPrependHold.visibleAnchor(frames: frames, offset: 6200, viewportHeight: viewport)!
+        let wholeLanding = ChatPrependHold.landing(unitY: whole.unitY, height: 60, viewportHeight: viewport, bottomInset: 16)
+        XCTAssertEqual(wholeLanding - whole.y, -whole.unitY * 16, accuracy: 0.001, "The old residual: unitY times the margin")
+        XCTAssertGreaterThan(abs(wholeLanding - whole.y), 1)
+
+        let visible = ChatPrependHold.visibleAnchor(frames: frames, offset: 6200, viewportHeight: viewport, bottomInset: 16)!
+        XCTAssertEqual(visible.id, id)
+        XCTAssertEqual(visible.y, 48.57, accuracy: 0.001)
+        XCTAssertEqual(ChatPrependHold.landing(unitY: visible.unitY, height: 60, viewportHeight: viewport, bottomInset: 16), visible.y, accuracy: 0.001)
+    }
+
+    func testVisibleAnchorLandsExactlyWithTopAndBottomInsets() {
+        let a = UUID(), b = UUID()
+        let frames = [a: ChatRowFrame(minY: 1005, height: 80), b: ChatRowFrame(minY: 1030, height: 50)]
+        // a's top is under the 20 pt top inset, so b is the topmost whole row.
+        let restore = ChatPrependHold.visibleAnchor(frames: frames, offset: 990, viewportHeight: 400, topInset: 20, bottomInset: 16)!
+        XCTAssertEqual(restore.id, b)
+        XCTAssertEqual(ChatPrependHold.landing(unitY: restore.unitY, height: 50, viewportHeight: 400, topInset: 20, bottomInset: 16), restore.y, accuracy: 0.001)
+    }
+
+    func testARowBehindTheBottomMarginIsNotAVisibleAnchor() {
+        let id = UUID()
+        let frames = [id: ChatRowFrame(minY: 540, height: 50)]
+        XCTAssertNotNil(ChatPrependHold.visibleAnchor(frames: frames, offset: 0, viewportHeight: 600))
+        XCTAssertNil(ChatPrependHold.visibleAnchor(frames: frames, offset: 0, viewportHeight: 600, bottomInset: 16), "Its bottom is under the margin")
+    }
+
+    func testStillReadingsWaitForTheListToBeQuietBeforeSettling() {
+        // 6f41b07: three still readings came 2 ms apart, the hold ended, and
+        // the framework's scroll to the anchor landed afterwards, 1.67 pt off.
+        var hold = ChatPrependHold(anchor: UUID(), offsetBefore: 100, contentHeightBefore: 1000, anchorYBefore: 48.57, generation: 1, insertMovesOffset: false)
+        var m = ChatScrollMetrics(offset: 100, topInset: 0, bottomInset: 16, contentHeight: 1490, viewportHeight: 520)
+        XCTAssertNil(hold.offsetForInsert(m, now: 10.000))
+        XCTAssertEqual(hold.offsetForAnchor(y: 46.90, metrics: m, confirming: false, now: 10.001)!, 98.33, accuracy: 0.001, "Corrected against the pre-insert y")
+        m.offset = 98.33
+        for t in [10.002, 10.003, 10.004] {
+            XCTAssertNil(hold.offsetForAnchor(y: 48.57, metrics: m, now: t))
+        }
+        XCTAssertFalse(hold.settled, "Three still readings in 3 ms aren't the list at rest")
+        XCTAssertTrue(hold.waitingForQuiet)
+        // The framework applies its scroll to the anchor: the list moves, the row is off.
+        hold.listMoved(at: 10.05)
+        m.offset = 100
+        XCTAssertEqual(hold.offsetForAnchor(y: 46.90, metrics: m, now: 10.051)!, 98.33, accuracy: 0.001, "Undone exactly, still measured from the pre-insert y")
+        m.offset = 98.33
+        hold.listMoved(at: 10.052)
+        for t in [10.06, 10.07, 10.08] { _ = hold.offsetForAnchor(y: 48.57, metrics: m, now: t) }
+        XCTAssertFalse(hold.settled)
+        XCTAssertNil(hold.offsetForAnchor(y: 48.57, metrics: m, now: 10.052 + ChatPrependHold.settleQuiet + 0.001))
+        XCTAssertTrue(hold.settled, "Still and quiet: done, at the pre-insert y")
+    }
+
+    func testWithoutAClockStillReadingsSettleAsBefore() {
+        var hold = ChatPrependHold(anchor: UUID(), offsetBefore: 0, contentHeightBefore: 100, anchorYBefore: 10, insertMovesOffset: false)
+        let m = ChatScrollMetrics(offset: 0, topInset: 0, bottomInset: 0, contentHeight: 600, viewportHeight: 300)
+        _ = hold.offsetForInsert(m)
+        for _ in 0..<ChatPrependHold.stableReads { _ = hold.offsetForAnchor(y: 10, metrics: m) }
+        XCTAssertTrue(hold.settled)
+    }
+
     func testViewportStickUsesThePinSlack() {
         XCTAssertEqual(ChatViewportStick.pinnedSlack, 32)
         let near = metrics(offset: 7670, content: 8000, viewport: 300)

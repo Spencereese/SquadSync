@@ -64,13 +64,30 @@ enum ChatRow: Equatable {
 /// list's ForEach reads `id` for every row on every diff; as a computed string
 /// (interpolating a UUID each time) it was the top cost in a profile of the
 /// list, ahead of layout itself.
+///
+/// The row itself sits behind one class reference, so copying an item is a
+/// string and a pointer, not the whole bubble (entry, names, caption, seen line,
+/// reply quote) or spot call (seats array): the lazy stack copies and destroys
+/// every item each time it walks the ForEach (prefetch phases, preferences), and
+/// 6f41b07's thread-groups profile had those copies as its two top frames, with
+/// the reply quote's enum tag checks under them.
 struct ChatRowItem: Identifiable, Equatable {
     let id: String
-    let row: ChatRow
+    private let storage: Storage
+    var row: ChatRow { storage.row }
 
     init(_ row: ChatRow) {
         self.id = row.identity
-        self.row = row
+        self.storage = Storage(row)
+    }
+
+    static func == (lhs: ChatRowItem, rhs: ChatRowItem) -> Bool {
+        lhs.id == rhs.id && (lhs.storage === rhs.storage || lhs.storage.row == rhs.storage.row)
+    }
+
+    private final class Storage {
+        let row: ChatRow
+        init(_ row: ChatRow) { self.row = row }
     }
 }
 

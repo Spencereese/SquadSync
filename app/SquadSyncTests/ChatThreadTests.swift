@@ -332,6 +332,19 @@ final class ChatThreadTests: XCTestCase {
         XCTAssertEqual(stored.map(\.id), rows.map(\.identity))
         XCTAssertEqual(Set(stored.map(\.id)).count, stored.count)
     }
+
+    func testRowItemsCompareByTheirRowNotTheirBox() {
+        let entries = [entry(1, riley, at: -300), entry(2, me, at: -200)]
+        let rows = ChatThread.rows(items: items(entries), context: context(anchor: entries[0].id))
+        let first = rows.map(ChatRowItem.init)
+        let again = rows.map(ChatRowItem.init)
+        XCTAssertEqual(first, again, "Same rows built twice are equal")
+        XCTAssertEqual(first.map(\.row), rows, "The boxed row reads back unchanged")
+        let copy = first
+        XCTAssertEqual(copy, first)
+        let other = ChatThread.rows(items: items([entry(1, riley, at: -300)]), context: context(anchor: nil)).map(ChatRowItem.init)
+        XCTAssertNotEqual(first, other)
+    }
 }
 
 /// The live chat service's reads for S3: newest history, the reply column probe,

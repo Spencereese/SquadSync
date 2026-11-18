@@ -1245,9 +1245,20 @@ final class AccessibilityUITests: XCTestCase {
 
     private func launchChat(_ scenario: String, largeText: Bool = false, extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", scenario] + (largeText ? ["-uitest-largeText"] : []) + extra
+        app.launchArguments = ["-backend", "mock", "-scenario", scenario] + (largeText ? ["-uitest-largeText"] : []) + extra + Self.chatBisectArguments
         app.launch()
         return app
+    }
+
+    /// DEBUG app builds only: `SQ_CHAT_BISECT=no-probe,end-text` (to xcodebuild as
+    /// `TEST_RUNNER_SQ_CHAT_BISECT=…`) launches the chat with those pieces of the
+    /// message list switched off (ChatBisect). Unset, nothing changes.
+    private static var chatBisectArguments: [String] {
+        let raw = ProcessInfo.processInfo.environment["SQ_CHAT_BISECT"] ?? ""
+        return raw.split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .map { $0 == "all" ? "-chat-bisect-all" : "-chat-bisect-\($0)" }
     }
 
     private func element(_ identifier: String, in app: XCUIApplication) -> XCUIElement {

@@ -44,7 +44,7 @@ final class ChatScrollController: NSObject {
     /// Rechecks since the hold was made; a hold whose anchor never reports again
     /// can't stay forever (it blocks the bottom pin).
     private var holdRechecks = 0
-    private static let maxHoldRechecks = 30
+    private static let maxHoldRechecks = 60
 
     /// The person has dragged the list since this squad loaded.
     private(set) var userHasScrolled = false
@@ -162,7 +162,7 @@ final class ChatScrollController: NSObject {
     }
 
     private func settlePinnedEnd() {
-        guard let view = scrollView, pin.pinned, hold == nil else { return }
+        guard let view = scrollView, pin.pinned, hold == nil, !ChatBisect.off(.noPin) else { return }
         guard !(view.isTracking || view.isDragging || view.isDecelerating) else { return }
         let metrics = Self.metrics(of: view)
         if abs(metrics.maxOffset - metrics.offset) > 0.5 {
@@ -278,7 +278,7 @@ final class ChatScrollController: NSObject {
         let frames = rows.framesMeasured(since: generation - 1)
         // From here on, every report is from a layout that has the page.
         rows.begin(generation: generation)
-        if let restore = ChatPrependHold.visibleAnchor(frames: frames, offset: resting, viewportHeight: before.viewportHeight) {
+        if let restore = ChatPrependHold.visibleAnchor(frames: frames, offset: resting, viewportHeight: before.viewportHeight, topInset: before.topInset, bottomInset: before.bottomInset) {
             hold = ChatPrependHold(
                 anchor: restore.id,
                 offsetBefore: resting,
@@ -287,7 +287,7 @@ final class ChatScrollController: NSObject {
                 generation: generation,
                 insertMovesOffset: false
             )
-            ChatScrollTrace.hold("start gen=\(generation) anchor=\(ChatScrollTrace.short(restore.id)) visible y=\(ChatScrollTrace.pt(restore.y)) unitY=\(ChatScrollTrace.pt(restore.unitY)) tracked=\(frames.count)")
+            ChatScrollTrace.hold("start gen=\(generation) anchor=\(ChatScrollTrace.short(restore.id)) visible y=\(ChatScrollTrace.pt(restore.y)) unitY=\(ChatScrollTrace.pt(restore.unitY)) insets=\(ChatScrollTrace.pt(before.topInset))/\(ChatScrollTrace.pt(before.bottomInset)) tracked=\(frames.count)")
             return restore
         }
         let fallbackY = frames[oldest].map { $0.minY - resting }
@@ -334,7 +334,7 @@ final class ChatScrollController: NSObject {
         guard let measured = rows.measured(current.anchor), measured.generation >= current.generation else { return }
         let metrics = Self.metrics(of: view)
         let y = measured.frame.minY - metrics.offset
-        let target = current.offsetForAnchor(y: y, measuredIn: measured.generation, metrics: metrics, confirming: confirming)
+        let target = current.offsetForAnchor(y: y, measuredIn: measured.generation, metrics: metrics, confirming: confirming, now: CACurrentMediaTime())
         ChatScrollTrace.count(.holdDecision)
         if let target {
             ChatScrollTrace.hold("correct anchor=\(ChatScrollTrace.short(current.anchor)) pre=\(ChatScrollTrace.pt(before)) post=\(ChatScrollTrace.pt(y)) dy=\(ChatScrollTrace.pt(y - before)) -> \(ChatScrollTrace.pt(target))")
@@ -345,10 +345,11 @@ final class ChatScrollController: NSObject {
         }
         hold = current.settled ? nil : current
         if let target { set(view, offset: target) }
-        if hold != nil { scheduleHoldRecheck() }
+        // Still, but the list moved a moment ago: read again once it's been quiet.
+        if let hold { scheduleHoldRecheck(after: hold.waitingForQuiet ? ChatPrependHold.settleQuiet : 0) }
     }
 
-    private func scheduleHoldRecheck() {
+    private func scheduleHoldRecheck(after delay: Double = 0) {
         guard !holdRecheckScheduled else { return }
         holdRechecks += 1
         guard holdRechecks <= Self.maxHoldRechecks else {
@@ -356,7 +357,7 @@ final class ChatScrollController: NSObject {
             return
         }
         holdRecheckScheduled = true
-        DispatchQueue.main.async { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self else { return }
             self.holdRecheckScheduled = false
             if let view = self.scrollView { self.applyHold(view, confirming: true) }
@@ -377,7 +378,10 @@ final class ChatScrollController: NSObject {
         ChatScrollTrace.count(.offsetChange)
         // The scroll back to the anchor (or a correction) moved the list: read the
         // anchor again a turn later, after the layout that move causes.
-        if hold?.insertApplied == true { scheduleHoldRecheck() }
+        if hold?.insertApplied == true {
+            hold?.listMoved(at: CACurrentMediaTime())
+            scheduleHoldRecheck()
+        }
         repin(view, change: .offset)
         onGeometry?(Self.metrics(of: view))
     }
@@ -385,6 +389,7 @@ final class ChatScrollController: NSObject {
     /// Back to the bottom for the changes a pinned list follows (see ChatBottomPin).
     /// The person's drags and flings decide whether it's pinned.
     private func repin(_ view: UIScrollView, change: ChatBottomPin.Change) {
+        guard !ChatBisect.off(.noPin) else { return }
         let interacting = view.isTracking || view.isDragging || view.isDecelerating
         let wasSuspended = pin.suspended
         let target = pin.observe(Self.metrics(of: view), change: change, interacting: interacting, holding: hold != nil, now: CACurrentMediaTime())
@@ -418,7 +423,7 @@ final class ChatScrollController: NSObject {
         // ever run. Before, that copy was dropped, so the scroll to the anchor's
         // unit point was the only placement and its rounding stayed as drift.
         if var current = hold, !current.insertApplied {
-            let target = current.offsetForInsert(Self.metrics(of: view))
+            let target = current.offsetForInsert(Self.metrics(of: view), now: CACurrentMediaTime())
             if current.insertApplied {
                 ChatScrollTrace.hold("insert in gen=\(current.generation): content \(ChatScrollTrace.pt(current.contentHeightBefore)) -> \(ChatScrollTrace.pt(Double(view.contentSize.height))) step1=\(target.map(ChatScrollTrace.pt) ?? "none (scroll to anchor places it)")")
             }
@@ -436,7 +441,7 @@ final class ChatScrollController: NSObject {
         var before = after
         before.viewportHeight = oldHeight
         // Mid-cycle (see ChatBottomPin) the stick would be one more mover.
-        if !pin.suspended, let target = ChatViewportStick.offset(before: before, after: after) {
+        if !pin.suspended, !ChatBisect.off(.noPin), let target = ChatViewportStick.offset(before: before, after: after) {
             ChatScrollTrace.count(.pinCorrection)
             set(view, offset: target)
         }
@@ -525,6 +530,7 @@ enum ChatScrollTrace {
 
     static func count(_ counter: Counter) {
         #if DEBUG
+        guard !ChatBisect.off(.noTrace) else { return }
         counts[counter.rawValue] += 1
         scheduleFlush()
         #endif
@@ -573,6 +579,93 @@ enum ChatScrollTrace {
     #endif
 }
 
+
+/// DEBUG-only switches that each take one piece of the message list out, so a
+/// Mac run can bisect a hang in one pass without a rebuild. Launch argument
+/// `-chat-bisect-<name>` (UI tests: env `SQ_CHAT_BISECT=<name>[,<name>…]`, passed
+/// to the test runner as `TEST_RUNNER_SQ_CHAT_BISECT`). `-chat-bisect-all` turns
+/// every one on (close to d6921b9's list). Release builds: none, ever. Fixed for
+/// the life of the process, so a switched-off piece never changes identity.
+enum ChatBisect: String, CaseIterable {
+    /// The tracked-row geometry probe (ChatRowGeometry) in each row's background.
+    case noProbe = "no-probe"
+    /// The reply quote above a reply.
+    case noReplyQuote = "no-replyquote"
+    /// The spot slot's TimelineView (rendered once, without a clock).
+    case noTimeline = "no-timeline"
+    /// ChatRowMemo (rows rebuilt on every render, as in d6921b9).
+    case noMemo = "no-memo"
+    /// Older-page checks from scroll geometry, and the paging row.
+    case noOlderTrigger = "no-oldertrigger"
+    /// The controller's bottom pin, viewport stick and pinned-end settle.
+    case noPin = "no-pin"
+    /// ChatPinModifier (the jump-to-latest pill's pinned state).
+    case noPinModifier = "no-pinmodifier"
+    /// ChatScrollBridge: the controller never finds the UIScrollView (no KVO,
+    /// hold, pin, fit; the list is a plain ScrollView).
+    case noBridge = "no-bridge"
+    /// The message stack's named coordinate space (67194b3).
+    case noContentSpace = "no-contentspace"
+    /// d6921b9's end marker (clear caption text) instead of the 1 pt one.
+    case endText = "end-text"
+    /// Each row's context menu.
+    case noContextMenu = "no-contextmenu"
+    /// Each bubble's accessibility actions.
+    case noAXActions = "no-axactions"
+    /// The end-of-thread, selection and reacting onChange handlers (67194b3).
+    case noEndObservers = "no-endobservers"
+    /// ChatScrollTrace counting (the 1s lines; events still log).
+    case noTrace = "no-trace"
+    /// A plain VStack for the message stack instead of the LazyVStack: no lazy
+    /// prefetch, no lazy preferences (fine for the small mock threads).
+    case noLazy = "no-lazy"
+
+    var argument: String { "-chat-bisect-" + rawValue }
+
+    static let active: Set<ChatBisect> = {
+        #if DEBUG
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-chat-bisect-all") { return Set(ChatBisect.allCases) }
+        return Set(ChatBisect.allCases.filter { arguments.contains($0.argument) })
+        #else
+        return []
+        #endif
+    }()
+
+    static func off(_ piece: ChatBisect) -> Bool {
+        #if DEBUG
+        return active.contains(piece)
+        #else
+        return false
+        #endif
+    }
+
+    /// Logs the switches in effect once, so a log shows which run it was.
+    @MainActor static func announce() {
+        #if DEBUG
+        guard !announced else { return }
+        announced = true
+        let names = ChatBisect.allCases.filter { ChatBisect.active.contains($0) }.map(\.rawValue)
+        ChatScrollTrace.event("bisect: \(names.isEmpty ? "none" : names.joined(separator: ","))")
+        #endif
+    }
+
+    #if DEBUG
+    @MainActor private static var announced = false
+    #endif
+}
+
+extension View {
+    /// `transform(self)`, or just `self` while `piece` is bisected out.
+    @ViewBuilder
+    func chatBisect<Result: View>(_ piece: ChatBisect, _ transform: (Self) -> Result) -> some View {
+        if ChatBisect.off(piece) {
+            self
+        } else {
+            transform(self)
+        }
+    }
+}
 
 /// A zero-size view inside the list's content that finds the enclosing
 /// UIScrollView and hands it to the controller.

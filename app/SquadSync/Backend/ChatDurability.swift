@@ -163,7 +163,15 @@ struct ChatPrependHold: Equatable {
     /// (each a run-loop turn after the previous, after any layout it caused).
     private(set) var inPlaceReads = 0
     private(set) var corrections = 0
+    /// When the list last moved (the insert, a correction, or SwiftUI placing
+    /// the scroll to the anchor), on the controller's clock. Nil without a clock.
+    private(set) var lastMovedAt: Double?
     static let stableReads = 3
+    /// Still readings only settle the hold once the list hasn't moved for this
+    /// long: SwiftUI applies its scroll to the anchor in a later layout than the
+    /// one the readings come from, and a hold that has already ended can't undo
+    /// it. A few frames.
+    static let settleQuiet = 0.12
     /// Any drift past this is corrected exactly; it's under a pixel on 2x and
     /// 3x screens, so a settled hold is always within half a point.
     static let tolerance = 0.25
@@ -179,50 +187,84 @@ struct ChatPrependHold: Equatable {
         self.insertMovesOffset = insertMovesOffset
     }
 
-    /// The topmost row whose whole frame is on screen (top at or below 0, bottom
-    /// at or above the viewport's bottom), from content-space frames of laid-out
-    /// rows and the current offset. `unitY` is the point of the row, as a share of
-    /// its height, that lines up with the same share of the viewport when the list
-    /// scrolls to it, so its top lands back at `y`.
-    static func visibleAnchor(frames: [UUID: ChatRowFrame], offset: Double, viewportHeight: Double) -> ChatPrependRestore? {
+    /// The topmost row whose whole frame is inside the visible part of the list
+    /// (below `topInset`, above the viewport less `bottomInset`), from
+    /// content-space frames of laid-out rows and the current offset.
+    ///
+    /// `unitY` is the point of the row, as a share of its height, that SwiftUI
+    /// lines up with the same share of the visible part when the list scrolls to
+    /// it, so its top lands back at `y`. The visible part, not the whole
+    /// viewport: SwiftUI leaves the content insets (the list's bottom content
+    /// margin) out. Against the whole viewport the row landed `unitY` times the
+    /// bottom inset too high: 6f41b07's paging runs logged unitY 0.04, 0.06, 0.08,
+    /// 0.10 with the rows 0.67, 1.0, 1.33, 1.67 pt up (16 pt margin), and
+    /// SwiftUI kept re-applying that landing over the hold's exact corrections.
+    static func visibleAnchor(frames: [UUID: ChatRowFrame], offset: Double, viewportHeight: Double, topInset: Double = 0, bottomInset: Double = 0) -> ChatPrependRestore? {
+        let visibleBottom = viewportHeight - bottomInset
         let onScreen = frames.compactMap { id, frame -> (UUID, Double, Double)? in
             let y = frame.minY - offset
-            guard y >= 0, y + frame.height <= viewportHeight, frame.height > 0 else { return nil }
+            guard y >= topInset, y + frame.height <= visibleBottom, frame.height > 0 else { return nil }
             return (id, y, frame.height)
         }
         guard let top = onScreen.min(by: { $0.1 != $1.1 ? $0.1 < $1.1 : $0.0.uuidString < $1.0.uuidString }) else { return nil }
-        let room = viewportHeight - top.2
-        let unitY = room > 0 ? min(max(top.1 / room, 0), 1) : 0
+        let room = visibleBottom - topInset - top.2
+        let unitY = room > 0 ? min(max((top.1 - topInset) / room, 0), 1) : 0
         return ChatPrependRestore(id: top.0, y: top.1, unitY: unitY)
+    }
+
+    /// Where SwiftUI puts the row's top for a scroll to it at `unitY`: the same
+    /// share of the visible part's free room. `visibleAnchor` picks `unitY` so this
+    /// is the row's `y` again.
+    static func landing(unitY: Double, height: Double, viewportHeight: Double, topInset: Double = 0, bottomInset: Double = 0) -> Double {
+        topInset + unitY * (viewportHeight - topInset - bottomInset - height)
     }
 
     /// Step 1. Returns the new offset for the first content growth after the hold
     /// was made, or nil when this change isn't it.
-    mutating func offsetForInsert(_ metrics: ChatScrollMetrics) -> Double? {
+    mutating func offsetForInsert(_ metrics: ChatScrollMetrics, now: Double? = nil) -> Double? {
         guard !insertApplied else { return nil }
         let growth = metrics.contentHeight - contentHeightBefore
         guard growth > 0 else { return nil }
         insertApplied = true
         if anchorYBefore == nil { settled = true }
+        if let now { lastMovedAt = now }
         guard insertMovesOffset else { return nil }
         return metrics.clamped(offsetBefore + growth)
     }
 
+    /// The list moved (from anything: SwiftUI's own scroll to the anchor, a
+    /// correction landing): still readings start counting the quiet from here.
+    mutating func listMoved(at now: Double) {
+        guard insertApplied, !settled else { return }
+        lastMovedAt = now
+    }
+
+    /// Still readings are in but the list moved too recently to end the hold.
+    var waitingForQuiet: Bool {
+        insertApplied && !settled && inPlaceReads >= Self.stableReads
+    }
+
     /// Step 2. Returns the corrected offset when the anchor has drifted, nil when
-    /// it's in place (which settles the hold).
+    /// it's in place (which settles the hold once there are `stableReads` of them
+    /// and, with a clock, the list has been still for `settleQuiet`). Drift is
+    /// always measured against the anchor's pre-insert `y`, never the previous
+    /// reading, so a correction can't leave a residual behind.
     /// `measuredIn` is the generation of the layout the anchor's position came
     /// from; a position from before the page went in is ignored, not corrected for.
-    mutating func offsetForAnchor(y: Double, measuredIn: Int = .max, metrics: ChatScrollMetrics, confirming: Bool = true) -> Double? {
+    mutating func offsetForAnchor(y: Double, measuredIn: Int = .max, metrics: ChatScrollMetrics, confirming: Bool = true, now: Double? = nil) -> Double? {
         guard insertApplied, !settled, measuredIn >= generation, let before = anchorYBefore else { return nil }
         let drift = y - before
         guard abs(drift) > Self.tolerance else {
             guard confirming else { return nil }
             inPlaceReads += 1
-            if inPlaceReads >= Self.stableReads { settled = true }
+            let quiet: Bool
+            if let now, let lastMovedAt { quiet = now - lastMovedAt >= Self.settleQuiet } else { quiet = true }
+            if inPlaceReads >= Self.stableReads, quiet { settled = true }
             return nil
         }
         inPlaceReads = 0
         corrections += 1
+        if let now { lastMovedAt = now }
         if corrections >= Self.maxCorrections { settled = true }
         return metrics.clamped(metrics.offset + drift)
     }

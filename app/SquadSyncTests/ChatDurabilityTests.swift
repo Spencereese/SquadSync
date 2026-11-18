@@ -691,6 +691,60 @@ final class ChatDurabilityTests: XCTestCase {
 
     // MARK: Holding the place: only fresh positions, until it's still
 
+    func testVisibleAnchorIsTheTopmostFullyVisibleRow() {
+        // Gated paging run: message 60 is 300pt above the screen (and may be dropped
+        // by the lazy stack), 68 is cut off at the top, 69 is the first whole row.
+        let frames: [UUID: ChatRowFrame] = [
+            ChatLongSeed.id(60): ChatRowFrame(minY: 1000, height: 50),
+            ChatLongSeed.id(68): ChatRowFrame(minY: 1288, height: 50),
+            ChatLongSeed.id(69): ChatRowFrame(minY: 1330, height: 60),
+            ChatLongSeed.id(70): ChatRowFrame(minY: 1390, height: 50),
+            ChatLongSeed.id(80): ChatRowFrame(minY: 1880, height: 50)  // past the bottom edge
+        ]
+        let restore = ChatPrependHold.visibleAnchor(frames: frames, offset: 1300, viewportHeight: 600)
+        XCTAssertEqual(restore?.id, ChatLongSeed.id(69))
+        XCTAssertEqual(restore?.y, 30)
+        XCTAssertEqual(restore?.unitY ?? -1, 30.0 / 540.0, accuracy: 0.0001, "Scrolling to (0.5, unitY) puts its top back at 30")
+        XCTAssertNil(ChatPrependHold.visibleAnchor(frames: [ChatLongSeed.id(60): ChatRowFrame(minY: 1000, height: 50)], offset: 1300, viewportHeight: 600),
+                     "Nothing whole on screen: fall back")
+        let tall = ChatPrependHold.visibleAnchor(frames: [ChatLongSeed.id(5): ChatRowFrame(minY: 1300, height: 600)], offset: 1300, viewportHeight: 600)
+        XCTAssertEqual(tall?.unitY, 0, "A row exactly the list's height scrolls to its top")
+    }
+
+    func testVisibleAnchorHoldIgnoresTheEstimatedGrowth() {
+        // The page adds 2500pt of estimates (and re-estimates rows below the screen);
+        // moving the offset by that would throw row 69 out of the laid-out range.
+        var hold = ChatPrependHold(anchor: ChatLongSeed.id(69), offsetBefore: 1300, contentHeightBefore: 12_000,
+                                   anchorYBefore: 30, generation: 1, insertMovesOffset: false)
+        XCTAssertNil(hold.offsetForInsert(metrics(offset: 1300, content: 14_500)), "No move on content growth")
+        XCTAssertTrue(hold.insertApplied)
+        XCTAssertFalse(hold.settled)
+        // After the scroll back to row 69 it reports 3pt low; corrected exactly, then still twice.
+        XCTAssertEqual(hold.offsetForAnchor(y: 33, measuredIn: 1, metrics: metrics(offset: 3780, content: 14_500)), 3783)
+        XCTAssertNil(hold.offsetForAnchor(y: 30, measuredIn: 1, metrics: metrics(offset: 3783, content: 14_500)))
+        XCTAssertNil(hold.offsetForAnchor(y: 30, measuredIn: 1, metrics: metrics(offset: 3783, content: 14_500)))
+        XCTAssertTrue(hold.settled)
+    }
+
+    func testThreadOrderIsKeptAcrossChanges() {
+        var log = ChatLog()
+        let base = Date(timeIntervalSince1970: 1_800_000_000)
+        let a = UUID(), b = UUID(), c = UUID()
+        log.ingest([ChatEntry(id: b, senderId: UUID(), body: "b", sentAt: base.addingTimeInterval(20), delivery: .sent),
+                    ChatEntry(id: a, senderId: UUID(), body: "a", sentAt: base.addingTimeInterval(10), delivery: .sent)])
+        XCTAssertEqual(log.ordered.map(\.id), [a, b])
+        log.beginSend(id: c, senderId: UUID(), body: "c", now: base.addingTimeInterval(5))
+        XCTAssertEqual(log.ordered.map(\.id), [c, a, b], "A send in the past sorts in")
+        log.ingest([ChatEntry(id: c, senderId: UUID(), body: "c", sentAt: base.addingTimeInterval(30), delivery: .sent)])
+        XCTAssertEqual(log.ordered.map(\.id), [a, b, c], "The server's time moves it")
+        XCTAssertEqual(log.ordered.last?.delivery, .sent)
+        log.markFailed(id: a)
+        XCTAssertEqual(log.ordered.first?.delivery, .failed, "In-place changes show in the ordered thread")
+        log.remove(id: b)
+        XCTAssertEqual(log.ordered.map(\.id), [a, c])
+        XCTAssertEqual(log.ordered, ChatLog.sorted(log.entries))
+    }
+
     func testHoldKeepsCorrectingUntilTheAnchorIsStill() {
         // Message 60 at y 40 (the reader sees 68-71 below it). Rows above realize in
         // two passes, each moving it; the hold follows both and ends only after two

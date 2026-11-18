@@ -41,6 +41,10 @@ final class LiveSessionModel {
     /// The previous oldest message while an older page goes in above it; its row
     /// keeps reporting where it is so the list can hold it in place.
     var olderHoldAnchor: UUID?
+    /// Bumped with where to scroll when an older page goes in, so the topmost row
+    /// the reader could fully see stays where it was (see ChatPrependHold).
+    private(set) var olderRestore: ChatPrependRestore?
+    private(set) var olderRestoreSerial = 0
     /// The message list's scroll view: paging trigger and place-keeping geometry.
     let scrollHold = ChatScrollController()
     /// Bumped when the viewer calls spots, so the list brings the card into view.
@@ -1566,10 +1570,14 @@ final class LiveSessionModel {
             // when something new is going in, so the hold always sees the growth).
             let known = Set(log.entries.map(\.id))
             if rows.contains(where: { !known.contains($0.id) }) {
-                olderHoldAnchor = cursor.id
-                scrollHold.prepareForPrepend(anchor: cursor.id, generation: olderPagesLoaded + 1)
+                let restore = scrollHold.prepareForPrepend(oldest: cursor.id, generation: olderPagesLoaded + 1)
+                olderHoldAnchor = restore?.id ?? cursor.id
+                olderRestore = restore
+            } else {
+                olderRestore = nil
             }
             log.ingest(rows.map { $0.entry() })
+            if olderRestore != nil { olderRestoreSerial += 1 }
             olderPagedThisSquad = true
             olderPagesLoaded += 1
             olderPaging.finish(rowCount: rows.count)
@@ -2275,7 +2283,15 @@ struct LiveSessionView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .coordinateSpace(name: ChatRowYReporter.space)
-                    .background(ChatContentFrame())
+                    .background {
+                        // iOS 17 only: newer systems read scroll geometry directly
+                        // (ChatPinModifier), so no per-frame preference there.
+                        if #available(iOS 18.0, *) {
+                            EmptyView()
+                        } else {
+                            ChatContentFrame()
+                        }
+                    }
                     .background(ChatScrollBridge(controller: model.scrollHold))
                     // Takes (almost) no height, so at AX5 with the keyboard up the
                     // last message's caption isn't pushed out by an invisible row;
@@ -2378,6 +2394,17 @@ struct LiveSessionView: View {
             .onChange(of: model.olderPaging.state) { _, _ in
                 if let metrics = model.scrollHold.metrics { olderCheck(metrics) }
             }
+            // An older page went in: put the topmost row the reader could fully see
+            // back where it was. The framework lays that row out exactly, so the
+            // lazy stack's estimated heights for the new rows don't move it.
+            .onChange(of: model.olderRestoreSerial) { _, _ in
+                guard let restore = model.olderRestore else { return }
+                var transaction = Transaction()
+                transaction.disablesAnimations = true
+                withTransaction(transaction) {
+                    proxy.scrollTo(restore.id, anchor: UnitPoint(x: 0.5, y: restore.unitY))
+                }
+            }
             // The viewer called spots: the card is at the top of the thread.
             .onChange(of: model.spotCalledSerial) { _, _ in
                 model.scrollHold.endHold()
@@ -2453,12 +2480,26 @@ struct LiveSessionView: View {
 
     /// Rows whose position the scroll controller needs: the oldest loaded message
     /// (the paging trigger and the next hold's anchor) and the current hold's anchor.
+    ///
+    /// Only while older pages can still come (idle or loading): then the first
+    /// `trackedWindow` messages, which covers what's on screen whenever a page is
+    /// asked for (it's asked for once the oldest is laid out near the screen), so
+    /// the hold can anchor on a row the reader sees. Rows report only while laid
+    /// out, and only on layout changes. A whole chat (Start of chat) tracks
+    /// nothing, so a settled list does no reporting work.
     private var scrollTrackedIds: Set<UUID> {
         var ids = Set<UUID>()
-        if let oldest = ChatOlderPaging.cursor(model.log)?.id { ids.insert(oldest) }
         if let anchor = model.olderHoldAnchor { ids.insert(anchor) }
+        switch model.olderPaging.state {
+        case .idle, .loading:
+            for entry in model.log.ordered.prefix(Self.trackedWindow) { ids.insert(entry.id) }
+        case .failed, .reachedStart:
+            break
+        }
         return ids
     }
+
+    private static let trackedWindow = 40
 
     /// The thread's end: the last row and its send state. A change means a new
     /// row at the end, or the last one sending, failing, or sent.
@@ -3444,9 +3485,10 @@ private struct ChatRowYReporter: View {
 
     var body: some View {
         GeometryReader { geo in
+            let frame = geo.frame(in: .named(Self.space))
             Color.clear.preference(
                 key: ChatRowYKey.self,
-                value: ChatRowReport(rows: [id: geo.frame(in: .named(Self.space)).minY], generation: generation)
+                value: ChatRowReport(rows: [id: ChatRowFrame(minY: frame.minY, height: frame.height)], generation: generation)
             )
         }
         .accessibilityHidden(true)

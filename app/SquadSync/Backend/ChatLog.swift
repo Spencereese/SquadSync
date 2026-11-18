@@ -20,10 +20,16 @@ struct ChatEntry: Equatable, Identifiable {
 }
 
 struct ChatLog: Equatable {
-    private(set) var entries: [ChatEntry] = []
+    private(set) var entries: [ChatEntry] = [] {
+        didSet { ordered = Self.sorted(entries) }
+    }
     private(set) var lastReadAt: Date?
 
-    var ordered: [ChatEntry] {
+    /// Oldest first (time, then id). Sorted once per change to the thread, not on
+    /// every read: the list reads it on every render and scroll change.
+    private(set) var ordered: [ChatEntry] = []
+
+    static func sorted(_ entries: [ChatEntry]) -> [ChatEntry] {
         entries.sorted { lhs, rhs in
             if lhs.sentAt != rhs.sentAt { return lhs.sentAt < rhs.sentAt }
             return lhs.id.uuidString < rhs.id.uuidString
@@ -62,19 +68,24 @@ struct ChatLog: Equatable {
 
     /// Server rows and our own echo share an id. One row remains, marked sent.
     mutating func ingest(_ remote: [ChatEntry]) {
+        // One assignment at the end, so a 50-row page sorts once.
+        var updated = entries
+        var index = Dictionary(updated.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         for item in remote {
-            if let index = entries.firstIndex(where: { $0.id == item.id }) {
-                entries[index].body = item.body
-                entries[index].sentAt = item.sentAt
-                entries[index].delivery = .sent
-                if let reply = item.replyToId { entries[index].replyToId = reply }
-                if let stamp = item.serverStamp { entries[index].serverStamp = stamp }
+            if let at = index[item.id] {
+                updated[at].body = item.body
+                updated[at].sentAt = item.sentAt
+                updated[at].delivery = .sent
+                if let reply = item.replyToId { updated[at].replyToId = reply }
+                if let stamp = item.serverStamp { updated[at].serverStamp = stamp }
             } else {
                 var stored = item
                 stored.delivery = .sent
-                entries.append(stored)
+                index[item.id] = updated.count
+                updated.append(stored)
             }
         }
+        entries = updated
     }
 
     /// A full refresh of the same squad merges. Switching squads drops the previous thread, including unconfirmed sends for that squad.

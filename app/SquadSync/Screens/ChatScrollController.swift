@@ -17,15 +17,20 @@ final class ChatScrollController: NSObject {
     /// Whether the reader is staying at the newest message.
     private var pin = ChatBottomPin()
     private var turnEndScheduled = false
-    /// Content-space y of the tracked rows (the oldest loaded message and the
-    /// hold's anchor) that are laid out now, from the latest report only: a row
+    /// Content-space frames of the tracked rows (near the top of the loaded thread
+    /// while older pages can still come, and the hold's anchor) that are laid out
+    /// now, from the latest report only: a row
     /// the lazy stack dropped is gone, so a stale position can't claim it's on
     /// screen. Content space doesn't change while the list scrolls, so reports
     /// come only when layout does. `reportGeneration` is the layout generation
     /// (older pages in) the report was measured in.
-    private var rowContentY: [UUID: Double] = [:]
+    private var rowFrames: [UUID: ChatRowFrame] = [:]
     private var reportGeneration = 0
     private var holdRecheckScheduled = false
+    /// Rechecks since the hold was made; a hold whose anchor never reports again
+    /// can't stay forever (it blocks the bottom pin).
+    private var holdRechecks = 0
+    private static let maxHoldRechecks = 30
 
     /// The person has dragged the list since this squad loaded.
     private(set) var userHasScrolled = false
@@ -48,8 +53,8 @@ final class ChatScrollController: NSObject {
 
     /// On-screen y of a reported row, from its content position and the current offset.
     func screenY(of id: UUID) -> Double? {
-        guard let contentY = rowContentY[id], let metrics else { return nil }
-        return contentY - metrics.offset
+        guard let frame = rowFrames[id], let metrics else { return nil }
+        return frame.minY - metrics.offset
     }
 
 
@@ -68,6 +73,12 @@ final class ChatScrollController: NSObject {
             view.observe(\.contentSize, options: [.new]) { [weak self] view, _ in
                 MainActor.assumeIsolated { self?.contentSizeChanged(view) }
             },
+            // contentMargins and the keyboard can change the insets with no offset
+            // or size change; a pinned list follows that too.
+            view.observe(\.contentInset, options: [.old, .new]) { [weak self] view, change in
+                guard change.oldValue != change.newValue else { return }
+                MainActor.assumeIsolated { self?.repin(view, change: .viewport) }
+            },
             view.layer.observe(\.bounds, options: [.old, .new]) { [weak self, weak view] _, change in
                 guard let old = change.oldValue, let new = change.newValue, old.size.height != new.size.height else { return }
                 MainActor.assumeIsolated {
@@ -84,7 +95,7 @@ final class ChatScrollController: NSObject {
         requestInFlight = false
         hold = nil
         pin.reset()
-        rowContentY = [:]
+        rowFrames = [:]
     }
 
     /// Before the person's own scroll (jump to a message, to the latest) so a hold
@@ -101,7 +112,7 @@ final class ChatScrollController: NSObject {
         hold = nil
         // Positions from before a jump say nothing about where rows are after it;
         // the next report fills them in again.
-        rowContentY = [:]
+        rowFrames = [:]
     }
 
     /// The person tapped something that grows in place (reaction menu, locking the
@@ -114,20 +125,36 @@ final class ChatScrollController: NSObject {
     /// follows the content growth from it until that layout is done.
     func endChanged() {
         pin.endChanged()
-        // Two main-queue hops: past this update's layout pass and the one after.
+        // Two main-queue hops: past this update's layout pass and the one after
+        // (the composer and header finish changing size). Then once more to the
+        // bottom if still pinned, for anything that moved without a notification,
+        // so a failed message's "Not delivered" and Retry end above the composer.
         DispatchQueue.main.async { [weak self] in
-            DispatchQueue.main.async { self?.pin.endSettled() }
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.pin.endSettled()
+                self.settlePinnedEnd()
+            }
         }
         scheduleTurnEnd()
     }
 
+    private func settlePinnedEnd() {
+        guard let view = scrollView, pin.pinned, hold == nil else { return }
+        guard !(view.isTracking || view.isDragging || view.isDecelerating) else { return }
+        let metrics = Self.metrics(of: view)
+        if abs(metrics.maxOffset - metrics.offset) > 0.5 { set(view, offset: metrics.maxOffset) }
+    }
+
     // MARK: Older pages
 
-    /// Call right before older rows go into the thread. `anchor` is the current
-    /// oldest message; `generation` is the layout generation the rows will be
-    /// reported with once they're in.
-    func prepareForPrepend(anchor: UUID, generation: Int) {
-        guard let view = scrollView else { return }
+    /// Call right before older rows go into the thread. `oldest` is the current
+    /// oldest message (the fallback anchor); `generation` is the layout generation
+    /// the rows will be reported with once they're in. Returns where to scroll so
+    /// the topmost fully visible row stays put, or nil when no tracked row is on
+    /// screen (then the content-growth step and the fallback anchor hold it).
+    func prepareForPrepend(oldest: UUID, generation: Int) -> ChatPrependRestore? {
+        guard let view = scrollView else { return nil }
         let before = Self.metrics(of: view)
         // Stop the fling (and any bounce past the top) so the corrections below
         // aren't competing with momentum.
@@ -135,20 +162,32 @@ final class ChatScrollController: NSObject {
         if view.isDecelerating || resting != before.offset {
             set(view, offset: resting)
         }
-        // Its live position, or nil when it isn't laid out (then nothing the reader
-        // sees is near the insert, and step 1 alone holds the place).
+        let contentHeight = Double(view.contentSize.height)
+        holdRechecks = 0
+        if let restore = ChatPrependHold.visibleAnchor(frames: rowFrames, offset: resting, viewportHeight: before.viewportHeight) {
+            hold = ChatPrependHold(
+                anchor: restore.id,
+                offsetBefore: resting,
+                contentHeightBefore: contentHeight,
+                anchorYBefore: restore.y,
+                generation: generation,
+                insertMovesOffset: false
+            )
+            return restore
+        }
         hold = ChatPrependHold(
-            anchor: anchor,
+            anchor: oldest,
             offsetBefore: resting,
-            contentHeightBefore: Double(view.contentSize.height),
-            anchorYBefore: rowContentY[anchor].map { $0 - resting },
+            contentHeightBefore: contentHeight,
+            anchorYBefore: rowFrames[oldest].map { $0.minY - resting },
             generation: generation
         )
+        return nil
     }
 
-    /// The tracked rows' tops in content space, from the list's preference.
+    /// The tracked rows' frames in content space, from the list's preference.
     func rowsMoved(_ report: ChatRowReport) {
-        rowContentY = report.rows.mapValues { Double($0) }
+        rowFrames = report.rows
         reportGeneration = report.generation
         guard let view = scrollView else { return }
         applyHold(view)
@@ -164,9 +203,9 @@ final class ChatScrollController: NSObject {
             hold = nil
             return
         }
-        guard reportGeneration >= current.generation, let contentY = rowContentY[current.anchor] else { return }
+        guard reportGeneration >= current.generation, let frame = rowFrames[current.anchor] else { return }
         let metrics = Self.metrics(of: view)
-        let target = current.offsetForAnchor(y: contentY - metrics.offset, measuredIn: reportGeneration, metrics: metrics)
+        let target = current.offsetForAnchor(y: frame.minY - metrics.offset, measuredIn: reportGeneration, metrics: metrics)
         hold = current.settled ? nil : current
         if let target { set(view, offset: target) }
         if hold != nil { scheduleHoldRecheck() }
@@ -174,6 +213,11 @@ final class ChatScrollController: NSObject {
 
     private func scheduleHoldRecheck() {
         guard !holdRecheckScheduled else { return }
+        holdRechecks += 1
+        guard holdRechecks <= Self.maxHoldRechecks else {
+            hold = nil
+            return
+        }
         holdRecheckScheduled = true
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
@@ -192,6 +236,9 @@ final class ChatScrollController: NSObject {
     }
 
     private func geometryChanged(_ view: UIScrollView) {
+        // The scroll back to the anchor (or a correction) moved the list: read the
+        // anchor again a turn later, after the layout that move causes.
+        if hold?.insertApplied == true { scheduleHoldRecheck() }
         repin(view, change: .offset)
         onGeometry?(Self.metrics(of: view))
     }
@@ -266,6 +313,9 @@ struct ChatScrollBridge: UIViewRepresentable {
     }
 
     func updateUIView(_ view: Finder, context: Context) {
+        // Only when the controller changed: walking up the view tree on every
+        // update of the list showed up in profiles.
+        guard view.controller !== controller else { return }
         view.controller = controller
         view.attach()
     }
@@ -294,7 +344,7 @@ struct ChatScrollBridge: UIViewRepresentable {
 /// Content-space tops of the laid-out message rows, and the layout generation
 /// (older pages that had gone in) they were measured in.
 struct ChatRowReport: Equatable {
-    var rows: [UUID: CGFloat] = [:]
+    var rows: [UUID: ChatRowFrame] = [:]
     var generation = 0
 }
 

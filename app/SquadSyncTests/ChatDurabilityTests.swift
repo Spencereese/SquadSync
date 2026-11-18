@@ -201,6 +201,144 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertTrue(query.contains("squad_id=eq.\(squad.uuidString)"), query)
     }
 
+    // MARK: Re-triggering (Mac pass: paging stalled with the row still on screen)
+
+    func testRowStillVisibleAfterAPageAsksAgain() {
+        var trigger = ChatOlderTrigger()
+        var paging = ChatOlderPaging()
+        XCTAssertFalse(trigger.handle(.rowAppeared, paging: paging, hasMessages: true), "Pinned at the bottom on first render")
+        XCTAssertTrue(trigger.handle(.pinned(false), paging: paging, hasMessages: true))
+        XCTAssertTrue(paging.begin())
+        XCTAssertFalse(trigger.handle(.pagingChanged, paging: paging, hasMessages: true), "Not while a page runs")
+        paging.finish(rowCount: 50)
+        // The list jumped (or a fling left the row on screen): onAppear won't fire
+        // again, so the page finishing has to ask for the next one.
+        XCTAssertTrue(trigger.handle(.pagingChanged, paging: paging, hasMessages: true))
+        XCTAssertTrue(trigger.handle(.landed, paging: paging, hasMessages: true))
+    }
+
+    func testHeldPlaceDoesNotAskAgain() {
+        var trigger = ChatOlderTrigger()
+        var paging = ChatOlderPaging()
+        _ = trigger.handle(.pinned(false), paging: paging, hasMessages: true)
+        XCTAssertTrue(trigger.handle(.rowAppeared, paging: paging, hasMessages: true))
+        XCTAssertTrue(paging.begin())
+        paging.finish(rowCount: 50)
+        XCTAssertFalse(trigger.handle(.rowDisappeared, paging: paging, hasMessages: true), "The landing scroll moved the row away")
+        XCTAssertFalse(trigger.handle(.landed, paging: paging, hasMessages: true))
+        XCTAssertFalse(trigger.handle(.pagingChanged, paging: paging, hasMessages: true))
+    }
+
+    func testNoAskAtTheStartOrAfterAnError() {
+        var trigger = ChatOlderTrigger()
+        var paging = ChatOlderPaging()
+        _ = trigger.handle(.pinned(false), paging: paging, hasMessages: true)
+        _ = trigger.handle(.rowAppeared, paging: paging, hasMessages: true)
+        XCTAssertTrue(paging.begin())
+        paging.fail()
+        XCTAssertFalse(trigger.handle(.pagingChanged, paging: paging, hasMessages: true), "Failed waits for Retry")
+        XCTAssertTrue(paging.begin())
+        paging.finish(rowCount: 3)
+        XCTAssertFalse(trigger.handle(.pagingChanged, paging: paging, hasMessages: true), "Start of chat")
+        XCTAssertFalse(trigger.handle(.landed, paging: paging, hasMessages: true))
+    }
+
+    func testRowThatNeverLeavesTheScreenStillReachesTheStart() async throws {
+        // Worst case for a fling: the row stays visible the whole time and the
+        // only signals are pages finishing. Paging must run to the start, not stall.
+        let chat = await longMock()
+        var log = ChatLog()
+        log.adopt(replacingSquad: true, history: try await chat.history(squadId: squad).map { $0.entry() })
+        var paging = ChatOlderPaging()
+        paging.settleFirstRead(rowCount: log.entries.count, limit: SupabaseChatService.historyLimit)
+        var trigger = ChatOlderTrigger()
+        _ = trigger.handle(.pinned(false), paging: paging, hasMessages: true)
+        var due = trigger.handle(.rowAppeared, paging: paging, hasMessages: true)
+        var pages = 0
+        while due {
+            XCTAssertTrue(paging.begin())
+            let cursor = try XCTUnwrap(ChatOlderPaging.cursor(log))
+            let page = try await chat.older(squadId: squad, before: cursor, limit: ChatOlderPaging.pageSize)
+            log.ingest(page.map { $0.entry() })
+            paging.finish(rowCount: page.count)
+            due = trigger.handle(.pagingChanged, paging: paging, hasMessages: true)
+            pages += 1
+            if pages > 10 { XCTFail("Paging never ended"); break }
+        }
+        XCTAssertEqual(paging.state, .reachedStart)
+        XCTAssertEqual(pages, 2)
+        XCTAssertEqual(log.ordered.map(\.id), (0..<260).map(ChatLongSeed.id))
+    }
+
+    // MARK: Microsecond cursor
+
+    private let microStamp = "2026-11-17T18:00:00.123456+00:00"
+
+    private func microRowJSON(id: UUID, stamp: String) -> Data {
+        Data("""
+        [{"id":"\(id.uuidString.lowercased())","squad_id":"\(squad.uuidString.lowercased())","sender_id":"\(ChatSeed.otherId.uuidString.lowercased())","body":"edge","sent_at":"\(stamp)","reply_to_id":null}]
+        """.utf8)
+    }
+
+    func testServerSentAtTextIsKeptForTheCursor() throws {
+        let id = ChatLongSeed.id(7)
+        let rows = try BackendJSON.decoder.decode([RemoteMessage].self, from: microRowJSON(id: id, stamp: microStamp))
+        let row = try XCTUnwrap(rows.first)
+        XCTAssertEqual(row.sentAtStamp, microStamp)
+        var log = ChatLog()
+        log.ingest(rows.map { $0.entry() })
+        let cursor = try XCTUnwrap(ChatOlderPaging.cursor(log))
+        XCTAssertEqual(cursor.stamp, microStamp)
+        XCTAssertEqual(cursor.filterStamp, microStamp, "The cursor keeps the microseconds")
+        let rebuilt = BackendJSON.parseStamp(row.sentAt) ?? ""
+        XCTAssertNotEqual(rebuilt, microStamp, "A Date round trip would have lost them")
+        // Never sent back to the server, and not part of what makes rows equal.
+        let encoded = String(data: try BackendJSON.encoder.encode(row), encoding: .utf8) ?? ""
+        XCTAssertFalse(encoded.contains("123456"), encoded)
+        var plain = row
+        plain.sentAtStamp = nil
+        XCTAssertEqual(plain, row)
+    }
+
+    func testMicrosecondBoundaryGoesToTheServerIntact() async throws {
+        let id = ChatLongSeed.id(7)
+        let rows = try BackendJSON.decoder.decode([RemoteMessage].self, from: microRowJSON(id: id, stamp: microStamp))
+        var log = ChatLog()
+        log.ingest(rows.map { $0.entry() })
+        let cursor = try XCTUnwrap(ChatOlderPaging.cursor(log))
+        let transport = ScriptedTransport(responses: [(200, Data("[]".utf8))])
+        let config = BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
+        let chat = SupabaseChatService(config: config, accessToken: "access", transport: transport)
+        _ = try await chat.older(squadId: squad, before: cursor, limit: 50)
+        let url = try XCTUnwrap(transport.requests.first?.url)
+        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+        let filter = try XCTUnwrap(items.first { $0.name == "or" }?.value)
+        // A row at .123456 is the boundary: rows at .123000-.123455 are older and
+        // must stay in the next page, which a ".123" cursor would have dropped.
+        XCTAssertEqual(filter, "(sent_at.lt.\"\(microStamp)\",and(sent_at.eq.\"\(microStamp)\",id.lt.\(id.uuidString.lowercased())))")
+        let raw = url.absoluteString
+        XCTAssertTrue(raw.contains("%2B00:00"), "The offset's + must be encoded, or it reads as a space: \(raw)")
+        XCTAssertFalse(raw.contains("+00:00"), raw)
+    }
+
+    func testEchoOfALocalSendPicksUpTheServerStamp() throws {
+        let id = ChatLongSeed.id(7)
+        var log = ChatLog()
+        log.beginSend(id: id, senderId: me, body: "edge", now: base)
+        XCTAssertNil(log.entries.first?.serverStamp)
+        let rows = try BackendJSON.decoder.decode([RemoteMessage].self, from: microRowJSON(id: id, stamp: microStamp))
+        log.ingest(rows.map { $0.entry() })
+        XCTAssertEqual(log.entries.first?.serverStamp, microStamp)
+        XCTAssertEqual(ChatOlderPaging.cursor(log)?.stamp, microStamp)
+    }
+
+    func testCursorWithoutAServerStampFallsBackToItsDate() {
+        let cursor = ChatPageCursor(sentAt: base, id: ChatLongSeed.id(1))
+        XCTAssertEqual(cursor.filterStamp, BackendJSON.parseStamp(base))
+        let odd = ChatPageCursor(sentAt: base, id: ChatLongSeed.id(1), stamp: "x\",y")
+        XCTAssertEqual(odd.filterStamp, BackendJSON.parseStamp(base), "Text that could break the filter isn't used")
+    }
+
     // MARK: Unsent messages on disk
 
     func testOutboxRoundTrip() {
@@ -394,6 +532,19 @@ final class ChatDurabilityModelTests: XCTestCase {
         XCTAssertEqual(model.olderLanding?.anchor, ChatLongSeed.id(60), "The old top message goes back to the top")
         await model.loadOlder()
         XCTAssertEqual(model.log.entries.count, 260)
+        XCTAssertEqual(model.olderPaging.state, .reachedStart)
+    }
+
+    func testFlingAskingTwiceLoadsOnePageThenTheNext() async {
+        let model = model(.chatLongHistory, outbox: tempOutbox())
+        await model.reloadChat()
+        let first = Task { await model.loadOlder() }
+        let second = Task { await model.loadOlder() }
+        await first.value
+        await second.value
+        XCTAssertEqual(model.log.entries.count, 250, "Two asks during one page are one page")
+        XCTAssertEqual(model.olderPaging.state, .idle, "Back to idle, so the list can ask again")
+        await model.loadOlder()
         XCTAssertEqual(model.olderPaging.state, .reachedStart)
     }
 

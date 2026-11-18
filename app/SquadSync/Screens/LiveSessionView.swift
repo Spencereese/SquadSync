@@ -1856,8 +1856,8 @@ final class LiveSessionModel {
 struct LiveSessionView: View {
     @State private var model: LiveSessionModel
     @State private var pinnedToBottom = true
-    /// The older-history row at the top of the thread is on screen.
-    @State private var olderRowVisible = false
+    /// Whether the older-history row is on screen, and when to ask for a page.
+    @State private var olderTrigger = ChatOlderTrigger()
     @State private var wentToBackground = false
     @State private var confirmSignOut = false
     @State private var confirmEndSpot = false
@@ -2159,11 +2159,8 @@ struct LiveSessionView: View {
                             ChatOlderRow(state: model.olderPaging.state) {
                                 Task { await model.retryOlder() }
                             }
-                            .onAppear {
-                                olderRowVisible = true
-                                loadOlderIfNeeded()
-                            }
-                            .onDisappear { olderRowVisible = false }
+                            .onAppear { olderEvent(.rowAppeared) }
+                            .onDisappear { olderEvent(.rowDisappeared) }
                         }
                         ForEach(chatRows) { row in
                             switch row {
@@ -2243,13 +2240,34 @@ struct LiveSessionView: View {
                 if ChatCatchUp.requests(becamePinned: isPinned && !wasPinned, tappedNewMessages: false) {
                     Task { await model.catchUp(pinned: true) }
                 }
-                loadOlderIfNeeded()
+                olderEvent(.pinned(isPinned))
             }
             // An older page landed above the reader: put the message that was at the
-            // top back at the top, without animation, so the place doesn't jump.
+            // top back at the top, without animation, so the place doesn't jump. The
+            // scroll waits a turn so the new rows are laid out first, then repeats once
+            // they've settled (a fling can still be moving the list).
             .onChange(of: model.olderLanding) { _, landing in
                 guard let landing else { return }
-                proxy.scrollTo(landing.anchor, anchor: .top)
+                Task { @MainActor in
+                    await Task.yield()
+                    proxy.scrollTo(landing.anchor, anchor: .top)
+                    try? await Task.sleep(nanoseconds: 80_000_000)
+                    guard model.olderLanding == landing else { return }
+                    proxy.scrollTo(landing.anchor, anchor: .top)
+                    // If the row is still on screen (the hold didn't take, or the
+                    // page was short of a screen), page again rather than stall.
+                    olderEvent(.landed)
+                }
+            }
+            // A page finished (or failed, or was reset) while the row may still be on
+            // screen; onAppear won't fire again, so check here. After a short wait,
+            // so a landing scroll that moves the row away goes first.
+            .onChange(of: model.olderPaging.state) { _, state in
+                guard state == .idle else { return }
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    olderEvent(.pagingChanged)
+                }
             }
             .onChange(of: model.log.ordered.last?.id) { _, id in
                 guard let id else { return }
@@ -2293,12 +2311,8 @@ struct LiveSessionView: View {
         .background(SQColor.surface0)
     }
 
-    private func loadOlderIfNeeded() {
-        guard model.olderPaging.shouldLoad(
-            rowVisible: olderRowVisible,
-            pinnedToBottom: pinnedToBottom,
-            hasMessages: !model.log.entries.isEmpty
-        ) else { return }
+    private func olderEvent(_ event: ChatOlderTrigger.Event) {
+        guard olderTrigger.handle(event, paging: model.olderPaging, hasMessages: !model.log.entries.isEmpty) else { return }
         Task { await model.loadOlder() }
     }
 

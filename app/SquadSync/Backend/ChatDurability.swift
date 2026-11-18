@@ -66,7 +66,39 @@ struct ChatOlderPaging: Equatable {
     /// before it by `sent_at`, then by id). Unsent local rows don't count.
     static func cursor(_ log: ChatLog) -> ChatPageCursor? {
         guard let oldest = log.ordered.first(where: { $0.delivery == .sent }) else { return nil }
-        return ChatPageCursor(sentAt: oldest.sentAt, id: oldest.id)
+        return ChatPageCursor(sentAt: oldest.sentAt, id: oldest.id, stamp: oldest.serverStamp)
+    }
+}
+
+/// When the list asks for the next older page. The top row's `onAppear` fires
+/// once, so on its own a page that lands while the row is still on screen (a
+/// fast fling, or the place-holding scroll not taking) would leave paging stuck
+/// with no loading row, error, or "Start of chat". Every event that could make a
+/// page due goes through here, including the page finishing and the landing
+/// scroll settling, so a row that stays visible keeps paging until the start.
+struct ChatOlderTrigger: Equatable {
+    enum Event: Equatable {
+        case rowAppeared
+        case rowDisappeared
+        case pinned(Bool)
+        /// The paging state changed (a page finished, failed, or was reset).
+        case pagingChanged
+        /// The place-holding scroll after a page has run.
+        case landed
+    }
+
+    private(set) var rowVisible = false
+    private(set) var pinnedToBottom = true
+
+    /// Records the event and says whether to start a page now.
+    mutating func handle(_ event: Event, paging: ChatOlderPaging, hasMessages: Bool) -> Bool {
+        switch event {
+        case .rowAppeared: rowVisible = true
+        case .rowDisappeared: rowVisible = false
+        case .pinned(let pinned): pinnedToBottom = pinned
+        case .pagingChanged, .landed: break
+        }
+        return paging.shouldLoad(rowVisible: rowVisible, pinnedToBottom: pinnedToBottom, hasMessages: hasMessages)
     }
 }
 
@@ -75,6 +107,19 @@ struct ChatOlderPaging: Equatable {
 struct ChatPageCursor: Equatable {
     let sentAt: Date
     let id: UUID
+    /// The server's `sent_at` text for this row. `sent_at` is microseconds and
+    /// `Date` holds milliseconds, so a cursor rebuilt from `sentAt` could fall
+    /// between rows in the same millisecond and skip them.
+    var stamp: String? = nil
+
+    /// What goes in the filter: the server's own text when it's safe to quote,
+    /// otherwise `sentAt` formatted (whole seconds and milliseconds round-trip).
+    var filterStamp: String? {
+        if let stamp, !stamp.isEmpty, !stamp.contains("\""), !stamp.contains("\\"), !stamp.contains(",") {
+            return stamp
+        }
+        return BackendJSON.parseStamp(sentAt)
+    }
 
     /// True when a message at (`other`, `otherId`) sorts strictly before the cursor, by the same rule as
     /// `ChatLog.ordered` (time, then the id's string).

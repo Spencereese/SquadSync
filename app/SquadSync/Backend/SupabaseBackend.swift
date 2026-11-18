@@ -618,7 +618,7 @@ final class SupabaseChatService: ChatService {
     /// paging index's order, then flipped to oldest first. Values are quoted so the
     /// timestamp's colons and offset can't be read as filter syntax.
     func older(squadId: UUID, before: ChatPageCursor, limit: Int) async throws -> [RemoteMessage] {
-        guard let stamp = BackendJSON.parseStamp(before.sentAt) else { return [] }
+        guard let stamp = before.filterStamp else { return [] }
         let id = before.id.uuidString.lowercased()
         let data = try await http.send(
             path: "rest/v1/sq8_messages",

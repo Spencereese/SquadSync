@@ -221,7 +221,13 @@ struct SupabaseHTTP {
             url.appendPathComponent(String(part))
         }
         var components = URLComponents(url: url, resolvingAgainstBaseURL: false)
-        if !query.isEmpty { components?.queryItems = query }
+        if !query.isEmpty {
+            components?.queryItems = query
+            // URLComponents leaves "+" alone and servers read it as a space, which
+            // breaks timestamps like "+00:00". Encode it.
+            let encoded = components?.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+            components?.percentEncodedQuery = encoded
+        }
         guard let url = components?.url else { throw BackendFailure.rejected("Bad request URL.") }
         var request = URLRequest(url: url)
         request.httpMethod = method

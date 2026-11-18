@@ -231,9 +231,18 @@ struct RemoteMessage: Equatable, Identifiable, Codable {
     var sentAt: Date
     /// 0014 `reply_to_id`. Encoded only when set, so a plain send never names the column.
     var replyToId: UUID? = nil
+    /// `sent_at` exactly as the server sent it (microseconds and all). `Date` keeps
+    /// milliseconds, so the paging cursor uses this instead. Never encoded, and not
+    /// part of equality: a row is the same message whichever way it arrived.
+    var sentAtStamp: String? = nil
 
     func entry() -> ChatEntry {
-        ChatEntry(id: id, senderId: senderId, body: body, sentAt: sentAt, delivery: .sent, replyToId: replyToId)
+        ChatEntry(id: id, senderId: senderId, body: body, sentAt: sentAt, delivery: .sent, replyToId: replyToId, serverStamp: sentAtStamp)
+    }
+
+    static func == (lhs: RemoteMessage, rhs: RemoteMessage) -> Bool {
+        lhs.id == rhs.id && lhs.squadId == rhs.squadId && lhs.senderId == rhs.senderId
+            && lhs.body == rhs.body && lhs.sentAt == rhs.sentAt && lhs.replyToId == rhs.replyToId
     }
 
     enum CodingKeys: String, CodingKey {
@@ -243,6 +252,31 @@ struct RemoteMessage: Equatable, Identifiable, Codable {
         case body
         case sentAt = "sent_at"
         case replyToId = "reply_to_id"
+    }
+}
+
+// In an extension so the memberwise initializer stays.
+extension RemoteMessage {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        squadId = try container.decode(UUID.self, forKey: .squadId)
+        senderId = try container.decode(UUID.self, forKey: .senderId)
+        body = try container.decode(String.self, forKey: .body)
+        sentAt = try container.decode(Date.self, forKey: .sentAt)
+        replyToId = try container.decodeIfPresent(UUID.self, forKey: .replyToId)
+        // The same field again as text, when the decoder's dates are strings.
+        sentAtStamp = try? container.decode(String.self, forKey: .sentAt)
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(squadId, forKey: .squadId)
+        try container.encode(senderId, forKey: .senderId)
+        try container.encode(body, forKey: .body)
+        try container.encode(sentAt, forKey: .sentAt)
+        try container.encodeIfPresent(replyToId, forKey: .replyToId)
     }
 }
 

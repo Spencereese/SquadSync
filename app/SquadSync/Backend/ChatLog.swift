@@ -14,6 +14,9 @@ struct ChatEntry: Equatable, Identifiable {
     var delivery: Delivery
     /// The message this one replies to (0014 `reply_to_id`). Nil when it isn't a reply.
     var replyToId: UUID? = nil
+    /// The server's own `sent_at` text, kept for the older-page cursor. Nil for
+    /// local sends until the server's copy arrives.
+    var serverStamp: String? = nil
 }
 
 struct ChatLog: Equatable {
@@ -65,6 +68,7 @@ struct ChatLog: Equatable {
                 entries[index].sentAt = item.sentAt
                 entries[index].delivery = .sent
                 if let reply = item.replyToId { entries[index].replyToId = reply }
+                if let stamp = item.serverStamp { entries[index].serverStamp = stamp }
             } else {
                 var stored = item
                 stored.delivery = .sent

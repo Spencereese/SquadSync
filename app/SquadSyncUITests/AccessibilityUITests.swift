@@ -1561,12 +1561,17 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertFalse(element(Long.firstPageNewest, in: app).exists, "More than one read's worth loaded up front")
         let list = app.scrollViews["message-list"]
         XCTAssertTrue(list.waitForExistence(timeout: 5))
+        let loading = element("chat-older-loading", in: app)
+        let start = element("chat-start", in: app)
+        let error = element("chat-older-error", in: app)
+
+        // First page: ordinary swipes, then check the reader kept their place.
         var sawOlder = false
         var keptPlace = false
-        for _ in 0..<60 {
-            if element("chat-start", in: app).exists { break }
-            list.swipeDown(velocity: .fast)
-            if !sawOlder, element(Long.firstPageNewest, in: app).exists {
+        for _ in 0..<40 where !sawOlder {
+            list.swipeDown()
+            if loading.exists { _ = loading.waitForNonExistence(timeout: 10) }
+            if element(Long.firstPageNewest, in: app).exists {
                 sawOlder = true
                 // The page landed above the reader: the message that was at the top
                 // stays on screen instead of the list jumping to the new oldest one.
@@ -1575,11 +1580,18 @@ final class AccessibilityUITests: XCTestCase {
         }
         XCTAssertTrue(sawOlder, "Scrolling up never loaded an older page")
         XCTAssertTrue(keptPlace, "The previous top message was gone after the page landed")
-        let start = element("chat-start", in: app)
+
+        // The rest: fast flings, waiting out each page, until the start of the chat.
+        // Bounded, and an error row fails the test rather than being retried.
+        for _ in 0..<80 {
+            if start.exists || error.exists { break }
+            list.swipeDown(velocity: .fast)
+            if loading.exists { _ = loading.waitForNonExistence(timeout: 10) }
+        }
+        XCTAssertFalse(error.exists, "Paging failed: \(error.exists ? error.label : "")")
         XCTAssertTrue(start.waitForExistence(timeout: 10), "No Start of chat after paging back")
         XCTAssertEqual(start.label, "Start of chat")
         XCTAssertTrue(element(Long.oldest, in: app).exists, "The first message isn't there at the start of the chat")
-        XCTAssertFalse(element("chat-older-error", in: app).exists)
     }
 
     func testFailedMessageIsStillThereAfterRelaunch() {

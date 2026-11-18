@@ -291,9 +291,23 @@ final class MockChatService: ChatService {
     var olderDelay: TimeInterval = 0
     /// How many older pages were asked for (tests).
     private(set) var olderReads = 0
+    /// UI tests (`-mock-older-gate`): each older-page read waits here until the
+    /// test releases it, one read per release.
+    var olderGated = false
+    private(set) var olderReleases = 0
+    private var olderTickets = 0
+
+    func releaseOlder() { olderReleases += 1 }
 
     func older(squadId: UUID, before: ChatPageCursor, limit: Int) async throws -> [RemoteMessage] {
         olderReads += 1
+        if olderGated {
+            olderTickets += 1
+            let ticket = olderTickets
+            while olderReleases < ticket {
+                try await Task.sleep(nanoseconds: 50_000_000)
+            }
+        }
         if olderDelay > 0 {
             try await Task.sleep(nanoseconds: UInt64(olderDelay * 1_000_000_000))
         }

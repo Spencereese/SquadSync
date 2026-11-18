@@ -85,6 +85,12 @@ final class ChatScrollController: NSObject {
         hold = nil
     }
 
+    /// Call right before the app scrolls the list itself: to the newest message
+    /// (`toBottom`, pins) or anywhere else (unpins, so it isn't pulled back down).
+    func jumped(toBottom: Bool) {
+        pin.jumped(toBottom: toBottom)
+    }
+
     // MARK: Older pages
 
     /// Call right before older rows go into the thread.
@@ -131,7 +137,8 @@ final class ChatScrollController: NSObject {
         onGeometry?(Self.metrics(of: view))
     }
 
-    /// Back to the bottom after a layout change, when the reader was there.
+    /// Back to the bottom after any change that isn't the person scrolling, when
+    /// they were there. Their drags and flings decide whether they are.
     private func repin(_ view: UIScrollView) {
         let interacting = view.isTracking || view.isDragging || view.isDecelerating
         if let target = pin.observe(Self.metrics(of: view), interacting: interacting, holding: hold != nil) {

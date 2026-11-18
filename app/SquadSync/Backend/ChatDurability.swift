@@ -184,58 +184,36 @@ enum ChatViewportStick {
 /// Whether the reader is staying at the bottom, as state rather than a distance
 /// read at the moment something changes.
 ///
-/// Only a scroll (the offset moved and nothing about the layout did) decides it:
-/// at the bottom within `slack` pins, anywhere else unpins. A layout change (a row
-/// grew because it failed and shows "Not delivered", a new row, the keyboard, a
-/// lazy row's real height) never unpins; if the reader was pinned the list goes
-/// back to the bottom, however far the change pushed it. While a finger or a fling
-/// is moving the list, or an older page is being held in place, the pin doesn't
-/// move anything.
+/// Only the person moves it: while their finger or fling is moving the list
+/// (`interacting`), at the bottom within `slack` pins and anywhere else unpins.
+/// Everything else (content growing because a send failed and shows "Not
+/// delivered", a new row, the keyboard, the header coming back and the composer
+/// shrinking, insets and offset moving together in one layout pass) is layout:
+/// it never changes the state, and a pinned reader goes back to the bottom.
+/// The app's own jumps say where they leave the reader (`jumped(toBottom:)`):
+/// opening an old message or the spot card unpins so it isn't pulled back; jump
+/// to latest and following your own send pin. While an older page is being held
+/// in place the pin doesn't move anything.
 struct ChatBottomPin: Equatable {
     static let slack = 32.0
 
-    private struct Layout: Equatable {
-        var contentHeight: Double
-        var viewportHeight: Double
-        var topInset: Double
-        var bottomInset: Double
-
-        init(_ m: ChatScrollMetrics) {
-            contentHeight = m.contentHeight
-            viewportHeight = m.viewportHeight
-            topInset = m.topInset
-            bottomInset = m.bottomInset
-        }
-    }
-
     /// A new chat opens at its newest message.
     private(set) var pinned = true
-    private var layout: Layout?
-    private var lastOffset: Double?
 
     /// Feed every geometry change. Returns the offset to move to, if any.
     mutating func observe(_ metrics: ChatScrollMetrics, interacting: Bool = false, holding: Bool = false) -> Double? {
-        let now = Layout(metrics)
-        let previous = layout
-        let previousOffset = lastOffset
-        layout = now
-        lastOffset = metrics.offset
-        guard let previous, let previousOffset else { return nil }
         guard !holding else { return nil }
-        // Insets have no change notification of their own, so an inset that moved
-        // along with the offset (a programmatic scroll landing as the safe area
-        // settles) counts as a scroll; content or viewport size never does.
-        let sized = previous.contentHeight != now.contentHeight || previous.viewportHeight != now.viewportHeight
-        let insetsOnly = !sized && previous != now
-        let scrolled = previousOffset != metrics.offset
-        let layoutChanged = sized || (insetsOnly && !scrolled)
-        if !layoutChanged || interacting {
+        if interacting {
             pinned = metrics.distanceFromBottom <= Self.slack
             return nil
         }
         guard pinned, abs(metrics.maxOffset - metrics.offset) > 0.5 else { return nil }
         return metrics.maxOffset
     }
+
+    /// The app scrolled the list itself: to the newest message (pins) or to
+    /// something else (unpins).
+    mutating func jumped(toBottom: Bool) { pinned = toBottom }
 
     /// A different squad, or signed out.
     mutating func reset() { self = ChatBottomPin() }

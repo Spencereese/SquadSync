@@ -35,6 +35,8 @@ final class LiveSessionModel {
     var chatLoad = ChatHistoryState.idle
     /// The row at the top of the thread that pages older messages.
     var olderPaging = ChatOlderPaging()
+    /// Older pages that came back for the open squad (the UI tests' paging probe).
+    var olderPagesLoaded = 0
     /// The previous oldest message while an older page goes in above it; its row
     /// reports where it is so the list can hold it in place.
     var olderHoldAnchor: UUID?
@@ -195,6 +197,9 @@ final class LiveSessionModel {
             // UI tests: a slow older page, so "before" and "after" a page lands can
             // both be read with nothing else moving the list.
             if let delay = Self.debugOlderDelay() { chat.olderDelay = delay }
+            #if DEBUG
+            if ProcessInfo.processInfo.arguments.contains("-mock-older-gate") { chat.olderGated = true }
+            #endif
             self.sessionStore = store
             let mockAuth = MockAuthService(
                 store: store,
@@ -1298,6 +1303,7 @@ final class LiveSessionModel {
         // Unsent messages belong to this account; the next person doesn't get them.
         if let user = viewerId ?? profile?.id { outbox.clear(userId: user) }
         olderPaging = ChatOlderPaging()
+        olderPagesLoaded = 0
         olderPagedThisSquad = false
         pendingOpen.clear()
         realtime?.stop()
@@ -1515,6 +1521,14 @@ final class LiveSessionModel {
         #endif
     }
 
+    #if DEBUG
+    /// UI tests: older pages are held until released (`-mock-older-gate`, mock only).
+    var debugOlderGate: Bool { mockChatService?.olderGated ?? false }
+
+    /// UI tests: let one held older page through.
+    func debugReleaseOlderPage() { mockChatService?.releaseOlder() }
+    #endif
+
     /// Tests: the mock chat server, to slow or fail its reads.
     var mockChatService: MockChatService? { mockChat as? MockChatService }
 
@@ -1555,6 +1569,7 @@ final class LiveSessionModel {
             }
             log.ingest(rows.map { $0.entry() })
             olderPagedThisSquad = true
+            olderPagesLoaded += 1
             olderPaging.finish(rowCount: rows.count)
             return olderPaging.state != .reachedStart
         } catch {
@@ -1667,6 +1682,7 @@ final class LiveSessionModel {
             chatCaps = .unknown
             loadedSquad = requested
             olderPaging = ChatOlderPaging()
+            olderPagesLoaded = 0
             olderPagedThisSquad = false
             olderHoldAnchor = nil
             scrollHold.reset()
@@ -2286,10 +2302,20 @@ struct LiveSessionView: View {
                         .padding(SQSpace.s)
                     }
                 }
+                #if DEBUG
+                .overlay(alignment: .bottomLeading) {
+                    if model.debugOlderGate {
+                        ChatOlderDebugProbe(state: model.olderPaging.state, pages: model.olderPagesLoaded) {
+                            model.debugReleaseOlderPage()
+                        }
+                    }
+                }
+                #endif
                 composerBar(proxy)
             }
             .onAppear {
                 if let id = model.followSend {
+                    model.scrollHold.jumped(toBottom: false)
                     proxy.scrollTo(id, anchor: .center)
                     return
                 }
@@ -2297,6 +2323,7 @@ struct LiveSessionView: View {
                 Task { @MainActor in
                     // A pushed message may have been opened in the meantime.
                     if let id = model.followSend, id != model.log.ordered.last?.id {
+                        model.scrollHold.jumped(toBottom: false)
                         proxy.scrollTo(id, anchor: .center)
                         return
                     }
@@ -2316,6 +2343,8 @@ struct LiveSessionView: View {
             .onChange(of: model.followSend) { _, id in
                 guard let id else { return }
                 model.scrollHold.endHold()
+                // Your own send is the newest row and pins; an opened message unpins.
+                model.scrollHold.jumped(toBottom: id == model.log.ordered.last?.id)
                 proxy.scrollTo(id, anchor: .center)
             }
             .onChange(of: pinnedToBottom) { wasPinned, isPinned in
@@ -2341,6 +2370,7 @@ struct LiveSessionView: View {
             // The viewer called spots: the card is at the top of the thread.
             .onChange(of: model.spotCalledSerial) { _, _ in
                 model.scrollHold.endHold()
+                model.scrollHold.jumped(toBottom: false)
                 proxy.scrollTo(ChatAnchor.spot, anchor: .top)
             }
             .onChange(of: model.log.ordered.last?.id) { _, id in
@@ -2348,6 +2378,7 @@ struct LiveSessionView: View {
                 // A pushed message is being opened: it wins over following the newest,
                 // even when the history and the open land in the same update.
                 if let target = model.followSend, target != id, model.log.entries.contains(where: { $0.id == target }) {
+                    model.scrollHold.jumped(toBottom: false)
                     proxy.scrollTo(target, anchor: .center)
                     return
                 }
@@ -2421,6 +2452,7 @@ struct LiveSessionView: View {
     }
 
     private func scrollChatToBottom(_ proxy: ScrollViewProxy) {
+        model.scrollHold.jumped(toBottom: true)
         proxy.scrollTo(ChatAnchor.end, anchor: .bottom)
     }
 
@@ -3530,3 +3562,46 @@ private struct SpotCallSheet: View {
         size.isAccessibilitySize ? .large : .medium
     }
 }
+
+#if DEBUG
+/// UI tests only (mock backend with `-mock-older-gate`): invisible. One element
+/// reports the paging state ("loading pages=0"), the other lets one held older
+/// page through when tapped.
+private struct ChatOlderDebugProbe: View {
+    let state: ChatOlderPaging.State
+    let pages: Int
+    let release: () -> Void
+
+    private var value: String {
+        let name: String
+        switch state {
+        case .idle: name = "idle"
+        case .loading: name = "loading"
+        case .failed: name = "failed"
+        case .reachedStart: name = "reachedStart"
+        }
+        return "\(name) pages=\(pages)"
+    }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // Not Color.clear: a fully clear view can be left out of the
+            // accessibility tree. Nearly clear still draws, so it stays in.
+            Rectangle()
+                .fill(Color.white.opacity(0.001))
+                .frame(width: 44, height: 44)
+                .accessibilityElement()
+                .accessibilityIdentifier("debug-older-paging")
+                .accessibilityValue(value)
+            Button(action: release) {
+                Rectangle()
+                    .fill(Color.white.opacity(0.001))
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityIdentifier("debug-older-release")
+            .accessibilityLabel("Release older page")
+        }
+    }
+}
+#endif

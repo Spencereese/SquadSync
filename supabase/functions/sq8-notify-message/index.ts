@@ -6,6 +6,7 @@
 // server key.
 
 import { apnsAuthorization, apnsHost, buildApnsPayload, missingApnsSecrets } from "./apns.ts";
+import { unauthorizedResponse, webhookAuthorized } from "./auth.ts";
 import {
   AccessTokenCache,
   type ServiceAccount,
@@ -108,6 +109,16 @@ async function accessToken(account: ServiceAccount): Promise<string | null> {
 }
 
 Deno.serve(async (request) => {
+  // First, before anything else: no secret header, no answer beyond a 401.
+  if (
+    !webhookAuthorized(
+      Deno.env.get("SQ8_PUSH_WEBHOOK_SECRET"),
+      request.headers.get("x-sq8-webhook-secret"),
+    )
+  ) {
+    return unauthorizedResponse(cors);
+  }
+
   const requiredMissing = missingSecrets().filter((name) =>
     name !== "FCM_SERVICE_ACCOUNT_JSON"
   );
@@ -132,15 +143,6 @@ Deno.serve(async (request) => {
       }),
       { status: 200, headers: cors },
     );
-  }
-
-  const expected = Deno.env.get("SQ8_PUSH_WEBHOOK_SECRET");
-  const provided = request.headers.get("x-sq8-webhook-secret");
-  if (!expected || provided !== expected) {
-    return new Response(JSON.stringify({ ok: false, reason: "unauthorized" }), {
-      status: 401,
-      headers: cors,
-    });
   }
 
   const record = readRecord(await request.json().catch(() => null));

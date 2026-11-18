@@ -20,7 +20,7 @@ The same three fields are copied next to `aps` so an iOS tap still has them. And
 
 If FCM answers `UNREGISTERED` or `INVALID_ARGUMENT`, the function calls `sq8_drop_device_token` with the service role and deletes that token. It does not trust a client-supplied recipient list.
 
-The webhook secret, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` are required. If both the FCM service account and the APNs key are missing, the function returns `notifications off` and sends nothing. If only one sender is configured, the other platform is counted as `skipped`.
+The `x-sq8-webhook-secret` header is checked first. A request without the right value (or any request while `SQ8_PUSH_WEBHOOK_SECRET` is unset) gets a 401 `unauthorized` and nothing else: no secret names, no body read. After that, the webhook secret, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` are required. If both the FCM service account and the APNs key are missing, the function returns `notifications off` and sends nothing. If only one sender is configured, the other platform is counted as `skipped`.
 
 ## Secrets Spencer provides
 
@@ -74,3 +74,7 @@ Android needs `google-services.json`. iOS needs `GoogleService-Info.plist`. Both
 Do not build this until file 12 is applied and `sq8-notify-message` is deployed with FCM. No table, function, or client change belongs to this note.
 
 When someone calls a spot (`sq8_spot_calls` insert, status `open`), notify the members of that squad who are not starters and who have no RSVP row yet. The caller is not notified. A starter is already in, so they are not notified. A member who has already answered in or out is not notified. Send once, at the moment the call is created. Do not send again for an RSVP, a lock, an end, or a cancel. The payload type is `spot_call`, with `squad_id` and the call id, on the same FCM HTTP v1 path as a squad message.
+
+## Tests
+
+`deno test --allow-env --allow-read supabase/functions/sq8-notify-message` runs `apns_test.ts`, `fcm_test.ts`, and `auth_test.ts`. The last one drives the real handler with no header and with every secret unset, and expects a 401.

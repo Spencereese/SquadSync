@@ -267,8 +267,10 @@ final class ChatDurabilityTests: XCTestCase {
         // shows up at 490 instead of 450.
         XCTAssertEqual(hold.offsetForAnchor(y: 490, metrics: metrics(offset: 3200, content: 11_240)), 3240)
         XCTAssertFalse(hold.settled)
-        XCTAssertNil(hold.offsetForAnchor(y: 450.3, metrics: metrics(offset: 3240, content: 11_240)), "Within half a point")
-        XCTAssertFalse(hold.settled, "Checked once more after the next layout")
+        XCTAssertNil(hold.offsetForAnchor(y: 450.2, metrics: metrics(offset: 3240, content: 11_240)), "Within the tolerance")
+        XCTAssertFalse(hold.settled, "Checked again after the next layouts")
+        XCTAssertNil(hold.offsetForAnchor(y: 450.1, metrics: metrics(offset: 3240, content: 11_240)))
+        XCTAssertFalse(hold.settled)
         XCTAssertNil(hold.offsetForAnchor(y: 450.1, metrics: metrics(offset: 3240, content: 11_240)))
         XCTAssertTrue(hold.settled)
         XCTAssertNil(hold.offsetForAnchor(y: 200, metrics: metrics(offset: 3240, content: 11_240)), "A settled hold doesn't move the list again")
@@ -298,7 +300,7 @@ final class ChatDurabilityTests: XCTestCase {
         }
         // The lazy stack measures the new rows: real heights differ from the estimate.
         for index in 0..<50 { heights[index] = 40.0 + Double(index % 4) * 15 }
-        for _ in 0..<3 {
+        for _ in 0..<4 {
             let metrics = ChatScrollMetrics(offset: offset, topInset: 0, bottomInset: 0, contentHeight: contentHeight(), viewportHeight: viewport)
             if let next = hold.offsetForAnchor(y: y(ofRow: 50, offset: offset), metrics: metrics) { offset = next }
         }
@@ -719,8 +721,9 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertNil(hold.offsetForInsert(metrics(offset: 1300, content: 14_500)), "No move on content growth")
         XCTAssertTrue(hold.insertApplied)
         XCTAssertFalse(hold.settled)
-        // After the scroll back to row 69 it reports 3pt low; corrected exactly, then still twice.
+        // After the scroll back to row 69 it reports 3pt low; corrected exactly, then still three times.
         XCTAssertEqual(hold.offsetForAnchor(y: 33, measuredIn: 1, metrics: metrics(offset: 3780, content: 14_500)), 3783)
+        XCTAssertNil(hold.offsetForAnchor(y: 30, measuredIn: 1, metrics: metrics(offset: 3783, content: 14_500)))
         XCTAssertNil(hold.offsetForAnchor(y: 30, measuredIn: 1, metrics: metrics(offset: 3783, content: 14_500)))
         XCTAssertNil(hold.offsetForAnchor(y: 30, measuredIn: 1, metrics: metrics(offset: 3783, content: 14_500)))
         XCTAssertTrue(hold.settled)
@@ -757,7 +760,8 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertEqual(hold.offsetForAnchor(y: -20, measuredIn: 1, metrics: metrics(offset: 2535, content: 10_475)), 2475, "Second pass moved it the other way")
         XCTAssertNil(hold.offsetForAnchor(y: 40, measuredIn: 1, metrics: metrics(offset: 2475, content: 10_475)))
         XCTAssertNil(hold.offsetForAnchor(y: 40.2, measuredIn: 1, metrics: metrics(offset: 2475, content: 10_475)))
-        XCTAssertTrue(hold.settled, "Two in-place readings in a row")
+        XCTAssertNil(hold.offsetForAnchor(y: 40.1, measuredIn: 1, metrics: metrics(offset: 2475, content: 10_475)))
+        XCTAssertTrue(hold.settled, "Three in-place readings in a row")
     }
 
     func testHoldCorrectionsAreBounded() {
@@ -804,7 +808,68 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertEqual(hold.offsetForAnchor(y: 59, measuredIn: 1, metrics: metrics(offset: 10_600, content: 11_229)), 10_629, "Fresh: corrected exactly")
         XCTAssertNil(hold.offsetForAnchor(y: 30, measuredIn: 1, metrics: metrics(offset: 10_629, content: 11_229)))
         XCTAssertNil(hold.offsetForAnchor(y: 30, measuredIn: 1, metrics: metrics(offset: 10_629, content: 11_229)))
+        XCTAssertNil(hold.offsetForAnchor(y: 30, measuredIn: 1, metrics: metrics(offset: 10_629, content: 11_229)))
         XCTAssertTrue(hold.settled)
+    }
+
+    func testResidualKickIsUndoneBeforeTheHoldEnds() {
+        // The scroll to the visible anchor lands, but a pass later the rows sit
+        // 1.2pt higher. Same-pass readings that look in place don't end the hold;
+        // the residual is corrected exactly and only confirming readings settle it.
+        var hold = ChatPrependHold(anchor: ChatLongSeed.id(69), offsetBefore: 1300, contentHeightBefore: 12_000,
+                                   anchorYBefore: 30, generation: 1, insertMovesOffset: false)
+        _ = hold.offsetForInsert(metrics(offset: 1300, content: 14_500))
+        XCTAssertNil(hold.offsetForAnchor(y: 30, measuredIn: 1, metrics: metrics(offset: 3780, content: 14_500), confirming: false))
+        XCTAssertNil(hold.offsetForAnchor(y: 30.1, measuredIn: 1, metrics: metrics(offset: 3780, content: 14_500), confirming: false))
+        XCTAssertEqual(hold.inPlaceReads, 0, "Same-pass readings never count as in place")
+        XCTAssertNil(hold.offsetForAnchor(y: 30, measuredIn: 1, metrics: metrics(offset: 3780, content: 14_500)))
+        XCTAssertFalse(hold.settled)
+        // The landing finishes: every row 1.2pt up.
+        let corrected = hold.offsetForAnchor(y: 28.8, measuredIn: 1, metrics: metrics(offset: 3780, content: 14_500))
+        XCTAssertEqual(corrected ?? 0, 3778.8, accuracy: 0.0001, "Undone exactly")
+        XCTAssertEqual(hold.inPlaceReads, 0)
+        for _ in 0..<ChatPrependHold.stableReads {
+            XCTAssertFalse(hold.settled)
+            XCTAssertNil(hold.offsetForAnchor(y: 30, measuredIn: 1, metrics: metrics(offset: 3778.8, content: 14_500)))
+        }
+        XCTAssertTrue(hold.settled)
+    }
+
+    func testSettledHoldIsAlwaysWithinHalfAPoint() {
+        // Drifts from 0.3 to 1.7pt (what a device pass saw) are all corrected; a
+        // reading inside the tolerance is under half a point by construction.
+        XCTAssertLessThan(ChatPrependHold.tolerance, 0.5)
+        for drift in [0.3, -0.3, 0.6, -1.0, 1.7, -1.7] {
+            var hold = ChatPrependHold(anchor: ChatLongSeed.id(69), offsetBefore: 0, contentHeightBefore: 8000,
+                                       anchorYBefore: 100, generation: 1, insertMovesOffset: false)
+            _ = hold.offsetForInsert(metrics(offset: 0, content: 9000))
+            let target = hold.offsetForAnchor(y: 100 + drift, measuredIn: 1, metrics: metrics(offset: 500, content: 9000))
+            XCTAssertEqual(target ?? 500, 500 + drift, accuracy: 0.0001, "drift \(drift)")
+        }
+    }
+
+    func testFailedRowStickingOutBelowMovesTheListByExactlyThat() {
+        // AX5, keyboard up: the list is 371pt tall, the failed row (ND + Retry at
+        // its bottom) ends 28pt below it after the composer settled.
+        let m = ChatScrollMetrics(offset: 1000, topInset: 0, bottomInset: 4, contentHeight: 1500, viewportHeight: 371)
+        XCTAssertEqual(ChatRowFit.offset(rowTop: 250, rowBottom: 395, metrics: m), 1028)
+        XCTAssertNil(ChatRowFit.offset(rowTop: 222, rowBottom: 366, metrics: m), "Inside the list: nothing to do")
+        XCTAssertNil(ChatRowFit.offset(rowTop: 222, rowBottom: 367.3, metrics: m), "Within half a point")
+    }
+
+    func testFailedRowFitIsClampedToTheContent() {
+        let m = ChatScrollMetrics(offset: 1125, topInset: 0, bottomInset: 4, contentHeight: 1500, viewportHeight: 371)
+        XCTAssertEqual(m.maxOffset, 1133)
+        XCTAssertEqual(ChatRowFit.offset(rowTop: 250, rowBottom: 420, metrics: m), 1133, "Never past the end")
+        let atEnd = ChatScrollMetrics(offset: 1133, topInset: 0, bottomInset: 4, contentHeight: 1500, viewportHeight: 371)
+        XCTAssertNil(ChatRowFit.offset(rowTop: 250, rowBottom: 420, metrics: atEnd), "Can't move further: no change")
+    }
+
+    func testFailedRowTopIsBroughtInOnlyWhenTheWholeRowFits() {
+        let m = ChatScrollMetrics(offset: 1000, topInset: 20, bottomInset: 4, contentHeight: 1500, viewportHeight: 371)
+        XCTAssertEqual(ChatRowFit.offset(rowTop: 10, rowBottom: 200, metrics: m), 990, "Top under the inset: down by 10")
+        XCTAssertNil(ChatRowFit.offset(rowTop: 19.7, rowBottom: 200, metrics: m), "Within half a point")
+        XCTAssertNil(ChatRowFit.offset(rowTop: -100, rowBottom: 360, metrics: m), "Taller than the list: bottom lines win")
     }
 
     func testViewportStickUsesThePinSlack() {

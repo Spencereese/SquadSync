@@ -138,10 +138,14 @@ enum ChatOlderTrigger {
 ///   offset by the content growth, then step 2 if there's an anchor.
 ///
 /// Step 2: each report of the anchor from a layout that has the new rows (its
-/// generation) moves the offset by however far the anchor is from where it was,
-/// until two readings in a row, a run-loop turn apart, find it within half a
-/// point (at most `maxCorrections`). Positions from before the insert are never
-/// used. A drag by the person ends the hold.
+/// generation) moves the offset by exactly however far the anchor is from where
+/// it was (more than `tolerance`), until `stableReads` confirming readings in a
+/// row, each a run-loop turn after the last, find it in place (at most
+/// `maxCorrections`). A reading taken in the same pass as a layout change
+/// (`confirming: false`) can correct but never counts as in place: the scroll to
+/// the anchor can still be landing then, and a hold that settled on it left the
+/// reader up to 1.7pt off. Positions from before the insert are never used. A
+/// drag by the person ends the hold.
 struct ChatPrependHold: Equatable {
     let anchor: UUID
     let offsetBefore: Double
@@ -155,11 +159,14 @@ struct ChatPrependHold: Equatable {
     let insertMovesOffset: Bool
     private(set) var insertApplied = false
     private(set) var settled = false
-    /// In-place readings in a row; the hold ends after `stableReads` (the last one
-    /// taken a run-loop turn later, after any layout the previous one caused).
+    /// Confirming in-place readings in a row; the hold ends after `stableReads`
+    /// (each a run-loop turn after the previous, after any layout it caused).
     private(set) var inPlaceReads = 0
     private(set) var corrections = 0
-    static let stableReads = 2
+    static let stableReads = 3
+    /// Any drift past this is corrected exactly; it's under a pixel on 2x and
+    /// 3x screens, so a settled hold is always within half a point.
+    static let tolerance = 0.25
     /// A layout that never stops moving the anchor can't keep the hold going.
     static let maxCorrections = 12
 
@@ -205,10 +212,11 @@ struct ChatPrependHold: Equatable {
     /// it's in place (which settles the hold).
     /// `measuredIn` is the generation of the layout the anchor's position came
     /// from; a position from before the page went in is ignored, not corrected for.
-    mutating func offsetForAnchor(y: Double, measuredIn: Int = .max, metrics: ChatScrollMetrics) -> Double? {
+    mutating func offsetForAnchor(y: Double, measuredIn: Int = .max, metrics: ChatScrollMetrics, confirming: Bool = true) -> Double? {
         guard insertApplied, !settled, measuredIn >= generation, let before = anchorYBefore else { return nil }
         let drift = y - before
-        guard abs(drift) > 0.5 else {
+        guard abs(drift) > Self.tolerance else {
+            guard confirming else { return nil }
             inPlaceReads += 1
             if inPlaceReads >= Self.stableReads { settled = true }
             return nil
@@ -221,7 +229,7 @@ struct ChatPrependHold: Equatable {
 }
 
 /// A laid-out row's frame in the message stack's own coordinate space.
-struct ChatRowFrame: Equatable {
+struct ChatRowFrame: Equatable, Sendable {
     var minY: Double
     var height: Double
 }
@@ -232,6 +240,35 @@ struct ChatPrependRestore: Equatable {
     let id: UUID
     let y: Double
     let unitY: Double
+}
+
+/// Keeps one row (your failed message, with "Not delivered" and Retry as its
+/// last lines) inside the list, from its measured frame rather than from "the
+/// bottom": at AX5 with the keyboard up the list's last layout passes can leave
+/// the offset short of where the row fits.
+///
+/// `rowTop`/`rowBottom` are in the list's visible coordinates (0 is the list's
+/// top edge). The visible part is from `topInset` to the viewport height less
+/// `bottomInset`. A bottom sticking out moves the list up by exactly that much;
+/// a top sticking out moves it down only while the whole row fits (the bottom
+/// lines matter more). Nil when the row is within half a point or the content
+/// can't move further.
+enum ChatRowFit {
+    static let tolerance = 0.5
+
+    static func offset(rowTop: Double, rowBottom: Double, metrics: ChatScrollMetrics) -> Double? {
+        let visibleTop = metrics.topInset
+        let visibleBottom = metrics.viewportHeight - metrics.bottomInset
+        var delta = 0.0
+        if rowBottom > visibleBottom + tolerance {
+            delta = rowBottom - visibleBottom
+        } else if rowTop < visibleTop - tolerance, rowBottom - rowTop <= visibleBottom - visibleTop {
+            delta = max(rowTop - visibleTop, rowBottom - visibleBottom)
+        }
+        guard delta != 0 else { return nil }
+        let target = metrics.clamped(metrics.offset + delta)
+        return abs(target - metrics.offset) > tolerance ? target : nil
+    }
 }
 
 /// When the list gets shorter or taller (the keyboard), a reader at the bottom

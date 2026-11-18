@@ -19,13 +19,20 @@ final class ChatScrollController: NSObject {
     private var turnEndScheduled = false
     /// Content-space frames of the tracked rows (near the top of the loaded thread
     /// while older pages can still come, and the hold's anchor) that are laid out
-    /// now, from the latest report only: a row
-    /// the lazy stack dropped is gone, so a stale position can't claim it's on
-    /// screen. Content space doesn't change while the list scrolls, so reports
-    /// come only when layout does. `reportGeneration` is the layout generation
-    /// (older pages in) the report was measured in.
+    /// now. Each row reports itself (`rowMoved`) and leaves when the lazy stack
+    /// drops it (`rowGone`), so a stale position can't claim it's on screen.
+    /// Content space doesn't change while the list scrolls, so reports come only
+    /// when layout does. `rowGenerations` is the layout generation (older pages
+    /// in) each was measured in.
     private var rowFrames: [UUID: ChatRowFrame] = [:]
-    private var reportGeneration = 0
+    private var rowGenerations: [UUID: Int] = [:]
+    /// The thread's last row when it's your message that failed to send, and its
+    /// frame in the list's visible coordinates (0 is the list's top edge), so its
+    /// "Not delivered" and Retry can be kept inside the list (`fitFailedRow`).
+    private var failedRow: UUID?
+    private var failedFrame: ChatRowFrame?
+    private var failedFits = 0
+    private static let maxFailedFitsPerTurn = 2
     private var holdRecheckScheduled = false
     /// Rechecks since the hold was made; a hold whose anchor never reports again
     /// can't stay forever (it blocks the bottom pin).
@@ -77,7 +84,7 @@ final class ChatScrollController: NSObject {
             // or size change; a pinned list follows that too.
             view.observe(\.contentInset, options: [.old, .new]) { [weak self] view, change in
                 guard change.oldValue != change.newValue else { return }
-                MainActor.assumeIsolated { self?.repin(view, change: .viewport) }
+                MainActor.assumeIsolated { self?.insetsChanged(view) }
             },
             view.layer.observe(\.bounds, options: [.old, .new]) { [weak self, weak view] _, change in
                 guard let old = change.oldValue, let new = change.newValue, old.size.height != new.size.height else { return }
@@ -96,6 +103,9 @@ final class ChatScrollController: NSObject {
         hold = nil
         pin.reset()
         rowFrames = [:]
+        rowGenerations = [:]
+        failedRow = nil
+        failedFrame = nil
     }
 
     /// Before the person's own scroll (jump to a message, to the latest) so a hold
@@ -110,15 +120,16 @@ final class ChatScrollController: NSObject {
         pin.jumped(toBottom: toBottom)
         // The app moved the list on purpose; there's no place left to hold.
         hold = nil
-        // Positions from before a jump say nothing about where rows are after it;
-        // the next report fills them in again.
-        rowFrames = [:]
+        // Content-space positions stay true across a jump (rows the jump takes out
+        // of the laid-out range remove themselves), so they're kept.
+        if !toBottom { failedRow = nil }
     }
 
     /// The person tapped something that grows in place (reaction menu, locking the
     /// spot card): the list stays where it is, and stops following the bottom.
     func expanded() {
         pin.expanded()
+        failedRow = nil
     }
 
     /// The thread's last row is new or changed its send state: a pinned list
@@ -144,6 +155,43 @@ final class ChatScrollController: NSObject {
         guard !(view.isTracking || view.isDragging || view.isDecelerating) else { return }
         let metrics = Self.metrics(of: view)
         if abs(metrics.maxOffset - metrics.offset) > 0.5 { set(view, offset: metrics.maxOffset) }
+        fitFailedRow(view)
+    }
+
+    // MARK: Failed send
+
+    /// The thread's last row is your message that failed (nil: it isn't). While
+    /// set, its measured frame keeps "Not delivered" and Retry inside the list
+    /// once the composer and header have settled, instead of trusting that "the
+    /// bottom" puts them there.
+    func watchFailedRow(_ id: UUID?) {
+        guard failedRow != id else { return }
+        failedRow = id
+        failedFrame = nil
+    }
+
+    /// The failed row's frame in the list's visible coordinates, on every change.
+    func failedRowMoved(_ id: UUID, frame: ChatRowFrame) {
+        guard id == failedRow else { return }
+        failedFrame = frame
+        guard let view = scrollView, !pin.endPending else { return }
+        fitFailedRow(view)
+    }
+
+    /// Moves the list by exactly what the failed row sticks out (bottom first:
+    /// Retry and "Not delivered" are its last lines). Only for a pinned list the
+    /// person isn't moving, never during a hold, at most twice a run-loop turn.
+    /// After a move the measured frame is stale until the row reports again.
+    private func fitFailedRow(_ view: UIScrollView) {
+        guard failedRow != nil, let frame = failedFrame, pin.pinned, hold == nil else { return }
+        guard !(view.isTracking || view.isDragging || view.isDecelerating) else { return }
+        guard failedFits < Self.maxFailedFitsPerTurn else { return }
+        let metrics = Self.metrics(of: view)
+        guard let target = ChatRowFit.offset(rowTop: frame.minY, rowBottom: frame.minY + frame.height, metrics: metrics) else { return }
+        failedFits += 1
+        failedFrame = nil
+        set(view, offset: target)
+        scheduleTurnEnd()
     }
 
     // MARK: Older pages
@@ -164,7 +212,9 @@ final class ChatScrollController: NSObject {
         }
         let contentHeight = Double(view.contentSize.height)
         holdRechecks = 0
-        if let restore = ChatPrependHold.visibleAnchor(frames: rowFrames, offset: resting, viewportHeight: before.viewportHeight) {
+        // Only rows measured in the current layout can anchor the hold.
+        let frames = rowFrames.filter { rowGenerations[$0.key] == generation - 1 }
+        if let restore = ChatPrependHold.visibleAnchor(frames: frames, offset: resting, viewportHeight: before.viewportHeight) {
             hold = ChatPrependHold(
                 anchor: restore.id,
                 offsetBefore: resting,
@@ -179,33 +229,42 @@ final class ChatScrollController: NSObject {
             anchor: oldest,
             offsetBefore: resting,
             contentHeightBefore: contentHeight,
-            anchorYBefore: rowFrames[oldest].map { $0.minY - resting },
+            anchorYBefore: frames[oldest].map { $0.minY - resting },
             generation: generation
         )
         return nil
     }
 
-    /// The tracked rows' frames in content space, from the list's preference.
-    func rowsMoved(_ report: ChatRowReport) {
-        rowFrames = report.rows
-        reportGeneration = report.generation
-        guard let view = scrollView else { return }
-        applyHold(view)
+    /// A tracked row's content-space frame, from that row, whenever it changes
+    /// (and once when it's laid out). No SwiftUI state is written here.
+    func rowMoved(_ id: UUID, frame: ChatRowFrame, generation: Int) {
+        rowFrames[id] = frame
+        rowGenerations[id] = generation
+        guard id == hold?.anchor, let view = scrollView else { return }
+        applyHold(view, confirming: false)
     }
 
-    /// Step 2 of the hold: from a report measured in a layout that has the new
-    /// rows and still contains the anchor, and the current offset. An in-place
-    /// reading is checked again a run-loop turn later (after whatever layout it
-    /// caused) before the hold ends.
-    private func applyHold(_ view: UIScrollView) {
+    /// The lazy stack dropped a tracked row: its position no longer says anything.
+    func rowGone(_ id: UUID) {
+        rowFrames[id] = nil
+        rowGenerations[id] = nil
+    }
+
+    /// Step 2 of the hold: from the anchor's position measured in a layout that
+    /// has the new rows, and the current offset. Drift is corrected exactly
+    /// whenever it's read; the hold ends only on confirming readings, each a
+    /// run-loop turn after the last (after whatever layout the previous one, or
+    /// the scroll to the anchor, caused).
+    private func applyHold(_ view: UIScrollView, confirming: Bool) {
         guard var current = hold, current.insertApplied else { return }
         guard current.anchorYBefore != nil else {
             hold = nil
             return
         }
-        guard reportGeneration >= current.generation, let frame = rowFrames[current.anchor] else { return }
+        guard let frame = rowFrames[current.anchor], let measuredIn = rowGenerations[current.anchor],
+              measuredIn >= current.generation else { return }
         let metrics = Self.metrics(of: view)
-        let target = current.offsetForAnchor(y: frame.minY - metrics.offset, measuredIn: reportGeneration, metrics: metrics)
+        let target = current.offsetForAnchor(y: frame.minY - metrics.offset, measuredIn: measuredIn, metrics: metrics, confirming: confirming)
         hold = current.settled ? nil : current
         if let target { set(view, offset: target) }
         if hold != nil { scheduleHoldRecheck() }
@@ -222,7 +281,7 @@ final class ChatScrollController: NSObject {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.holdRecheckScheduled = false
-            if let view = self.scrollView { self.applyHold(view) }
+            if let view = self.scrollView { self.applyHold(view, confirming: true) }
         }
     }
 
@@ -232,6 +291,7 @@ final class ChatScrollController: NSObject {
         guard gesture.state == .began else { return }
         userHasScrolled = true
         hold = nil
+        failedRow = nil
         onUserDrag?()
     }
 
@@ -258,6 +318,7 @@ final class ChatScrollController: NSObject {
         turnEndScheduled = true
         DispatchQueue.main.async { [weak self] in
             self?.turnEndScheduled = false
+            self?.failedFits = 0
             self?.pin.turnEnded()
         }
     }
@@ -268,7 +329,7 @@ final class ChatScrollController: NSObject {
             set(view, offset: target)
         }
         repin(view, change: .content)
-        applyHold(view)
+        applyHold(view, confirming: false)
         onGeometry?(Self.metrics(of: view))
     }
 
@@ -280,6 +341,12 @@ final class ChatScrollController: NSObject {
             set(view, offset: target)
         }
         repin(view, change: .viewport)
+        if !pin.endPending { fitFailedRow(view) }
+    }
+
+    private func insetsChanged(_ view: UIScrollView) {
+        repin(view, change: .viewport)
+        if !pin.endPending { fitFailedRow(view) }
     }
 
     private func set(_ view: UIScrollView, offset: Double) {
@@ -338,21 +405,5 @@ struct ChatScrollBridge: UIViewRepresentable {
                 next = view.superview
             }
         }
-    }
-}
-
-/// Content-space tops of the laid-out message rows, and the layout generation
-/// (older pages that had gone in) they were measured in.
-struct ChatRowReport: Equatable {
-    var rows: [UUID: ChatRowFrame] = [:]
-    var generation = 0
-}
-
-struct ChatRowYKey: PreferenceKey {
-    static let defaultValue = ChatRowReport()
-    static func reduce(value: inout ChatRowReport, nextValue: () -> ChatRowReport) {
-        let next = nextValue()
-        value.rows.merge(next.rows, uniquingKeysWith: { _, new in new })
-        value.generation = max(value.generation, next.generation)
     }
 }

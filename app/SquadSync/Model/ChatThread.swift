@@ -42,19 +42,75 @@ struct ChatBubble: Equatable {
     let reply: ChatReplyQuote?
 }
 
-enum ChatRow: Identifiable, Equatable {
+/// Not Identifiable on purpose: the list iterates `ChatRowItem`, which stores
+/// this identity, so it's worked out once per row build and never per diff.
+enum ChatRow: Equatable {
     case day(key: String, label: String)
     case unread(count: Int)
     case message(ChatBubble)
     case spot(SpotCall)
 
-    var id: String {
+    var identity: String {
         switch self {
         case .day(let key, _): "day-\(key)"
         case .unread: "unread-divider"
         case .message(let bubble): "message-\(bubble.entry.id.uuidString)"
         case .spot(let call): "spot-\(call.id.uuidString)"
         }
+    }
+}
+
+/// A thread row with its identity worked out once, when the row is built. The
+/// list's ForEach reads `id` for every row on every diff; as a computed string
+/// (interpolating a UUID each time) it was the top cost in a profile of the
+/// list, ahead of layout itself.
+struct ChatRowItem: Identifiable, Equatable {
+    let id: String
+    let row: ChatRow
+
+    init(_ row: ChatRow) {
+        self.id = row.identity
+        self.row = row
+    }
+}
+
+/// The thread's rows, built once per change of what they're made from (the
+/// messages and calls, names, reads, the unread anchor, the viewer, and the
+/// day, since separators say Today or Yesterday), not on every render of the
+/// list. Not observable: reading or refilling it never asks for a render.
+final class ChatRowMemo {
+    private struct Key: Equatable {
+        let items: [SpotThreadItem]
+        let viewerId: UUID?
+        let names: [UUID: String]
+        let reads: [MemberRead]
+        let unreadAnchor: UUID?
+        let today: String
+        let zone: String
+        let locale: String
+    }
+
+    private var key: Key?
+    private var cached: [ChatRowItem] = []
+    /// How many times the rows were actually built.
+    private(set) var builds = 0
+
+    func rows(items: [SpotThreadItem], context: ChatThread.Context) -> [ChatRowItem] {
+        let key = Key(
+            items: items,
+            viewerId: context.viewerId,
+            names: context.names,
+            reads: context.reads,
+            unreadAnchor: context.unreadAnchor,
+            today: context.clock.dayKey(context.now),
+            zone: context.clock.calendar.timeZone.identifier,
+            locale: context.clock.locale.identifier
+        )
+        if key == self.key { return cached }
+        self.key = key
+        cached = ChatThread.rows(items: items, context: context).map(ChatRowItem.init)
+        builds += 1
+        return cached
     }
 }
 

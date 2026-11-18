@@ -1950,6 +1950,8 @@ final class LiveSessionModel {
 struct LiveSessionView: View {
     @State private var model: LiveSessionModel
     @State private var pinnedToBottom = true
+    /// The thread's rows, rebuilt only when what they're made of changes.
+    @State private var rowMemo = ChatRowMemo()
     @State private var wentToBackground = false
     @State private var confirmSignOut = false
     @State private var confirmEndSpot = false
@@ -2257,8 +2259,9 @@ struct LiveSessionView: View {
                         }
                         let generation = model.olderPagesLoaded
                         let tracked = scrollTrackedIds
-                        ForEach(chatRows) { row in
-                            switch row {
+                        let failed = failedEndRow
+                        ForEach(chatRowItems) { item in
+                            switch item.row {
                             case .day(_, let label):
                                 ChatDaySeparator(label: label)
                             case .unread(let count):
@@ -2266,14 +2269,15 @@ struct LiveSessionView: View {
                             case .message(let bubble):
                                 messageRow(bubble)
                                     .id(bubble.entry.id)
-                                    .background {
-                                        // Two rows at most, not every row: a preference
-                                        // merged over the whole lazy stack on every layout
-                                        // pass kept the main thread busy.
-                                        if tracked.contains(bubble.entry.id) {
-                                            ChatRowYReporter(id: bubble.entry.id, generation: generation)
-                                        }
-                                    }
+                                    // Only tracked rows get a geometry observer at all;
+                                    // the rest have no modifier (see ChatRowGeometry).
+                                    .modifier(ChatRowGeometry(
+                                        id: bubble.entry.id,
+                                        generation: generation,
+                                        tracksPosition: tracked.contains(bubble.entry.id),
+                                        tracksFit: failed == bubble.entry.id,
+                                        controller: model.scrollHold
+                                    ))
                             case .spot(let call):
                                 if let outcome = SpotThread.outcome(call, viewerId: spotViewer, now: Date()) {
                                     SpotHistoryCard(call: call, outcome: outcome)
@@ -2282,7 +2286,7 @@ struct LiveSessionView: View {
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .coordinateSpace(name: ChatRowYReporter.space)
+                    .coordinateSpace(name: ChatRowGeometry.contentSpace)
                     .background {
                         // iOS 17 only: newer systems read scroll geometry directly
                         // (ChatPinModifier), so no per-frame preference there.
@@ -2305,9 +2309,8 @@ struct LiveSessionView: View {
                         .accessibilityIdentifier(ChatAnchor.end)
                 }
                 .contentMargins(.bottom, listBottomMargin, for: .scrollContent)
-                .coordinateSpace(name: "chat")
+                .coordinateSpace(name: ChatRowGeometry.listSpace)
                 .scrollDismissesKeyboard(.interactively)
-                .onPreferenceChange(ChatRowYKey.self) { model.scrollHold.rowsMoved($0) }
                 .modifier(ChatPinModifier(pinned: $pinnedToBottom))
                 .accessibilityIdentifier("message-list")
                 .overlay(alignment: .top) {
@@ -2414,6 +2417,7 @@ struct LiveSessionView: View {
             // A pinned list follows the end: a new row, or the last one sending,
             // failing (its "Not delivered" and Retry stay above the composer), sent.
             .onChange(of: chatEndSignature) { _, _ in
+                model.scrollHold.watchFailedRow(failedEndRow)
                 model.scrollHold.endChanged()
             }
             // A row expanding in place where the person tapped stays put.
@@ -2490,6 +2494,8 @@ struct LiveSessionView: View {
     private var scrollTrackedIds: Set<UUID> {
         var ids = Set<UUID>()
         if let anchor = model.olderHoldAnchor { ids.insert(anchor) }
+        // Before the first read is in, there's no paging to track for.
+        guard model.chatLoad == .loaded else { return ids }
         switch model.olderPaging.state {
         case .idle, .loading:
             for entry in model.log.ordered.prefix(Self.trackedWindow) { ids.insert(entry.id) }
@@ -2505,6 +2511,13 @@ struct LiveSessionView: View {
     /// row at the end, or the last one sending, failing, or sent.
     private var chatEndSignature: String? {
         model.log.ordered.last.map { "\($0.id)|\($0.delivery)" }
+    }
+
+    /// The thread's last row when it's a message that failed to send (only your
+    /// own can): its frame is measured so Retry stays inside the list.
+    private var failedEndRow: UUID? {
+        guard let last = model.log.ordered.last, last.delivery == .failed else { return nil }
+        return last.id
     }
 
     private func olderCheck(_ metrics: ChatScrollMetrics) {
@@ -2538,8 +2551,9 @@ struct LiveSessionView: View {
     }
 
     /// Thread rows with day separators, the unread divider, and message groups.
-    private var chatRows: [ChatRow] {
-        ChatThread.rows(
+    /// Built once per change of the thread's inputs (ChatRowMemo), not per render.
+    private var chatRowItems: [ChatRowItem] {
+        rowMemo.rows(
             items: threadItems,
             context: ChatThread.Context(
                 viewerId: model.profile?.id ?? model.viewerId,
@@ -3474,25 +3488,68 @@ private enum ChatAnchor {
     static let spot = "message-list-spot"
 }
 
-/// Reports a message row's top in content space, with the layout generation, for
-/// the scroll controller.
-private struct ChatRowYReporter: View {
-    /// The message stack's own coordinate space: positions don't change while the
-    /// list scrolls, only when layout does.
-    static let space = "chat-content"
+/// Feeds a message row's geometry to the scroll controller with
+/// `onGeometryChange`, which calls back per row after layout, only when the
+/// value changes. It replaced a PreferenceKey: with an `onPreferenceChange` on
+/// the list, SwiftUI recomputed that preference over the whole lazy stack on
+/// every update, walking every row (copying it and reading its id) and merging
+/// the reports, and the reports themselves moved whenever the lazy stack
+/// re-estimated heights, which asked for another pass.
+///
+/// A row with nothing tracked gets no observer at all. Tracked rows report:
+/// - `tracksPosition`: the frame in the message stack's own space (doesn't move
+///   while the list scrolls), with the layout generation, for paging and the
+///   prepend hold;
+/// - `tracksFit`: the frame in the list's visible space, for the failed-send fit.
+/// The callbacks write no SwiftUI state.
+private struct ChatRowGeometry: ViewModifier {
+    static let contentSpace = "chat-content"
+    static let listSpace = "chat"
+
     let id: UUID
     let generation: Int
+    let tracksPosition: Bool
+    let tracksFit: Bool
+    let controller: ChatScrollController
 
-    var body: some View {
-        GeometryReader { geo in
-            let frame = geo.frame(in: .named(Self.space))
-            Color.clear.preference(
-                key: ChatRowYKey.self,
-                value: ChatRowReport(rows: [id: ChatRowFrame(minY: frame.minY, height: frame.height)], generation: generation)
-            )
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if tracksPosition || tracksFit {
+            let id = self.id
+            let generation = self.generation
+            let tracksPosition = self.tracksPosition
+            let tracksFit = self.tracksFit
+            let controller = self.controller
+            content
+                .onGeometryChange(for: ChatRowSample.self) { proxy in
+                    let inContent = proxy.frame(in: .named(Self.contentSpace))
+                    let inList = proxy.frame(in: .named(Self.listSpace))
+                    return ChatRowSample(
+                        content: tracksPosition ? ChatRowFrame(minY: inContent.minY, height: inContent.height) : nil,
+                        list: tracksFit ? ChatRowFrame(minY: inList.minY, height: inList.height) : nil,
+                        generation: generation
+                    )
+                } action: { sample in
+                    if let frame = sample.content {
+                        controller.rowMoved(id, frame: frame, generation: sample.generation)
+                    }
+                    if let frame = sample.list {
+                        controller.failedRowMoved(id, frame: frame)
+                    }
+                }
+                .onDisappear {
+                    controller.rowGone(id)
+                }
+        } else {
+            content
         }
-        .accessibilityHidden(true)
     }
+}
+
+private struct ChatRowSample: Equatable, Sendable {
+    var content: ChatRowFrame?
+    var list: ChatRowFrame?
+    var generation: Int
 }
 
 private struct ChatFrameKey: PreferenceKey {
@@ -3513,15 +3570,16 @@ private struct ChatViewportKey: PreferenceKey {
 private struct ChatContentFrame: View {
     var body: some View {
         GeometryReader { geo in
-            Color.clear.preference(key: ChatFrameKey.self, value: geo.frame(in: .named("chat")))
+            Color.clear.preference(key: ChatFrameKey.self, value: geo.frame(in: .named(ChatRowGeometry.listSpace)))
         }
     }
 }
 
 private struct ChatPinModifier: ViewModifier {
     @Binding var pinned: Bool
-    @State private var lastOffset: CGFloat = 0
-    @State private var viewport: CGFloat = 0
+    /// iOS 17 only. Plain references, not state: written on every scroll frame,
+    /// and a state write there would render this modifier again each frame.
+    @State private var last = ChatPinLast()
 
     func body(content: Content) -> some View {
         if #available(iOS 18.0, *) {
@@ -3531,9 +3589,8 @@ private struct ChatPinModifier: ViewModifier {
                     content: geo.contentSize.height,
                     viewport: geo.containerSize.height
                 )
-            }, action: { _, sample in
-                pinned = ChatFollow.pinned(previous: pinned, oldOffset: lastOffset, sample: sample)
-                lastOffset = sample.offset
+            }, action: { old, sample in
+                update(ChatFollow.pinned(previous: pinned, oldOffset: old.offset, sample: sample))
             })
         } else {
             content
@@ -3542,14 +3599,25 @@ private struct ChatPinModifier: ViewModifier {
                         Color.clear.preference(key: ChatViewportKey.self, value: geo.size.height)
                     }
                 }
-                .onPreferenceChange(ChatViewportKey.self) { viewport = $0 }
+                .onPreferenceChange(ChatViewportKey.self) { last.viewport = $0 }
                 .onPreferenceChange(ChatFrameKey.self) { frame in
-                    let sample = ScrollSample(offset: -frame.minY, content: frame.height, viewport: viewport)
-                    pinned = ChatFollow.pinned(previous: pinned, oldOffset: lastOffset, sample: sample)
-                    lastOffset = sample.offset
+                    let sample = ScrollSample(offset: -frame.minY, content: frame.height, viewport: last.viewport)
+                    let next = ChatFollow.pinned(previous: pinned, oldOffset: last.offset, sample: sample)
+                    last.offset = sample.offset
+                    update(next)
                 }
         }
     }
+
+    /// Writes only a change, so a scroll that doesn't flip it renders nothing.
+    private func update(_ next: Bool) {
+        if next != pinned { pinned = next }
+    }
+}
+
+private final class ChatPinLast {
+    var offset: CGFloat = 0
+    var viewport: CGFloat = 0
 }
 
 /// The call sheet, opened from the + menu or a bare `/spots`. Its own view so its

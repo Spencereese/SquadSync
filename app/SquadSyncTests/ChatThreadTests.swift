@@ -84,7 +84,7 @@ final class ChatThreadTests: XCTestCase {
         let days = rows.compactMap { if case .day(_, let label) = $0 { return label } else { return nil } }
         XCTAssertEqual(days, ["Yesterday", "Today"])
         XCTAssertEqual(bubbles(rows).map(\.startsGroup), [true, true])
-        XCTAssertEqual(rows.map(\.id).count, Set(rows.map(\.id)).count, "Row ids must be unique")
+        XCTAssertEqual(rows.map(\.identity).count, Set(rows.map(\.identity)).count, "Row ids must be unique")
     }
 
     func testASpotCardBreaksTheGroup() {
@@ -108,7 +108,7 @@ final class ChatThreadTests: XCTestCase {
             entry(4, alex, at: -100)
         ]
         let rows = ChatThread.rows(items: items(entries), context: context(anchor: entries[1].id))
-        let ids = rows.map(\.id)
+        let ids = rows.map(\.identity)
         let divider = ids.firstIndex(of: "unread-divider")
         XCTAssertEqual(divider.map { ids[$0 + 1] }, "message-\(entries[1].id.uuidString)")
         XCTAssertTrue(rows.contains(.unread(count: 2)), "Riley's and Alex's messages are unread; yours don't count")
@@ -303,6 +303,34 @@ final class ChatThreadTests: XCTestCase {
         }
         let plain = ChatPolishSeed.thread(viewerId: me, squadId: UUID(), now: now, replies: false)
         XCTAssertTrue(plain.messages.allSatisfy { $0.replyToId == nil })
+    }
+    func testRowsAreBuiltOncePerChangeNotPerRender() {
+        let memo = ChatRowMemo()
+        let entries = [entry(1, riley, at: -300), entry(2, me, at: -200)]
+        let first = memo.rows(items: items(entries), context: context())
+        for _ in 0..<50 {
+            var later = context()
+            later.now = now.addingTimeInterval(30)
+            XCTAssertEqual(memo.rows(items: items(entries), context: later), first)
+        }
+        XCTAssertEqual(memo.builds, 1, "Same messages, names, reads and day: no rebuild")
+        _ = memo.rows(items: items(entries + [entry(3, alex, at: -10)]), context: context())
+        XCTAssertEqual(memo.builds, 2, "A new message rebuilds")
+        _ = memo.rows(items: items(entries + [entry(3, alex, at: -10)]), context: context(reads: [MemberRead(userId: riley, lastReadAt: now)]))
+        XCTAssertEqual(memo.builds, 3, "A read receipt rebuilds")
+        var tomorrow = context(reads: [MemberRead(userId: riley, lastReadAt: now)])
+        tomorrow.now = now.addingTimeInterval(86_400)
+        let next = memo.rows(items: items(entries + [entry(3, alex, at: -10)]), context: tomorrow)
+        XCTAssertEqual(memo.builds, 4, "A new day relabels the separators")
+        XCTAssertTrue(next.contains { if case .day(_, let label) = $0.row { return label == "Yesterday" } else { return false } })
+    }
+
+    func testRowItemsStoreTheirIdentity() {
+        let entries = [entry(1, riley, at: -300), entry(2, me, at: -200)]
+        let rows = ChatThread.rows(items: items(entries), context: context(anchor: entries[0].id))
+        let stored = rows.map(ChatRowItem.init)
+        XCTAssertEqual(stored.map(\.id), rows.map(\.identity))
+        XCTAssertEqual(Set(stored.map(\.id)).count, stored.count)
     }
 }
 

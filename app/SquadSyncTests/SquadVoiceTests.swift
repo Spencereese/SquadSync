@@ -347,6 +347,45 @@ final class SquadVoiceTests: XCTestCase {
         XCTAssertFalse(pill.spoken.contains(VoicePillState.mockTag), "Live voice never calls itself a mock")
     }
 
+    func testTheRosterPutsYouFirstAndReadsAudioHonestly() {
+        let members = SquadVoiceRoster.members([
+            .init(id: "s3", userId: "u3", name: "zed", hasAudio: true, isSpeaking: true),
+            .init(id: "s1", userId: "me", name: "Spencer", hasAudio: false, isSpeaking: true),
+            .init(id: "s2", userId: "u2", name: "  Avery ", hasAudio: true, isSpeaking: false),
+            .init(id: "s4", userId: "u4", name: "u4", hasAudio: true, isSpeaking: false),
+        ], you: "me")
+        XCTAssertEqual(members.map(\.id), ["s1", "s2", "s4", "s3"])
+        XCTAssertEqual(members[0], SquadVoiceMember(id: "s1", name: "Spencer", muted: true, speaking: false, isYou: true),
+                       "A muted mic is never shown as speaking")
+        XCTAssertEqual(members[1].name, "Avery")
+        XCTAssertEqual(members[2].name, "Squad member", "A bare user id is not a name")
+        XCTAssertTrue(members[3].speaking)
+        XCTAssertEqual(SquadVoiceRoster.members([], you: "me"), [])
+    }
+
+    func testTheRosterKeepsTwoDevicesOfOnePerson() {
+        let members = SquadVoiceRoster.members([
+            .init(id: "a", userId: "u2", name: "Avery", hasAudio: true, isSpeaking: false),
+            .init(id: "b", userId: "u2", name: "Avery", hasAudio: true, isSpeaking: false),
+        ], you: "me")
+        XCTAssertEqual(members.map(\.id), ["a", "b"])
+    }
+
+    func testTheCallIdLeadsBackToTheSquad() {
+        let squad = UUID(uuidString: "2B6F0C1E-8C3A-4C1D-9E7B-5A4D3C2B1A00")!
+        XCTAssertEqual(SquadVoiceRoster.squadId(fromCallId: "sq8-2b6f0c1e-8c3a-4c1d-9e7b-5a4d3c2b1a00"), squad)
+        XCTAssertNil(SquadVoiceRoster.squadId(fromCallId: "2b6f0c1e-8c3a-4c1d-9e7b-5a4d3c2b1a00"))
+        XCTAssertNil(SquadVoiceRoster.squadId(fromCallId: "sq8-not-a-uuid"))
+    }
+
+    func testJoinFailuresSayWhatHappened() {
+        XCTAssertEqual(SquadVoiceJoinFailure.message(statusCode: 403), "Voice turned this sign-in away (403). Try again.")
+        XCTAssertEqual(SquadVoiceJoinFailure.message(statusCode: 401), "Voice turned this sign-in away (401). Try again.")
+        XCTAssertEqual(SquadVoiceJoinFailure.message(statusCode: 500), "Couldn't join voice (500). Try again.")
+        XCTAssertEqual(SquadVoiceJoinFailure.message(statusCode: nil), "Couldn't join voice. Check your connection and try again.")
+        XCTAssertFalse(SquadVoiceJoinFailure.dropped.isEmpty)
+    }
+
     func testTheMockPillIsUnchanged() {
         var pill = VoicePillState()
         XCTAssertTrue(pill.spoken.contains("mock"))
@@ -357,8 +396,8 @@ final class SquadVoiceTests: XCTestCase {
     }
 }
 
-/// The live model: the pill opens the sheet, and with this build's engine the
-/// room says "Voice isn't set up yet". (@MainActor, so Mac only.)
+/// The live model: the pill opens the sheet without joining, and the app build
+/// picks the Stream engine. (@MainActor, so Mac only.)
 @MainActor
 final class SquadVoiceModelTests: XCTestCase {
     func testLiveVoiceStartsHonestAndThePillOpensTheSheet() async {
@@ -374,6 +413,11 @@ final class SquadVoiceModelTests: XCTestCase {
         XCTAssertTrue(model.voiceSheetOpen)
         let joined = model.voicePill.isIn
         XCTAssertFalse(joined, "Opening the sheet joins nothing")
+    }
+
+    func testTheAppBuildUsesTheLinkedStreamEngine() {
+        let engine = LiveSessionModel.defaultVoiceEngine(FakeSquadVoiceTokens(.failure(.notSetUp)))
+        XCTAssertTrue(engine.isLinked, "The app target links StreamVideo, so live voice uses StreamVoiceEngine")
     }
 
     func testTheMockBackendKeepsTheInMemoryPill() async {

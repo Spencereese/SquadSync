@@ -4,12 +4,12 @@ import Foundation
 //
 // The app asks the sq8-voice-token function (supabase/functions/sq8-voice-token)
 // for a short-lived Stream call token, then hands it to a `SquadVoiceEngine`.
-// The Stream Swift SDK is not linked in this build (see "Voice" in app/README.md):
-// the only engine here is
-// `UnlinkedSquadVoiceEngine`, which never connects. So with the function not
+// The app build uses `StreamVoiceEngine` (StreamVoiceEngine.swift, on the
+// Stream Video Swift SDK). Builds without the SDK, the Linux harness and tests
+// use `UnlinkedSquadVoiceEngine`, which never connects. With the function not
 // deployed (404), the Stream secrets unset (503) or no SDK, the room says
 // "Voice isn't set up yet". Nothing in this file ever reports a connection
-// that didn't happen.
+// that didn't happen. See "Voice" in app/README.md.
 //
 // Foundation only, so the Linux harness builds and tests it.
 
@@ -172,6 +172,64 @@ struct SquadVoiceMember: Identifiable, Equatable {
     }
 }
 
+/// Turns the engine's participant list into the rows the sheet shows. Pure, so
+/// the Linux harness tests it; `StreamVoiceEngine` feeds it Stream's participants.
+enum SquadVoiceRoster {
+    struct Entry: Equatable {
+        let id: String
+        let userId: String
+        let name: String
+        let hasAudio: Bool
+        let isSpeaking: Bool
+    }
+
+    static let callIdPrefix = "sq8-"
+
+    /// You first, then everyone else by name. One row per connection, so the
+    /// same person on two devices shows twice rather than being guessed away.
+    static func members(_ entries: [Entry], you: String) -> [SquadVoiceMember] {
+        entries
+            .map { entry in
+                let trimmed = entry.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                return SquadVoiceMember(
+                    id: entry.id,
+                    name: trimmed.isEmpty || trimmed == entry.userId ? "Squad member" : trimmed,
+                    muted: !entry.hasAudio,
+                    speaking: entry.hasAudio && entry.isSpeaking,
+                    isYou: entry.userId == you
+                )
+            }
+            .sorted { a, b in
+                if a.isYou != b.isYou { return a.isYou }
+                let order = a.name.localizedCaseInsensitiveCompare(b.name)
+                if order != .orderedSame { return order == .orderedAscending }
+                return a.id < b.id
+            }
+    }
+
+    /// "sq8-<squad uuid>" back to the squad, so an expired token can be fetched again.
+    static func squadId(fromCallId callId: String) -> UUID? {
+        guard callId.hasPrefix(callIdPrefix) else { return nil }
+        return UUID(uuidString: String(callId.dropFirst(callIdPrefix.count)))
+    }
+}
+
+/// Plain words for a join or a connection that Stream turned down or lost.
+enum SquadVoiceJoinFailure {
+    static let dropped = "Voice disconnected. Join again when you're ready."
+
+    static func message(statusCode: Int?) -> String {
+        switch statusCode {
+        case .some(let code) where code == 401 || code == 403:
+            return "Voice turned this sign-in away (\(code)). Try again."
+        case .some(let code):
+            return "Couldn't join voice (\(code)). Try again."
+        case nil:
+            return "Couldn't join voice. Check your connection and try again."
+        }
+    }
+}
+
 /// The audio connection itself (Stream's SDK in a build that links it).
 /// Engines deliver `onMembers` and `onDropped` on the main queue.
 protocol SquadVoiceEngine: AnyObject {
@@ -186,7 +244,7 @@ protocol SquadVoiceEngine: AnyObject {
     func leave() async
 }
 
-/// This build's engine: the Stream Swift SDK isn't linked, so it never connects.
+/// For builds without the Stream SDK (and tests): never connects.
 final class UnlinkedSquadVoiceEngine: SquadVoiceEngine {
     let isLinked = false
     var onMembers: (([SquadVoiceMember]) -> Void)?

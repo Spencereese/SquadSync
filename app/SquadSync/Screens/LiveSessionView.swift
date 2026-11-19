@@ -103,10 +103,18 @@ final class LiveSessionModel {
     var voiceSheetOpen = false
     /// Live only: the squad's Stream voice room. Created on first use.
     @ObservationIgnored private var squadVoice: SquadVoiceSession?
-    /// The engine every live voice room gets. This build has no Stream SDK, so
-    /// it's `UnlinkedSquadVoiceEngine` and the room says "Voice isn't set up yet".
-    /// A build that links Stream's Swift SDK sets its engine here.
-    static var makeVoiceEngine: () -> SquadVoiceEngine = { UnlinkedSquadVoiceEngine() }
+    /// The engine every live voice room gets: Stream's SDK where it's linked (the
+    /// app), otherwise `UnlinkedSquadVoiceEngine` ("Voice isn't set up yet").
+    /// Tests swap it for a fake. It gets the token source so it can refresh.
+    static var makeVoiceEngine: (SquadVoiceTokenFetching) -> SquadVoiceEngine = defaultVoiceEngine
+
+    static func defaultVoiceEngine(_ tokens: SquadVoiceTokenFetching) -> SquadVoiceEngine {
+        #if canImport(StreamVideo)
+        return StreamVoiceEngine(tokens: tokens)
+        #else
+        return UnlinkedSquadVoiceEngine()
+        #endif
+    }
     /// The status line the last failed send wrote, so a later success can clear exactly that.
     var sendFailureStatus: String?
     // Who's in (S4): check-ins, what the server supports, and Steam when it's deployed.
@@ -1402,7 +1410,7 @@ final class LiveSessionModel {
             currentToken: { [weak self] in await self?.voiceAccessToken() },
             refresher: tokenRefresher
         )
-        let room = SquadVoiceSession(tokens: tokens, engine: Self.makeVoiceEngine())
+        let room = SquadVoiceSession(tokens: tokens, engine: Self.makeVoiceEngine(tokens))
         room.onChange = { [weak self] state in
             Task { @MainActor in self?.voicePill.live = state }
         }

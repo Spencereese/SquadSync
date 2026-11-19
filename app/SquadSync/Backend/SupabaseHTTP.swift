@@ -286,6 +286,8 @@ final class FunctionPresence: @unchecked Sendable {
     static let leaveSquad = "sq8_leave_squad"
     static let renameSquad = "sq8_rename_squad"
     static let steamPresence = "sq8-steam-presence"
+    static let registerDeviceToken = "sq8_register_device_token"
+    static let unregisterDeviceToken = "sq8_unregister_device_token"
 
     private let lock = NSLock()
     private var missing: Set<String> = []

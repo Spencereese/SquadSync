@@ -2,8 +2,8 @@
 
 ## Status on project `sfckxrnoiwetmzdycqaa` (updated Nov 18, 2026)
 
-- **Live:** 0001–0023. 0012 (device tokens), 0015 (Steam links), 0016 (scheduled sessions), 0017 (side threads), 0022 (check-in game and console) and 0023 (profile games list) were applied live on Nov 18, 2026 (about 4:54–4:55 PM CT) with Spencer's yes. Their tables and columns were confirmed afterwards with a read-only catalog query.
-- **Not applied (proposed file only):** 0024 (side-thread guards, a security fix for 0017). Needs Spencer's yes.
+- **Live:** 0001–0024. 0012 (device tokens), 0015 (Steam links), 0016 (scheduled sessions), 0017 (side threads), 0022 (check-in game and console) and 0023 (profile games list) were applied live on Nov 18, 2026 (about 4:54–4:55 PM CT) with Spencer's yes. Their tables and columns were confirmed afterwards with a read-only catalog query.
+- 0024 (side-thread guards, a security fix for 0017) was applied live on Nov 19, 2026 (about 2:27 PM CT) with Spencer's yes. Its functions, both insert policies and both triggers were confirmed afterwards with read-only catalog queries.
 
 Nothing here is applied by the app or by CI. Every not-applied file needs Spencer's yes before it runs. Older notes below that say "not applied" for files now on the live list are kept for history and are out of date.
 
@@ -49,7 +49,7 @@ Run these in order, in one project, as the migration role:
 21. `20261116_0021_rename_squad.sql` — **live**.
 22. `20261117_0022_check_in_details.sql` — **live** (applied Nov 18, 2026). Optional game and console on a check-in. The app probes for the columns by name and still works without them.
 23. `20261117_0023_profile_games.sql` — **live** (applied Nov 18, 2026). The profile games list. On a server without it, the app keeps the list on the phone and says so.
-24. `20261118_0024_side_thread_guards.sql` — **not applied (proposed)**. Needs Spencer's yes. A security fix for file 17, written against the live 0017 objects:
+24. `20261118_0024_side_thread_guards.sql` — **applied live on Nov 19, 2026**. A security fix for file 17, written against the live 0017 objects:
     - Only the thread's creator or an existing member of that thread can add someone, and the person added must be in the thread's squad (a security definer helper, `sq8.can_add_thread_member`). This also fixes a 0017 bug: the creator couldn't add themself, because the policy's lookup of the thread was filtered by the thread select policy.
     - A DM holds at most 2 people. A trigger locks the thread row before counting.
     - A thread message's `squad_id` must be its thread's squad (policy plus trigger), and the sender must be a thread member. Under 0017, someone who moved to another squad could still file messages in the old squad's thread under the new squad.

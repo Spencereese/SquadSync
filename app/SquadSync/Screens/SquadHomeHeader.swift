@@ -255,7 +255,8 @@ private func presenceCaptionColor(_ entry: SquadPresenceEntry) -> Color {
     }
 }
 
-/// Voice-room pill. Stays a mock: tapping only flips local state.
+/// Voice-room pill. Mock backend: tapping only flips local state. Live: opens the
+/// squad voice sheet.
 struct VoiceRoomPillButton: View {
     let voice: VoicePillState
     let onVoice: () -> Void
@@ -267,9 +268,9 @@ struct VoiceRoomPillButton: View {
         } label: {
             PresencePill(
                 text: voice.title,
-                systemImage: voice.joined ? "waveform" : "mic.slash",
-                tint: voice.joined ? SQColor.signal : SQColor.subtle,
-                filled: voice.joined
+                systemImage: voice.isIn ? "waveform" : "mic.slash",
+                tint: voice.isIn ? SQColor.signal : SQColor.subtle,
+                filled: voice.isIn
             )
         }
         .buttonStyle(.plain)

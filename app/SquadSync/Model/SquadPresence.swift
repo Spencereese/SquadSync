@@ -262,16 +262,24 @@ enum SquadHeader {
     }
 }
 
-/// The voice-room pill on the home header. Voice is a mock: the pill drives
-/// the in-memory `VoiceRoomService` and says so.
+/// The voice-room pill on the home header. With the mock backend it drives the
+/// in-memory `VoiceRoomService` and says it's a mock. With the live backend
+/// (`live` set) it shows the squad's real voice room (`SquadVoiceState`) and
+/// opens the voice sheet; it never claims a connection that didn't happen.
 struct VoicePillState: Equatable {
     var joined = false
     var count = 0
     var connection: VoiceConnectionState = .idle
+    /// The live squad room. Nil with the mock backend.
+    var live: SquadVoiceState?
 
     static let mockTag = "mock"
 
+    /// In the room (live or mock), for the pill's icon and tint.
+    var isIn: Bool { live?.joined ?? joined }
+
     var title: String {
+        if let live { return live.pillTitle }
         switch connection {
         case .connecting: return "Voice · connecting"
         case .reconnecting: return "Voice · reconnecting"
@@ -282,6 +290,7 @@ struct VoicePillState: Equatable {
     }
 
     var spoken: String {
+        if let live { return live.pillSpoken }
         let who = count == 0 ? "Nobody is in it." : (count == 1 ? "1 person is in it." : "\(count) people are in it.")
         let action = joined ? "Double tap to leave." : "Double tap to join."
         return "Voice room, mock. Nothing is sent over the network. \(who) \(action)"

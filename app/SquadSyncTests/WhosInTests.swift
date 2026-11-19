@@ -282,7 +282,7 @@ final class WhosInTests: XCTestCase {
         XCTAssertEqual(WhosIn.checkInSource(.unknown), "Check-ins: not set up on this server.")
         XCTAssertTrue(WhosIn.checkInSource(basic).contains("Honor system"))
         XCTAssertTrue(WhosIn.checkInSource(full).contains("game and console"))
-        XCTAssertEqual(WhosIn.steamSource(.notSetUp), "Steam: not set up on this server yet.")
+        XCTAssertEqual(WhosIn.steamSource(.notSetUp), "Steam presence not set up yet.")
         XCTAssertTrue(WhosIn.steamSource(.members([:])).contains("PC only"))
         XCTAssertTrue(WhosIn.xboxSource.contains("no presence"))
     }
@@ -365,14 +365,16 @@ final class WhosInTests: XCTestCase {
         let none = try await SupabaseCheckInService(config: config, accessToken: "t", transport: missing).capabilities()
         XCTAssertEqual(none, .unknown)
 
-        let live = ScriptedTransport(responses: [
-            (200, Data("[]".utf8)),
+        let before0022 = ScriptedTransport(responses: [
             (400, Data(#"{"code":"42703","message":"column sq8_check_ins.game does not exist"}"#.utf8))
         ])
-        let today = try await SupabaseCheckInService(config: config, accessToken: "t", transport: live).capabilities()
-        XCTAssertEqual(today, CheckInCapabilities(table: true, details: false), "Live today: 0006 without proposed 0022")
-        XCTAssertEqual(live.requests.count, 2)
-        XCTAssertTrue(live.requests.allSatisfy { $0.httpMethod == "GET" }, "Probes are read-only")
+        let older = try await SupabaseCheckInService(config: config, accessToken: "t", transport: before0022).capabilities()
+        XCTAssertEqual(older, CheckInCapabilities(table: true, details: false), "42703: table is there, 0022 isn't")
+        XCTAssertEqual(before0022.requests.count, 1, "One request answers both questions")
+        XCTAssertTrue(before0022.requests.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil }, "Probes are read-only")
+        let probeQuery = URLComponents(url: try XCTUnwrap(before0022.requests.first?.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(probeQuery.first { $0.name == "select" }?.value, "user_id,game,platform")
+        XCTAssertEqual(probeQuery.first { $0.name == "limit" }?.value, "0", "Asks for no rows, so visibility doesn't matter")
 
         let down = FailingTransport()
         do {
@@ -381,6 +383,54 @@ final class WhosInTests: XCTestCase {
         } catch let failure as BackendFailure {
             XCTAssertEqual(failure, .reconnecting)
         }
+    }
+
+    func testNoVisibleRowsButColumnsPresentEnablesDetails() async throws {
+        let transport = ScriptedTransport(responses: [(200, Data("[]".utf8)), (200, Data("[]".utf8))])
+        let service = SupabaseCheckInService(config: config, accessToken: "t", transport: transport)
+        let caps = try await service.capabilities()
+        XCTAssertEqual(caps, CheckInCapabilities(table: true, details: true), "First check-in in a squad still saves game and console")
+        _ = try await service.checkIns(squadId: squad)
+        let read = URLComponents(url: try XCTUnwrap(transport.requests.last?.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(read.first { $0.name == "select" }?.value, CheckInSelect.withDetails)
+    }
+
+    func testMissingDetailColumnsDisableDetailsAndAreNeverRequestedAgain() async throws {
+        let transport = ScriptedTransport(responses: [
+            (400, Data(#"{"code":"42703","message":"column sq8_check_ins.platform does not exist"}"#.utf8)),
+            (200, Data("[]".utf8))
+        ])
+        let service = SupabaseCheckInService(config: config, accessToken: "t", transport: transport)
+        let caps = try await service.capabilities()
+        XCTAssertFalse(caps.details)
+        XCTAssertTrue(caps.table)
+        _ = try await service.checkIns(squadId: squad)
+        let read = URLComponents(url: try XCTUnwrap(transport.requests.last?.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        XCTAssertEqual(read.first { $0.name == "select" }?.value, CheckInSelect.base)
+        XCTAssertEqual(WhosIn.detailsMissing, "This server saves when you're on, not the game or console yet.")
+    }
+
+    func testAFailureThatIsntAMissingColumnDoesNotLatchDetailsOff() async throws {
+        do {
+            _ = try await SupabaseCheckInService(config: config, accessToken: "t", transport: FailingTransport()).capabilities()
+            XCTFail("Offline must not read as columns missing")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .reconnecting)
+        }
+        let broken = ScriptedTransport(responses: [(500, Data(#"{"message":"boom"}"#.utf8))])
+        do {
+            _ = try await SupabaseCheckInService(config: config, accessToken: "t", transport: broken).capabilities()
+            XCTFail("A 500 must not read as columns missing")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .rejected("boom"))
+        }
+        let recovered = ScriptedTransport(responses: [(200, Data("[]".utf8))])
+        let again = try await SupabaseCheckInService(config: config, accessToken: "t", transport: recovered).capabilities()
+        XCTAssertTrue(again.details, "The next probe decides")
+        XCTAssertTrue(MissingColumn.matches(.rejected("column sq8_check_ins.game does not exist")))
+        XCTAssertTrue(MissingColumn.matches(.rejected("Could not find the 'game' column of 'sq8_check_ins' in the schema cache")))
+        XCTAssertFalse(MissingColumn.matches(.rejected("permission denied for table sq8_check_ins")))
+        XCTAssertFalse(MissingColumn.matches(.reconnecting))
     }
 
     func testReadSelectsOnlyColumnsTheServerHas() async throws {
@@ -416,14 +466,42 @@ final class WhosInTests: XCTestCase {
         }
     }
 
-    func testSteamReadIsNotSetUpWhenTheFunctionIsntDeployed() async {
-        let transport = ScriptedTransport(responses: [(404, Data(#"{"code":"NOT_FOUND","message":"Requested function was not found"}"#.utf8))])
-        let read = await SupabaseCheckInService(config: config, accessToken: "t", transport: transport).steam()
+    func testSteamIsNeverCalledWhileTheConfigFlagIsOff() async {
+        let transport = ScriptedTransport(responses: [(200, Data(#"{"status":"ok","members":[]}"#.utf8))])
+        XCTAssertFalse(config.steamPresence, "Off unless Info.plist turns it on")
+        let read = await SupabaseCheckInService(config: config, accessToken: "t", transport: transport, presence: FunctionPresence()).steam()
+        XCTAssertEqual(read, .notSetUp)
+        XCTAssertTrue(transport.requests.isEmpty, "sq8-steam-presence must not be called while it's off")
+        XCTAssertFalse(BackendConfig.parse([:]).steamPresence)
+        XCTAssertTrue(BackendConfig.parse(["SQ8SteamPresence": true]).steamPresence)
+        XCTAssertTrue(BackendConfig.parse(["SQ8SteamPresence": "YES"]).steamPresence)
+        XCTAssertFalse(BackendConfig.parse(["SQ8SteamPresence": "$(SQ8_STEAM)"]).steamPresence)
+    }
+
+    func testSteamReadIsNotSetUpWhenTheFunctionIsntDeployedAndAsksOnce() async {
+        var on = config
+        on.steamPresence = true
+        let notFound = Data(#"{"code":"NOT_FOUND","message":"Requested function was not found"}"#.utf8)
+        let presence = FunctionPresence()
+        let transport = ScriptedTransport(responses: [(404, notFound), (200, Data(#"{"status":"ok","members":[]}"#.utf8))])
+        let service = SupabaseCheckInService(config: on, accessToken: "t", transport: transport, presence: presence)
+        let read = await service.steam()
         XCTAssertEqual(read, .notSetUp)
         XCTAssertEqual(transport.requests.first?.url?.path, "/functions/v1/sq8-steam-presence")
-        let broken = ScriptedTransport(responses: [(500, Data(#"{"message":"boom"}"#.utf8))])
-        let failed = await SupabaseCheckInService(config: config, accessToken: "t", transport: broken).steam()
+        XCTAssertEqual(HTTPFailureLog.level(status: 404, body: notFound, probe: true), .info, "Not deployed is logged at info, not as an error")
+        let again = await service.steam()
+        XCTAssertEqual(again, .notSetUp)
+        XCTAssertEqual(transport.requests.count, 1, "The 404 is cached for the session")
+        let other = await SupabaseCheckInService(config: on, accessToken: "t", transport: transport, presence: presence).steam()
+        XCTAssertEqual(other, .notSetUp)
+        XCTAssertEqual(transport.requests.count, 1, "A new service in the same session doesn't ask again")
+
+        let broken = ScriptedTransport(responses: [(500, Data(#"{"message":"boom"}"#.utf8)), (500, Data())])
+        let flaky = SupabaseCheckInService(config: on, accessToken: "t", transport: broken, presence: FunctionPresence())
+        let failed = await flaky.steam()
         XCTAssertEqual(failed, .failed)
+        _ = await flaky.steam()
+        XCTAssertEqual(broken.requests.count, 2, "A 500 isn't 'not deployed', so it isn't latched off")
     }
 
     // MARK: Realtime deletes (Clear)

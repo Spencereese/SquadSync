@@ -3,7 +3,9 @@ import Foundation
 // Check-ins and Steam presence for the who's-in sheet (redesign S4).
 // Reads and writes only `sq8_check_ins` (0006, live) under its own row level
 // security, plus one optional call to the sq8-steam-presence function, which
-// is not deployed today. Nothing here runs SQL or changes the schema.
+// is not deployed today. That call is made only when BackendConfig.steamPresence
+// is on, and a 404 turns it off for the session. Nothing here runs SQL or
+// changes the schema.
 
 enum CheckInProblem: Error, Equatable {
     /// `sq8_check_ins` isn't on the server.
@@ -35,6 +37,8 @@ protocol CheckInServing: AnyObject {
 enum CheckInSelect {
     static let base = "user_id,squad_id,kind,checked_at,until_at"
     static let withDetails = base + ",game,platform"
+    /// The capability probe: one base column plus 0022's two.
+    static let probe = "user_id,game,platform"
 
     static func columns(details: Bool) -> String { details ? withDetails : base }
 }
@@ -57,58 +61,50 @@ enum SteamFunction {
 final class SupabaseCheckInService: CheckInServing {
     private let http: SupabaseHTTP
     private var details: Bool?
+    private let steamEnabled: Bool
+    private let presence: FunctionPresence
 
     init(
         config: BackendConfig,
         accessToken: String,
         refresher: TokenRefreshing? = nil,
         transport: HTTPTransport = URLSessionTransport.shared,
-        knownDetails: Bool? = nil
+        knownDetails: Bool? = nil,
+        presence: FunctionPresence = .shared
     ) {
         self.http = SupabaseHTTP(config: config, accessToken: accessToken, transport: transport, refresher: refresher)
         self.details = knownDetails
+        self.steamEnabled = config.steamPresence
+        self.presence = presence
     }
 
+    /// One read-only request that names 0022's columns and asks for no rows
+    /// (`select=user_id,game,platform&limit=0`), so the answer doesn't depend on
+    /// whether you can see any check-ins yet.
+    /// - success: table and details are there
+    /// - missing table: `.unknown` (check-ins aren't set up)
+    /// - 42703 / PGRST204: table is there, details aren't (logged at info)
+    /// - anything else (offline, 500, auth): throws, so nothing is latched off
     func capabilities() async throws -> CheckInCapabilities {
         do {
             _ = try await http.send(
                 path: "rest/v1/sq8_check_ins",
                 method: "GET",
                 query: [
-                    URLQueryItem(name: "select", value: "user_id"),
-                    URLQueryItem(name: "limit", value: "1")
+                    URLQueryItem(name: "select", value: CheckInSelect.probe),
+                    URLQueryItem(name: "limit", value: "0")
                 ],
-                feature: .checkIns
+                feature: .checkIns,
+                probe: true
             )
         } catch let failure as BackendFailure {
             if case .notSetUp = failure { return .unknown }
-            throw failure
+            guard MissingColumn.matches(failure) else { throw failure }
+            details = false
+            return CheckInCapabilities(table: true, details: false)
         }
-        let found = await detailColumnsExist()
-        details = found
-        return CheckInCapabilities(table: true, details: found)
-    }
-
-    private func detailColumnsExist() async -> Bool {
-        do {
-            _ = try await http.send(
-                path: "rest/v1/sq8_check_ins",
-                method: "GET",
-                query: [
-                    URLQueryItem(name: "select", value: "game,platform"),
-                    URLQueryItem(name: "limit", value: "1")
-                ],
-                feature: .checkIns
-            )
-            return true
-        } catch let failure as BackendFailure {
-            if case .rejected(let message) = failure {
-                return SpotProbe.columnPresent(status: 400, body: message)
-            }
-            return false
-        } catch {
-            return false
-        }
+        details = true
+        return CheckInCapabilities(table: true, details: true)
     }
 
     func checkIns(squadId: UUID) async throws -> [CheckInRecord] {
@@ -172,17 +168,23 @@ final class SupabaseCheckInService: CheckInServing {
         }
     }
 
+    /// Not called unless the config turns Steam on and it hasn't already
+    /// answered 404 this session. That first 404 is logged once, at info.
     func steam() async -> SteamRead {
+        guard steamEnabled, !presence.isMissing(FunctionPresence.steamPresence) else { return .notSetUp }
         do {
             let data = try await http.send(
                 path: SteamFunction.path,
                 method: "POST",
                 body: Data(#"{"op":"presence"}"#.utf8),
-                feature: .checkIns
+                feature: .checkIns,
+                optional: true
             )
             return SteamRead.parse(data)
         } catch let failure as BackendFailure {
-            return SteamFunction.isMissing(failure) ? .notSetUp : .failed
+            guard SteamFunction.isMissing(failure) else { return .failed }
+            presence.markMissing(FunctionPresence.steamPresence)
+            return .notSetUp
         } catch {
             return .failed
         }

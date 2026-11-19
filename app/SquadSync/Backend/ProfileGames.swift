@@ -47,6 +47,10 @@ final class SupabaseProfileGames: ProfileGamesServing {
         self.local = local
     }
 
+    /// Reads `games` from your own row by name. Only a real missing-column
+    /// answer (42703 / PGRST204) moves the list to this phone, and that answer is
+    /// logged at info. Success means the column is there even when no row comes
+    /// back yet. Any other failure throws and nothing is remembered.
     func load(userId: UUID) async throws -> ProfileGames {
         do {
             let data = try await http.send(
@@ -56,7 +60,8 @@ final class SupabaseProfileGames: ProfileGamesServing {
                     URLQueryItem(name: "id", value: "eq.\(userId.uuidString)"),
                     URLQueryItem(name: "select", value: "games")
                 ],
-                feature: .profile
+                feature: .profile,
+                probe: true
             )
             home = .server
             let rows = (try? JSONDecoder().decode([GamesRow].self, from: data)) ?? []
@@ -90,10 +95,7 @@ final class SupabaseProfileGames: ProfileGamesServing {
 
     /// 42703 / PGRST204 / "column ... does not exist" means 0023 isn't applied.
     static func columnMissing(_ failure: BackendFailure) -> Bool {
-        guard case .rejected(let message) = failure else { return false }
-        let text = message.lowercased()
-        if text.contains("42703") || text.contains("pgrst204") { return true }
-        return text.contains("column") && (text.contains("does not exist") || text.contains("could not find"))
+        MissingColumn.matches(failure)
     }
 
     private struct GamesRow: Codable {

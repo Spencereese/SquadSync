@@ -1,4 +1,5 @@
--- Proposed. Not applied. Spencer has to approve this before it runs.
+-- Applied live on Nov 18, 2026 (project sfckxrnoiwetmzdycqaa) with Spencer's yes.
+-- 20261118_0024_side_thread_guards.sql (proposed) tightens its member and message guards.
 -- Side groups and direct messages inside one sq8 squad.
 -- Additive only. Does not alter sq8_messages, sq8_spot_calls, or the squad roster.
 -- A person must already be a squad member. A DM is visible only to the

@@ -1,11 +1,11 @@
--- UNAPPLIED. Proposed for redesign S4 (who's in). Do not apply without Spencer's yes.
--- Not applied to the live project. Nothing in the app needs it to work.
+-- Applied live on Nov 18, 2026 (project sfckxrnoiwetmzdycqaa) with Spencer's yes.
+-- Written for redesign S4 (who's in). Nothing in the app needs it to work.
 --
 -- What it does: lets a check-in carry what the person says they're playing and
 -- on which console. Both are optional, typed by the person, and never verified
 -- (honor system). The app probes for these columns with a read-only
--- `select=game,platform&limit=1`; until they exist it saves check-ins without
--- them and the sheet says "This server saves when you're on, not the game or
+-- `select=user_id,game,platform&limit=0`; on a server without them it saves
+-- check-ins without them and the sheet says "This server saves when you're on, not the game or
 -- console yet."
 --
 -- Safety note:

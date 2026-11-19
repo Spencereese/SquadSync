@@ -1,5 +1,5 @@
--- UNAPPLIED. Proposed for redesign S5 (onboarding). Do not apply without Spencer's yes.
--- Not applied to the live project. Nothing in the app needs it to work.
+-- Applied live on Nov 18, 2026 (project sfckxrnoiwetmzdycqaa) with Spencer's yes.
+-- Written for redesign S5 (onboarding). Nothing in the app needs it to work.
 --
 -- What it does: lets a profile keep the list of games someone plays, next to the
 -- existing default_game. The app probes with a read-only

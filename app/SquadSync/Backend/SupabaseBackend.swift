@@ -263,14 +263,34 @@ final class SupabaseProfileService: ProfileService {
 
 final class SupabaseSquadService: SquadService {
     private let http: SupabaseHTTP
+    private let presence: FunctionPresence
 
     init(
         config: BackendConfig,
         accessToken: String,
         refresher: TokenRefreshing? = nil,
-        transport: HTTPTransport = URLSessionTransport.shared
+        transport: HTTPTransport = URLSessionTransport.shared,
+        presence: FunctionPresence = .shared
     ) {
         self.http = SupabaseHTTP(config: config, accessToken: accessToken, transport: transport, refresher: refresher)
+        self.presence = presence
+    }
+
+    /// One real POST to an RPC that may not be migrated yet. 404 / PGRST202
+    /// throws `.notSetUp(.squad)` and is remembered for the session.
+    private func callOptionalRPC(_ name: String, body: Data) async throws -> Data {
+        do {
+            return try await http.send(
+                path: "rest/v1/rpc/\(name)",
+                method: "POST",
+                body: body,
+                feature: .squad,
+                optional: true
+            )
+        } catch let failure as BackendFailure {
+            if case .notSetUp = failure { presence.markMissing(name) }
+            throw failure
+        }
     }
 
     func currentSquad(userId: UUID) async throws -> SquadRecord? {
@@ -332,41 +352,15 @@ final class SupabaseSquadService: SquadService {
     }
 
     func renameAvailable() async -> Bool {
-        do {
-            // GET names both arguments so PostgREST resolves sq8_rename_squad(uuid, text).
-            // It runs in a read-only transaction and fails on the lock. Only a missing
-            // function (404 or PGRST202) means rename is unavailable.
-            _ = try await http.send(
-                path: "rest/v1/rpc/sq8_rename_squad",
-                method: "GET",
-                query: [
-                    URLQueryItem(name: "squad", value: "00000000-0000-0000-0000-000000000000"),
-                    URLQueryItem(name: "new_name", value: "null")
-                ],
-                feature: .squad
-            )
-            return true
-        } catch let failure as BackendFailure {
-            if case .notSetUp = failure { return false }
-            if case .rejected(let message) = failure {
-                return LeaveProbe.available(status: 400, body: message)
-            }
-            return false
-        } catch {
-            return false
-        }
+        // No probe: sq8_rename_squad is volatile, so a GET only ever earned a 405.
+        !presence.isMissing(FunctionPresence.renameSquad)
     }
 
     func renameSquad(squadId: UUID, name: String?) async throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         let body = try encoder.encode(RenameBody(squad: squadId, newName: name))
-        let data = try await http.send(
-            path: "rest/v1/rpc/sq8_rename_squad",
-            method: "POST",
-            body: body,
-            feature: .squad
-        )
+        let data = try await callOptionalRPC(FunctionPresence.renameSquad, body: body)
         let payload = try JSONDecoder().decode(RenamePayload.self, from: data)
         guard payload.ok else {
             throw BackendFailure.rejected(RenameFailure.message(payload.error ?? "missing"))
@@ -374,80 +368,32 @@ final class SupabaseSquadService: SquadService {
     }
 
     func pushTokenRPCAvailable() async -> Bool {
-        do {
-            _ = try await http.send(
-                path: "rest/v1/rpc/sq8_register_device_token",
-                method: "GET",
-                query: [
-                    URLQueryItem(name: "device_token", value: "probe"),
-                    URLQueryItem(name: "device_platform", value: "ios")
-                ],
-                feature: .squad
-            )
-            return true
-        } catch let failure as BackendFailure {
-            if case .notSetUp = failure { return false }
-            if case .rejected(let message) = failure {
-                return LeaveProbe.available(status: 400, body: message)
-            }
-            return false
-        } catch {
-            return false
-        }
+        // No probe: sq8_register_device_token is volatile, so the old GET
+        // (device_token=probe) could only earn a 405. The real POST is the check;
+        // a 404 / PGRST202 on it is remembered for the session (FunctionPresence).
+        !presence.isMissing(FunctionPresence.registerDeviceToken)
     }
 
     func registerPushToken(_ token: String) async throws {
         let body = try BackendJSON.encoder.encode(DeviceTokenBody(deviceToken: token, devicePlatform: "ios"))
-        _ = try await http.send(
-            path: "rest/v1/rpc/sq8_register_device_token",
-            method: "POST",
-            body: body,
-            feature: .squad
-        )
+        _ = try await callOptionalRPC(FunctionPresence.registerDeviceToken, body: body)
     }
 
     func unregisterPushToken(_ token: String) async throws {
         let body = try BackendJSON.encoder.encode(DeviceTokenOnly(deviceToken: token))
-        _ = try await http.send(
-            path: "rest/v1/rpc/sq8_unregister_device_token",
-            method: "POST",
-            body: body,
-            feature: .squad
-        )
+        _ = try await callOptionalRPC(FunctionPresence.unregisterDeviceToken, body: body)
     }
 
     func leaveAvailable() async -> Bool {
-        do {
-            // GET names new_owner so PostgREST resolves sq8_leave_squad(uuid).
-            // The function is volatile, so GET is refused and does not run it.
-            _ = try await http.send(
-                path: "rest/v1/rpc/sq8_leave_squad",
-                method: "GET",
-                query: [URLQueryItem(name: "new_owner", value: "null")],
-                feature: .squad
-            )
-            return true
-        } catch let failure as BackendFailure {
-            if case .notSetUp = failure { return false }
-            if case .rejected(let message) = failure {
-                return LeaveProbe.available(status: 400, body: message)
-            }
-            return false
-        } catch {
-            return false
-        }
+        // No probe: asking with a fake new_owner sent a "null" uuid and earned a 400.
+        !presence.isMissing(FunctionPresence.leaveSquad)
     }
 
     func leaveSquad(newOwner: UUID?) async throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         let body = try encoder.encode(LeaveBody(newOwner: newOwner))
-        let data = try await http.send(
-            path: "rest/v1/rpc/sq8_leave_squad",
-            method: "POST",
-            body: body,
-            feature: .squad
-        )
+        let data = try await callOptionalRPC(FunctionPresence.leaveSquad, body: body)
         let payload = try JSONDecoder().decode(LeavePayload.self, from: data)
         guard payload.ok else {
             throw InviteProblem.from(serverCode: payload.error ?? "already_left")
@@ -814,7 +760,8 @@ final class SupabaseChatService: ChatService {
                     URLQueryItem(name: "select", value: "reply_to_id"),
                     URLQueryItem(name: "limit", value: "1")
                 ],
-                feature: .messages
+                feature: .messages,
+                probe: true
             )
             return true
         } catch let failure as BackendFailure {
@@ -969,8 +916,6 @@ final class SupabaseInviteService: InviteServing {
 final class SupabaseSpotService: SpotServing {
     private let http: SupabaseHTTP
     private var cachedCapabilities: SpotServerCapabilities?
-    /// A nil id. GET names the real arguments. PostgREST runs it read-only, so FOR UPDATE fails and nothing commits.
-    private static let probeId = "00000000-0000-0000-0000-000000000000"
 
     init(
         config: BackendConfig,
@@ -1007,7 +952,7 @@ final class SupabaseSpotService: SpotServing {
 
     func lock(callId: UUID) async throws {
         // 0020 redefines sq8_lock_spot with the Ready gate. The merged app calls
-        // this name, so this client does too. The when_ready probe only tells
+        // this name, so this client does too. The capability read only tells
         // the UI whether that gate is on the server yet.
         _ = await serverCapabilities()
         let body = try BackendJSON.encoder.encode(CallIdBody(callId: callId))
@@ -1037,30 +982,13 @@ final class SupabaseSpotService: SpotServing {
 
     func serverCapabilities() async -> SpotServerCapabilities {
         if let cachedCapabilities { return cachedCapabilities }
-        let readyFunction = await functionExists(
-            path: "rest/v1/rpc/sq8_set_spot_ready",
-            query: [
-                URLQueryItem(name: "call_id", value: Self.probeId),
-                URLQueryItem(name: "ready", value: "false")
-            ]
-        )
-        let lockFunction = await functionExists(
-            path: "rest/v1/rpc/sq8_lock_spot_when_ready",
-            query: [URLQueryItem(name: "call_id", value: Self.probeId)]
-        )
-        let expiryFunction = await functionExists(
-            path: "rest/v1/rpc/sq8_read_open_spot",
-            query: [URLQueryItem(name: "squad", value: Self.probeId)]
-        )
+        // Two read-only column reads, nothing else. See SpotServerCapabilities.fromColumns.
         let seatColumn = await columnExists(path: "rest/v1/sq8_spot_calls", column: "seat_target")
         let readyColumn = await columnExists(path: "rest/v1/sq8_spot_rsvps", column: "ready")
-        let found = SpotServerCapabilities(
-            ready: readyFunction && readyColumn,
-            gatedLock: lockFunction,
-            expiry: expiryFunction,
-            seatTarget: seatColumn
-        )
-        cachedCapabilities = found
+        let found = SpotServerCapabilities.fromColumns(seatTarget: seatColumn ?? false, ready: readyColumn ?? false)
+        // An inconclusive read (offline, 500) isn't evidence a column is missing:
+        // use the safe answer this time and ask again next time.
+        if seatColumn != nil && readyColumn != nil { cachedCapabilities = found }
         return found
     }
 
@@ -1115,22 +1043,9 @@ final class SupabaseSpotService: SpotServing {
         }
     }
 
-    private func functionExists(path: String, query: [URLQueryItem]) async -> Bool {
-        do {
-            _ = try await http.send(path: path, method: "GET", query: query, feature: .squad)
-            return true
-        } catch let failure as BackendFailure {
-            if case .notSetUp = failure { return false }
-            if case .rejected(let message) = failure {
-                return SpotProbe.functionPresent(status: 400, body: message)
-            }
-            return false
-        } catch {
-            return false
-        }
-    }
-
-    private func columnExists(path: String, column: String) async -> Bool {
+    /// True when the read works, false when the server says the column (or its
+    /// table) isn't there, nil for any other failure.
+    private func columnExists(path: String, column: String) async -> Bool? {
         do {
             _ = try await http.send(
                 path: path,
@@ -1139,16 +1054,15 @@ final class SupabaseSpotService: SpotServing {
                     URLQueryItem(name: "select", value: column),
                     URLQueryItem(name: "limit", value: "1")
                 ],
-                feature: .squad
+                feature: .squad,
+                probe: true
             )
             return true
         } catch let failure as BackendFailure {
-            if case .rejected(let message) = failure {
-                return SpotProbe.columnPresent(status: 400, body: message)
-            }
-            return false
+            if case .notSetUp = failure { return false }
+            return MissingColumn.matches(failure) ? false : nil
         } catch {
-            return false
+            return nil
         }
     }
 

@@ -452,13 +452,9 @@ final class SpotServerTests: XCTestCase {
         XCTAssertTrue(SpotProbe.columnPresent(status: 200, body: "[]"))
     }
 
-    func testCapabilityProbeIsReadOnlyAndReadyStaysOffWithoutTheRpc() async throws {
-        let missingFunction = Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function in the schema cache\"}".utf8)
+    func testCapabilityProbeIsReadOnlyAndReadyStaysOffWithoutTheColumns() async throws {
         let missingColumn = Data("{\"code\":\"42703\",\"message\":\"column sq8_spot_rsvps.ready does not exist\"}".utf8)
         let transport = ScriptedTransport(responses: [
-            (404, missingFunction),
-            (404, missingFunction),
-            (404, missingFunction),
             (400, missingColumn),
             (400, missingColumn)
         ])
@@ -469,17 +465,15 @@ final class SpotServerTests: XCTestCase {
             XCTAssertEqual(request.httpMethod, "GET")
             XCTAssertNil(request.httpBody)
         }
-        let readyProbe = try XCTUnwrap(transport.requests.first)
-        XCTAssertTrue(readyProbe.url?.path.hasSuffix("sq8_set_spot_ready") == true)
-        XCTAssertTrue(readyProbe.url?.query?.contains("call_id=00000000-0000-0000-0000-000000000000") == true)
-        XCTAssertTrue(readyProbe.url?.query?.contains("ready=false") == true)
+        XCTAssertEqual(transport.requests.map { $0.url?.path ?? "" }, ["/rest/v1/sq8_spot_calls", "/rest/v1/sq8_spot_rsvps"])
+        XCTAssertFalse(transport.requests.contains { $0.url?.path.contains("/rpc/") == true }, "No function is called to find out whether it exists")
         do {
             try await spots.setReady(callId: call, userId: member, ready: true)
             XCTFail("Ready should stay off until the server stores it")
         } catch let problem as SpotProblem {
             XCTAssertEqual(problem, .badResponse)
         }
-        XCTAssertEqual(transport.requests.count, 5)
+        XCTAssertEqual(transport.requests.count, 2)
         XCTAssertTrue(transport.requests.allSatisfy { $0.httpMethod == "GET" })
     }
 
@@ -507,15 +501,12 @@ final class SpotServerTests: XCTestCase {
         XCTAssertTrue(post.first?.url?.path.hasSuffix("sq8_set_spot_ready") == true)
         XCTAssertTrue(post.last?.url?.path.hasSuffix("sq8_read_open_spot") == true)
         let probes = transport.requests.filter { $0.httpMethod == "GET" }
-        XCTAssertEqual(probes.count, 5)
+        XCTAssertEqual(probes.count, 2)
         XCTAssertTrue(probes.allSatisfy { $0.httpBody == nil })
     }
 
     func testOldLockPathRejectsWhenNotReady() async throws {
         let transport = ScriptedTransport(responses: [
-            (405, Data("{\"message\":\"GET is not allowed\"}".utf8)),
-            (405, Data("{\"message\":\"GET is not allowed\"}".utf8)),
-            (404, Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function public.sq8_read_open_spot(squad) in the schema cache\"}".utf8)),
             (400, Data("{\"code\":\"42703\",\"message\":\"column sq8_spot_calls.seat_target does not exist\"}".utf8)),
             (400, Data("{\"code\":\"42703\",\"message\":\"column sq8_spot_rsvps.ready does not exist\"}".utf8)),
             (400, Data("{\"code\":\"P0001\",\"message\":\"spot_not_ready\"}".utf8))
@@ -537,12 +528,8 @@ final class SpotServerTests: XCTestCase {
     }
 
     func testLockUsesTodaysRpcWhenTheReadyGateIsMissing() async throws {
-        let missing = Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function in the schema cache\"}".utf8)
         let column = Data("{\"code\":\"42703\",\"message\":\"column seat_target does not exist\"}".utf8)
         let transport = ScriptedTransport(responses: [
-            (404, missing),
-            (404, missing),
-            (404, missing),
             (400, column),
             (400, column),
             (204, Data())
@@ -591,12 +578,8 @@ final class SpotServerTests: XCTestCase {
         let seats = Data("""
         [{"user_id":"\(caller.uuidString)","response":"in","starter":true}]
         """.utf8)
-        let missing = Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function in the schema cache\"}".utf8)
         let column = Data("{\"code\":\"42703\",\"message\":\"column ready does not exist\"}".utf8)
         let transport = ScriptedTransport(responses: [
-            (404, missing),
-            (404, missing),
-            (404, missing),
             (400, column),
             (400, column),
             (200, row),
@@ -616,13 +599,61 @@ final class SpotServerTests: XCTestCase {
         XCTAssertFalse(transport.requests.contains { $0.url?.path.contains("sq8_read_open_spot") == true && $0.httpMethod == "POST" })
     }
 
+    func testCapabilitiesComeFromTheTwoColumnsOnly() {
+        XCTAssertEqual(
+            SpotServerCapabilities.fromColumns(seatTarget: true, ready: true),
+            SpotServerCapabilities(ready: true, gatedLock: true, expiry: true, seatTarget: true)
+        )
+        XCTAssertEqual(
+            SpotServerCapabilities.fromColumns(seatTarget: true, ready: false),
+            SpotServerCapabilities(ready: false, gatedLock: false, expiry: false, seatTarget: true)
+        )
+        XCTAssertEqual(SpotServerCapabilities.fromColumns(seatTarget: false, ready: false), .unavailable)
+    }
+
+    func testLiveShapedServerIsReadWithoutCallingAnyFunction() async throws {
+        let transport = ScriptedTransport(responses: presentProbes())
+        let spots = SupabaseSpotService(config: config, accessToken: "access", transport: transport)
+        let caps = await spots.serverCapabilities()
+        XCTAssertEqual(caps, SpotServerCapabilities(ready: true, gatedLock: true, expiry: true, seatTarget: true))
+        let again = await spots.serverCapabilities()
+        XCTAssertEqual(again, caps)
+        XCTAssertEqual(transport.requests.count, 2, "Capabilities are read once")
+        XCTAssertTrue(transport.requests.allSatisfy { $0.httpMethod == "GET" && $0.httpBody == nil })
+        XCTAssertFalse(transport.requests.contains { $0.url?.path.contains("/rpc/") == true })
+        let queries = transport.requests.map { $0.url?.query?.removingPercentEncoding ?? "" }
+        XCTAssertFalse(queries.contains { $0.contains("00000000-0000-0000-0000-000000000000") }, "No made-up ids")
+    }
+
+    func testAnInconclusiveColumnReadIsNotCached() async throws {
+        let broken = Data("{\"message\":\"boom\"}".utf8)
+        let transport = ScriptedTransport(responses: [(200, Data("[]".utf8)), (500, broken)] + presentProbes())
+        let spots = SupabaseSpotService(config: config, accessToken: "access", transport: transport)
+        let first = await spots.serverCapabilities()
+        XCTAssertFalse(first.ready, "Safe answer while unsure")
+        let second = await spots.serverCapabilities()
+        XCTAssertEqual(second, SpotServerCapabilities(ready: true, gatedLock: true, expiry: true, seatTarget: true))
+        XCTAssertEqual(transport.requests.count, 4, "Asked again after the failure")
+    }
+
+    func testMissingOpenReadFallsBackToTheTablesEvenWhenTheColumnsAreThere() async throws {
+        let missing = Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function public.sq8_read_open_spot(squad) in the schema cache\"}".utf8)
+        let transport = ScriptedTransport(responses: presentProbes() + [
+            (404, missing),
+            (200, Data("[]".utf8))
+        ])
+        let spots = SupabaseSpotService(config: config, accessToken: "access", transport: transport)
+        let loaded = try await spots.current(squadId: squad)
+        XCTAssertNil(loaded)
+        let caps = await spots.serverCapabilities()
+        XCTAssertFalse(caps.expiry)
+        XCTAssertEqual(transport.requests.last?.url?.path, "/rest/v1/sq8_spot_calls")
+        XCTAssertEqual(transport.requests.count, 4)
+    }
+
     private func presentProbes() -> [(Int, Data)] {
-        let allowed = Data("{\"message\":\"GET is not allowed\"}".utf8)
         let rows = Data("[]".utf8)
         return [
-            (405, allowed),
-            (405, allowed),
-            (405, allowed),
             (200, rows),
             (200, rows)
         ]

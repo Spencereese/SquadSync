@@ -272,6 +272,16 @@ struct SpotServerCapabilities: Equatable {
     var seatTarget: Bool
 
     static let unavailable = SpotServerCapabilities(ready: false, gatedLock: false, expiry: false, seatTarget: false)
+
+    /// What a server can do, from the two columns migration 0020 adds. The same
+    /// migration adds sq8_set_spot_ready, sq8_lock_spot_when_ready and
+    /// sq8_read_open_spot, so `sq8_spot_rsvps.ready` stands for all three.
+    /// The functions are not probed: called with a made-up id, each one runs and
+    /// raises spot_missing or spot_not_member, which the logs report as errors.
+    /// If one is somehow missing, the real call still notices and falls back.
+    static func fromColumns(seatTarget: Bool, ready: Bool) -> SpotServerCapabilities {
+        SpotServerCapabilities(ready: ready, gatedLock: ready, expiry: ready, seatTarget: seatTarget)
+    }
 }
 
 enum SpotProbe {

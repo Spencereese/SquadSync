@@ -499,30 +499,24 @@ final class SquadNameTests: XCTestCase {
         XCTAssertEqual(empty?["owner_id"] as? String, owner.uuidString)
     }
 
-    func testRenameProbeIsReadOnlyAndPostsTheNewName() async throws {
+    func testRenameSendsNoProbeAndPostsTheNewName() async throws {
         let squad = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
-        let missing = Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function public.sq8_rename_squad in the schema cache\"}".utf8)
-        let hidden = ScriptedTransport(responses: [(404, missing)])
         let config = BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
-        let absent = SupabaseSquadService(config: config, accessToken: "access", transport: hidden)
-        let unavailable = await absent.renameAvailable()
-        XCTAssertFalse(unavailable)
-        let probe = try XCTUnwrap(hidden.requests.first)
-        XCTAssertEqual(probe.httpMethod, "GET")
-        XCTAssertNil(probe.httpBody)
-        XCTAssertTrue(probe.url?.query?.contains("squad=00000000-0000-0000-0000-000000000000") == true)
-        XCTAssertTrue(probe.url?.query?.contains("new_name=null") == true)
-        XCTAssertFalse(LeaveProbe.available(status: 404, body: "{\"code\":\"PGRST202\"}"))
-        XCTAssertTrue(LeaveProbe.available(status: 405, body: "{\"message\":\"cannot execute FOR UPDATE in a read-only transaction\"}"))
+        // No probe: asking whether sq8_rename_squad exists makes no request at all.
+        let quiet = ScriptedTransport()
+        let unprobed = SupabaseSquadService(config: config, accessToken: "access", transport: quiet, presence: FunctionPresence())
+        let assumed = await unprobed.renameAvailable()
+        XCTAssertTrue(assumed)
+        XCTAssertTrue(quiet.requests.isEmpty, "The rename check must not send a request")
 
         let present = ScriptedTransport(responses: [
-            (405, Data("{\"message\":\"cannot execute FOR UPDATE in a read-only transaction\"}".utf8)),
             (200, Data("{\"ok\":false,\"error\":\"not_owner\"}".utf8)),
             (200, Data("{\"ok\":true,\"error\":null}".utf8))
         ])
-        let service = SupabaseSquadService(config: config, accessToken: "access", transport: present)
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: present, presence: FunctionPresence())
         let ready = await service.renameAvailable()
         XCTAssertTrue(ready)
+        XCTAssertTrue(present.requests.isEmpty)
         do {
             try await service.renameSquad(squadId: squad, name: "Night")
             XCTFail("A member should not rename")
@@ -545,6 +539,17 @@ final class SquadNameTests: XCTestCase {
             body: Data("{\"message\":\"cannot execute FOR UPDATE in a read-only transaction\"}".utf8)
         ))
         XCTAssertFalse(HTTPFailureLog.isExpectedProbeRefusal(status: 400, body: Data("{\"message\":\"spot_not_ready\"}".utf8)))
+    }
+
+    func testProbeAnswersAreInfoAndRealFailuresStayErrors() {
+        let missingColumn = Data("{\"code\":\"42703\",\"message\":\"column sq8_spot_rsvps.ready does not exist\"}".utf8)
+        XCTAssertEqual(HTTPFailureLog.level(status: 400, body: missingColumn, probe: true), .info)
+        XCTAssertEqual(HTTPFailureLog.level(status: 400, body: missingColumn, probe: false), .error)
+        let refusal = Data("{\"message\":\"cannot execute FOR UPDATE in a read-only transaction\"}".utf8)
+        XCTAssertEqual(HTTPFailureLog.level(status: 405, body: refusal, probe: false), .info)
+        XCTAssertEqual(HTTPFailureLog.level(status: 400, body: Data("{\"message\":\"spot_not_member\"}".utf8), probe: false), .error)
+        XCTAssertEqual(HTTPFailureLog.level(status: 500, body: Data("{\"message\":\"boom\"}".utf8), probe: true), .error, "A probe that breaks is still an error")
+        XCTAssertEqual(HTTPFailureLog.level(status: 404, body: Data("{\"code\":\"PGRST202\"}".utf8), probe: true), .info)
     }
 }
 
@@ -1090,27 +1095,41 @@ final class InviteFlowTests: XCTestCase {
         }
     }
 
-    func testLeaveStaysHiddenUntilTheFunctionExists() async throws {
-        let missing = Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function public.sq8_leave_squad in the schema cache\"}".utf8)
-        let absent = ScriptedTransport(responses: [(404, missing)])
-        let hidden = SupabaseSquadService(config: config, accessToken: "access", transport: absent)
-        let available = await hidden.leaveAvailable()
-        XCTAssertFalse(available)
-        let probe = try XCTUnwrap(absent.requests.first)
-        XCTAssertEqual(probe.httpMethod, "GET")
-        XCTAssertNotEqual(probe.httpMethod, "POST")
-        XCTAssertTrue(probe.url?.path.hasSuffix("sq8_leave_squad") == true)
-        XCTAssertTrue(probe.url?.query?.contains("new_owner=null") == true)
-        XCTAssertFalse(LeaveProbe.available(status: 404, body: "{\"code\":\"PGRST202\"}"))
-        XCTAssertFalse(LeaveProbe.available(status: 400, body: "Could not find the function public.sq8_leave_squad(new_owner)"))
-        XCTAssertTrue(LeaveProbe.available(status: 405, body: "{\"message\":\"GET is not allowed\"}"))
-        XCTAssertTrue(LeaveProbe.available(status: 200, body: ""))
+    func testPushTokenCheckSendsNoProbeAndTheRealPostDecides() async throws {
+        let presence = FunctionPresence()
+        let missing = Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function public.sq8_register_device_token in the schema cache\"}".utf8)
+        let transport = ScriptedTransport(responses: [(404, missing)])
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: transport, presence: presence)
+        let assumed = await service.pushTokenRPCAvailable()
+        XCTAssertTrue(assumed)
+        XCTAssertTrue(transport.requests.isEmpty, "No GET device_token=probe (a volatile function answers GET with 405)")
+        do {
+            try await service.registerPushToken("abc")
+            XCTFail("A missing register function should throw")
+        } catch BackendFailure.notSetUp {
+        }
+        XCTAssertEqual(PushStoreFailure.reason(BackendFailure.notSetUp(.squad)), PushStoreFailure.missingRPC)
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertTrue(request.url?.path.hasSuffix("rpc/sq8_register_device_token") == true)
+        XCTAssertNil(request.url?.query, "The register call carries no query")
+        let remembered = await service.pushTokenRPCAvailable()
+        XCTAssertFalse(remembered, "Missing is remembered for the session")
+        XCTAssertTrue(presence.isMissing(FunctionPresence.registerDeviceToken))
+        presence.reset()
+        let again = await service.pushTokenRPCAvailable()
+        XCTAssertTrue(again, "Sign-out resets it")
+        XCTAssertEqual(transport.requests.count, 1)
+    }
 
-        let present = ScriptedTransport(responses: [(405, Data("{\"message\":\"GET is not allowed\"}".utf8))])
-        let shown = SupabaseSquadService(config: config, accessToken: "access", transport: present)
-        let ready = await shown.leaveAvailable()
-        XCTAssertTrue(ready)
-        XCTAssertEqual(present.requests.first?.httpMethod, "GET")
+    func testLeaveSendsNoProbeAndNeverANullUUID() async throws {
+        let quiet = ScriptedTransport()
+        let unprobed = SupabaseSquadService(config: config, accessToken: "access", transport: quiet, presence: FunctionPresence())
+        let assumed = await unprobed.leaveAvailable()
+        XCTAssertTrue(assumed)
+        XCTAssertTrue(quiet.requests.isEmpty, "The leave check must not send a request (it used to GET new_owner=null)")
+        XCTAssertFalse(LeaveProbe.available(status: 404, body: "{\"code\":\"PGRST202\"}"))
+        XCTAssertTrue(LeaveProbe.available(status: 200, body: ""))
 
         let squadId = squad
         let successor = member
@@ -1135,6 +1154,61 @@ final class InviteFlowTests: XCTestCase {
         let second = try XCTUnwrap(transport.requests.last)
         let transferred = try JSONSerialization.jsonObject(with: second.httpBody ?? Data()) as? [String: Any]
         XCTAssertEqual(transferred?["new_owner"] as? String, successor.uuidString)
+    }
+
+    func testAMissingLeaveOrRenameOnTheRealPostIsRememberedForTheSession() async throws {
+        let squadId = UUID(uuidString: "00000000-0000-0000-0000-000000000002")!
+        let missing = { (name: String) in
+            Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function public.\(name) without parameters in the schema cache\"}".utf8)
+        }
+        let presence = FunctionPresence()
+        let transport = ScriptedTransport(responses: [(404, missing("sq8_leave_squad")), (404, missing("sq8_rename_squad"))])
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: transport, presence: presence)
+        do {
+            try await service.leaveSquad(newOwner: nil)
+            XCTFail("A missing function should say so")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .notSetUp(.squad))
+        }
+        let leave = await service.leaveAvailable()
+        XCTAssertFalse(leave, "After the 404 the honest line comes back for the session")
+        do {
+            try await service.renameSquad(squadId: squadId, name: "Night")
+            XCTFail("A missing function should say so")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .notSetUp(.squad))
+        }
+        let rename = await service.renameAvailable()
+        XCTAssertFalse(rename)
+        XCTAssertEqual(transport.requests.map(\.httpMethod), ["POST", "POST"], "Both are POST RPCs; GET earned a 405")
+        XCTAssertEqual(transport.requests.compactMap { $0.url?.path }, ["/rest/v1/rpc/sq8_leave_squad", "/rest/v1/rpc/sq8_rename_squad"])
+        for request in transport.requests {
+            XCTAssertNil(request.url?.query, "No query string on an RPC call: \(request.url?.absoluteString ?? "")")
+        }
+        // A missing optional function is information, not an error, in the log.
+        XCTAssertEqual(HTTPFailureLog.level(status: 404, body: missing("sq8_leave_squad"), probe: true), .info)
+        XCTAssertEqual(HTTPFailureLog.level(status: 500, body: Data(), probe: true), .error, "A real failure still logs as an error")
+        presence.reset()
+        let back = await service.leaveAvailable()
+        XCTAssertTrue(back, "Sign-out forgets it")
+    }
+
+    func testNoRequestEverCarriesANullOrZeroUUID() async throws {
+        let transport = ScriptedTransport(responses: [
+            (200, Data("{\"ok\":true,\"error\":null}".utf8)),
+            (200, Data("{\"ok\":true,\"squad_id\":\"\(squad.uuidString)\"}".utf8))
+        ])
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: transport, presence: FunctionPresence())
+        _ = await service.leaveAvailable()
+        _ = await service.renameAvailable()
+        try await service.renameSquad(squadId: squad, name: "Night")
+        try await service.leaveSquad(newOwner: nil)
+        for request in transport.requests {
+            let url = request.url?.absoluteString ?? ""
+            XCTAssertFalse(url.contains("=null"), url)
+            XCTAssertFalse(url.contains("00000000-0000-0000-0000-000000000000"), url)
+        }
+        XCTAssertEqual(transport.requests.count, 2, "Only the two real actions reach the server")
     }
 
     func testEveryLeaveOutcome() async throws {

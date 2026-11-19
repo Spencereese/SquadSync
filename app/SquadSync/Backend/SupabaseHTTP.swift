@@ -157,6 +157,21 @@ enum RefreshRejection {
     }
 }
 
+/// 42703 / PGRST204 / "column ... does not exist" / "could not find the ...
+/// column": the server answered that a column isn't there. Nothing else counts.
+enum MissingColumn {
+    static func matches(_ text: String) -> Bool {
+        let lower = text.lowercased()
+        if lower.contains("42703") || lower.contains("pgrst204") { return true }
+        return lower.contains("column") && (lower.contains("does not exist") || lower.contains("could not find"))
+    }
+
+    static func matches(_ failure: BackendFailure) -> Bool {
+        guard case .rejected(let message) = failure else { return false }
+        return matches(message)
+    }
+}
+
 enum HTTPFailureLog {
     /// A capability GET is supposed to fail this way. The function is there; the read-only transaction stopped the write.
     static func isExpectedProbeRefusal(status: Int, body: Data) -> Bool {
@@ -165,7 +180,29 @@ enum HTTPFailureLog {
         return text.contains("read-only transaction") || text.contains("read only transaction")
     }
 
-    static func record(method: String, path: String, status: Int, body: Data) {
+    enum Level: Equatable { case info, error }
+
+    /// A request marked `probe` asks the server whether something exists, so an
+    /// "isn't there" answer (missing column, function, or table) is information,
+    /// not a failure; so is the read-only refusal above. Anything else, probe or
+    /// not (a 500, a permission error), is still an error.
+    static func level(status: Int, body: Data, probe: Bool) -> Level {
+        if isExpectedProbeRefusal(status: status, body: body) { return .info }
+        if probe && isAbsenceAnswer(status: status, body: body) { return .info }
+        return .error
+    }
+
+    static func isAbsenceAnswer(status: Int, body: Data) -> Bool {
+        if status == 404 { return true }
+        let text = (String(data: body, encoding: .utf8) ?? "").lowercased()
+        return MissingColumn.matches(text)
+            || text.contains("pgrst202") || text.contains("pgrst205") || text.contains("42p01")
+            || text.contains("could not find the function") || text.contains("could not find the table")
+    }
+
+    /// `optional` marks a real call to a function the server may not have yet
+    /// (FunctionPresence). Its absence answer is information, like a probe's.
+    static func record(method: String, path: String, status: Int, body: Data, probe: Bool = false, optional: Bool = false) {
         #if DEBUG
         let fields = (try? JSONSerialization.jsonObject(with: body) as? [String: Any]) ?? [:]
         let code = (fields["error_code"] as? String)
@@ -176,13 +213,50 @@ enum HTTPFailureLog {
             ?? (fields["error_description"] as? String)
             ?? (fields["message"] as? String)
             ?? "-"
-        let text = "HTTP \(method) \(path) \(status) \(code) \(message)"
-        if isExpectedProbeRefusal(status: status, body: body) {
+        let tag = probe ? "probe " : optional ? "optional " : ""
+        let text = "\(tag)HTTP \(method) \(path) \(status) \(code) \(message)"
+        if level(status: status, body: body, probe: probe || optional) == .info {
             SquadLog.http.info("\(text, privacy: .public)")
         } else {
             SquadLog.http.error("\(text, privacy: .public)")
         }
         #endif
+    }
+}
+
+/// Session memory for server functions that may not be deployed or migrated
+/// yet. Nothing probes them: a function is assumed present, called only for a
+/// real action, and a 404 or PGRST202 answer marks it missing until relaunch,
+/// so it is asked (and logged, at info) once. No fake or null arguments are
+/// ever sent to find out.
+final class FunctionPresence: @unchecked Sendable {
+    static let shared = FunctionPresence()
+
+    static let leaveSquad = "sq8_leave_squad"
+    static let renameSquad = "sq8_rename_squad"
+    static let steamPresence = "sq8-steam-presence"
+    static let registerDeviceToken = "sq8_register_device_token"
+    static let unregisterDeviceToken = "sq8_unregister_device_token"
+
+    private let lock = NSLock()
+    private var missing: Set<String> = []
+
+    init() {}
+
+    func isMissing(_ name: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return missing.contains(name)
+    }
+
+    func markMissing(_ name: String) {
+        lock.lock(); defer { lock.unlock() }
+        missing.insert(name)
+    }
+
+    /// Sign-out: the next account may be on a server that has it.
+    func reset() {
+        lock.lock(); defer { lock.unlock() }
+        missing.removeAll()
     }
 }
 
@@ -213,7 +287,9 @@ struct SupabaseHTTP {
         body: Data? = nil,
         prefer: String? = nil,
         feature: BackendFeature,
-        allowRefresh: Bool = true
+        allowRefresh: Bool = true,
+        probe: Bool = false,
+        optional: Bool = false
     ) async throws -> Data {
         guard config.isConfigured, let base = config.url else { throw BackendFailure.notConfigured }
         var url = base
@@ -257,7 +333,9 @@ struct SupabaseHTTP {
             method: request.httpMethod ?? method,
             path: request.url?.path ?? path,
             status: http.statusCode,
-            body: data
+            body: data,
+            probe: probe,
+            optional: optional
         )
         if allowRefresh, accessToken != nil, AuthFailure.matches(status: http.statusCode, body: data) {
             guard let refresher else {
@@ -274,7 +352,9 @@ struct SupabaseHTTP {
                     body: body,
                     prefer: prefer,
                     feature: feature,
-                    allowRefresh: false
+                    allowRefresh: false,
+                    probe: probe,
+                    optional: optional
                 )
             case .rejected:
                 throw BackendFailure.sessionEnded

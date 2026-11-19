@@ -1,4 +1,4 @@
--- Proposed. Not applied to the live project.
+-- Applied live on Nov 18, 2026 (project sfckxrnoiwetmzdycqaa) with Spencer's yes.
 -- A scheduled session for one squad. Members can read. The creator or the
 -- owner can change or cancel it. An RSVP is only the signed-in person's
 -- own row, and at most eight people can be in. anon and public get nothing.

@@ -88,9 +88,8 @@ final class SpotHistoryServerTests: XCTestCase {
     private let member = UUID(uuidString: "00000000-0000-0000-0000-0000000000C4")!
 
     private func probes() -> [(Int, Data)] {
-        let allowed = Data("{\"message\":\"GET is not allowed\"}".utf8)
         let rows = Data("[]".utf8)
-        return [(405, allowed), (405, allowed), (405, allowed), (200, rows), (200, rows)]
+        return [(200, rows), (200, rows)]
     }
 
     private func stamp(_ date: Date) -> String {
@@ -134,7 +133,7 @@ final class SpotHistoryServerTests: XCTestCase {
         let spots = SupabaseSpotService(config: config, accessToken: "access", transport: transport)
         let history = try await spots.history(squadId: squad, limit: 5)
         XCTAssertTrue(history.isEmpty)
-        XCTAssertEqual(transport.requests.count, 6)
+        XCTAssertEqual(transport.requests.count, 3)
     }
 
     func testCallingOnAServerWithoutTheRpcIsUnavailable() async throws {

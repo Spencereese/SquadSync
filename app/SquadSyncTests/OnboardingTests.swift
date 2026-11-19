@@ -208,6 +208,66 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(none.saved.games, ["Halo"])
     }
 
+    // MARK: Profile panel games editor
+
+    func testPanelEditorWaitsForTheListAndShowsEmptyOnlyOnceLoaded() {
+        var editor = ProfileGamesEditor()
+        XCTAssertFalse(editor.canEdit, "Nothing can be edited before the list loads")
+        XCTAssertFalse(editor.showsEmpty)
+        editor.begin()
+        XCTAssertEqual(editor.load, .loading)
+        XCTAssertFalse(editor.showsEmpty, "Loading is not 'no games'")
+        editor.failed(offline: true)
+        XCTAssertEqual(editor.load, .failed(ProfileGamesEditor.offlineLoadText))
+        XCTAssertFalse(editor.canEdit, "A failed read keeps editing off so Save can't wipe the list")
+        XCTAssertFalse(editor.showsEmpty)
+        editor.failed(offline: false)
+        XCTAssertEqual(editor.load, .failed(ProfileGamesEditor.loadFailedText))
+        editor.begin()
+        editor.loaded(ProfileGames(games: [], home: .server), defaultGame: "Warzone")
+        XCTAssertTrue(editor.canEdit)
+        XCTAssertTrue(editor.showsEmpty)
+        XCTAssertEqual(editor.home, .server)
+    }
+
+    func testPanelEditorTidiesTheReadAndAddsAndRemovesLikeTheProfileStep() {
+        var editor = ProfileGamesEditor()
+        editor.loaded(ProfileGames(games: [" Warzone ", "warzone", "Apex  Legends"], home: .server), defaultGame: "Warzone")
+        XCTAssertEqual(editor.games, ["Warzone", "Apex Legends"], "The read is tidied and de-duplicated")
+        editor.entry = "  fortnite "
+        XCTAssertTrue(editor.add(editor.entry))
+        XCTAssertEqual(editor.games, ["Warzone", "Apex Legends", "fortnite"])
+        XCTAssertEqual(editor.entry, "", "The field clears after an add")
+        XCTAssertFalse(editor.add("WARZONE"))
+        XCTAssertEqual(editor.error, "WARZONE is already in your list.")
+        XCTAssertFalse(editor.add("   "))
+        XCTAssertEqual(editor.error, "Type a game first.")
+        editor.remove("apex legends")
+        XCTAssertEqual(editor.games, ["Warzone", "fortnite"])
+        XCTAssertEqual(editor.error, "", "Removing clears the last error")
+        XCTAssertFalse(editor.suggestions.contains("Warzone"), "Suggestions skip games already listed")
+        XCTAssertTrue(editor.suggestions.contains("Minecraft"))
+    }
+
+    func testPanelEditorCapsTheListAtTwelve() {
+        var editor = ProfileGamesEditor()
+        editor.loaded(ProfileGames(games: (1...12).map { "Game \($0)" }, home: .server), defaultGame: "Game 1")
+        XCTAssertFalse(editor.add("One more"))
+        XCTAssertEqual(editor.error, "Your list holds 12 games. Remove one first.")
+        XCTAssertEqual(editor.games.count, 12)
+    }
+
+    func testPanelEditorMarksAndOrdersTheDefaultForSightAndVoiceOver() {
+        XCTAssertTrue(ProfileGamesEditor.isDefault(" warzone ", defaultGame: "Warzone"))
+        XCTAssertFalse(ProfileGamesEditor.isDefault("Fortnite", defaultGame: "Warzone"))
+        XCTAssertEqual(ProfileGamesEditor.rowLabel("Warzone", defaultGame: "warzone"), "Warzone, default game")
+        XCTAssertEqual(ProfileGamesEditor.rowLabel("Fortnite", defaultGame: "Warzone"), "Fortnite")
+        XCTAssertEqual(ProfileGamesEditor.ordered(["Apex Legends", "Fortnite", "Warzone"], defaultGame: "Fortnite"),
+                       ["Fortnite", "Apex Legends", "Warzone"])
+        XCTAssertEqual(ProfileGamesEditor.savedMessage(.server), "Profile saved.")
+        XCTAssertEqual(ProfileGamesEditor.savedMessage(.phone), "Profile saved. Your games list is on this phone only.")
+    }
+
     // MARK: Where games are kept
 
     func testServerWithoutTheGamesColumnKeepsThemOnThePhone() async throws {
@@ -353,6 +413,7 @@ final class OnboardingTestStore: SessionStoring {
 /// lives with the session screen and is main-actor).
 @MainActor
 final class OnboardingModelTests: XCTestCase {
+    private static let mockUser = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
     private func model(_ scenario: LaunchScenario) -> LiveSessionModel {
         LiveSessionModel(
             config: BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test"),
@@ -446,6 +507,63 @@ final class OnboardingModelTests: XCTestCase {
         model.mockGames?.savesDown = false
         await model.saveOnboardingProfile()
         XCTAssertEqual(model.onboardingStep, .squad)
+    }
+
+    func testPanelEditorLoadsEditsAndSavesGamesAndTheDefault() async {
+        let model = model(.onboardingProfile)
+        await model.restore()
+        model.mockGames?.stored[Self.mockUser] = ["Warzone", "Apex Legends"]
+        model.defaultGame = "Warzone"
+        await model.loadProfileGames()
+        XCTAssertEqual(model.gamesEditor.load, .loaded)
+        XCTAssertEqual(model.gamesEditor.games, ["Warzone", "Apex Legends"])
+        model.gamesEditor.entry = "Fortnite"
+        model.addProfileGame()
+        model.removeProfileGame("Apex Legends")
+        model.makeDefaultGame("Fortnite")
+        await model.saveProfile()
+        XCTAssertEqual(model.gamesEditor.error, "")
+        XCTAssertEqual(model.defaultGame, "Fortnite")
+        XCTAssertEqual(model.profile?.defaultGame, "Fortnite")
+        let saved = model.mockGames?.stored.values.first
+        XCTAssertEqual(saved, ["Fortnite", "Warzone"], "The list is saved with the default first")
+        XCTAssertEqual(model.gamesEditor.message, ProfileGamesEditor.savedMessage(model.gamesHome))
+    }
+
+    func testRemovingTheDefaultHandsItToTheNextGame() async {
+        let model = model(.onboardingProfile)
+        await model.restore()
+        model.defaultGame = "Warzone"
+        await model.loadProfileGames()
+        model.addSuggestedProfileGame("Warzone")
+        model.addSuggestedProfileGame("Fortnite")
+        model.removeProfileGame("Warzone")
+        XCTAssertEqual(model.defaultGame, "Fortnite")
+        model.removeProfileGame("Fortnite")
+        XCTAssertEqual(model.defaultGame, "")
+        await model.saveProfile()
+        XCTAssertEqual(model.gamesEditor.error, "Pick a default game.", "No default means nothing is saved")
+        XCTAssertEqual(model.gamesEditor.message, "")
+    }
+
+    func testPanelEditorLoadFailureNeverOverwritesTheServerList() async {
+        let model = model(.onboardingProfile)
+        await model.restore()
+        let user = Self.mockUser
+        model.mockGames?.stored[user] = ["Warzone", "Halo Infinite"]
+        model.defaultGame = "Warzone"
+        model.mockGames?.loadsDown = true
+        await model.loadProfileGames()
+        XCTAssertEqual(model.gamesEditor.load, .failed(ProfileGamesEditor.offlineLoadText))
+        await model.saveProfile()
+        XCTAssertEqual(model.mockGames?.stored[user], ["Warzone", "Halo Infinite"], "A failed read leaves the saved list alone")
+        model.mockGames?.loadsDown = false
+        await model.loadProfileGames()
+        XCTAssertEqual(model.gamesEditor.games, ["Warzone", "Halo Infinite"], "Try again loads it")
+        model.mockGames?.savesDown = true
+        await model.saveProfile()
+        XCTAssertEqual(model.gamesEditor.error, ProfileGamesEditor.offlineSaveText)
+        XCTAssertEqual(model.gamesEditor.message, "")
     }
 
     func testProfileLoadFailureOffersRetry() async {

@@ -128,6 +128,8 @@ final class LiveSessionModel {
     var gameEntry = ""
     var gamesError = ""
     var gamesHome: GamesHome?
+    /// The squad panel's games editor (signed in, after onboarding).
+    var gamesEditor = ProfileGamesEditor()
     /// Set when the profile step was finished in this launch, so the squad step
     /// counts "Step 4 of 4". Someone who left a squad later sees no count.
     var onboardedThisSession = false
@@ -610,15 +612,80 @@ final class LiveSessionModel {
         mockGames ?? SupabaseProfileGames(config: config, accessToken: session.accessToken, refresher: tokenRefresher)
     }
 
+    /// Reads the games list for the panel's editor. A failure says so and keeps
+    /// editing off, so Save can't replace the server's list with an empty one.
+    func loadProfileGames() async {
+        guard let session = try? requiredSession() else { return }
+        gamesEditor.begin()
+        do {
+            let read = try await gamesService(session).load(userId: session.userId)
+            gamesEditor.loaded(read, defaultGame: defaultGame)
+            gamesHome = read.home
+        } catch {
+            if RequestNoise.isCancellation(error) { return }
+            gamesEditor.failed(offline: Self.offline(error))
+        }
+    }
+
+    func addProfileGame() {
+        gamesEditor.add(gamesEditor.entry)
+    }
+
+    func addSuggestedProfileGame(_ game: String) {
+        gamesEditor.add(game)
+    }
+
+    func removeProfileGame(_ game: String) {
+        gamesEditor.remove(game)
+        if ProfileGamesEditor.isDefault(game, defaultGame: defaultGame) {
+            // The default has to be one of your games; the next one takes over.
+            defaultGame = gamesEditor.games.first ?? ""
+        }
+    }
+
+    func makeDefaultGame(_ game: String) {
+        defaultGame = game
+        gamesEditor.message = ""
+    }
+
+    /// Name and default game go to `sq8_profiles`; the games list (default
+    /// first) goes to `games` through ProfileGames, once it has loaded.
     func saveProfile() async {
         guard var profile else { return }
-        profile.displayName = displayName
-        profile.defaultGame = defaultGame
-        self.profile = profile
-        await run {
-            let session = try requiredSession()
+        let draft = ProfileDraft(name: displayName, defaultGame: defaultGame, games: gamesEditor.games)
+        if let problem = draft.nameError ?? draft.gameError {
+            gamesEditor.error = problem
+            return
+        }
+        let saved = draft.saved
+        profile.displayName = saved.name
+        profile.defaultGame = saved.defaultGame
+        let writesGames = gamesEditor.load == .loaded
+        gamesEditor.error = ""
+        gamesEditor.message = ""
+        gamesEditor.saving = true
+        defer { gamesEditor.saving = false }
+        guard let session = try? requiredSession() else { return }
+        do {
             try await profileService(session).save(profile)
+            self.profile = profile
+            displayName = saved.name
+            defaultGame = saved.defaultGame
+            if writesGames {
+                let home = try await gamesService(session).save(userId: session.userId, games: saved.games)
+                gamesHome = home
+                gamesEditor.home = home
+                gamesEditor.games = saved.games
+            }
+            gamesEditor.message = ProfileGamesEditor.savedMessage(writesGames ? gamesEditor.home : .server)
             status = "Profile saved."
+        } catch {
+            if RequestNoise.isCancellation(error) { return }
+            if let failure = error as? BackendFailure, case .signIn = SessionFailurePolicy.surface(failure) {
+                handleSessionError(error)
+                return
+            }
+            gamesEditor.error = Self.offline(error) ? ProfileGamesEditor.offlineSaveText : ProfileGamesEditor.saveFailedText
         }
     }
 
@@ -1318,6 +1385,7 @@ final class LiveSessionModel {
         olderHoldAnchor = nil
         pendingOpen.clear()
         FunctionPresence.shared.reset()
+        gamesEditor = ProfileGamesEditor()
         realtime?.stop()
         realtime = nil
         poll?.cancel()
@@ -3245,12 +3313,147 @@ struct LiveSessionView: View {
                     TextField("Default game", text: Binding(get: { model.defaultGame }, set: { model.defaultGame = $0 }))
                         .textFieldStyle(.roundedBorder)
                         .accessibilityIdentifier("profile-game")
+                    profileGamesEditor
+                    if !model.gamesEditor.error.isEmpty {
+                        Text(model.gamesEditor.error)
+                            .font(SQType.label)
+                            .foregroundStyle(SQColor.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("profile-games-error")
+                    }
                     Button("Save profile") { Task { await model.saveProfile() } }
-                        .disabled(model.busy)
+                        .disabled(model.busy || model.gamesEditor.saving)
                         .accessibilityIdentifier("save-profile")
+                    if !model.gamesEditor.message.isEmpty {
+                        Text(model.gamesEditor.message)
+                            .font(SQType.label)
+                            .foregroundStyle(SQColor.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("profile-saved")
+                    }
                 }
             }
+            .task { await model.loadProfileGames() }
         }
+    }
+
+    /// Games you play, the default first. Editing waits for the list to load.
+    @ViewBuilder
+    private var profileGamesEditor: some View {
+        let editor = model.gamesEditor
+        Text("Games you play")
+            .font(SQType.label)
+            .foregroundStyle(SQColor.muted)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityIdentifier("profile-games-heading")
+        switch editor.load {
+        case .idle, .loading:
+            HStack(spacing: SQSpace.s) {
+                ProgressView()
+                Text(ProfileGamesEditor.loadingText)
+                    .font(SQType.label)
+                    .foregroundStyle(SQColor.muted)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("profile-games-loading")
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: SQSpace.xs) {
+                Text(message)
+                    .font(SQType.label)
+                    .foregroundStyle(SQColor.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("profile-games-load-error")
+                Button("Try again") { Task { await model.loadProfileGames() } }
+                    .accessibilityIdentifier("profile-games-retry")
+            }
+        case .loaded:
+            if editor.showsEmpty {
+                Text(ProfileGamesEditor.emptyText)
+                    .font(SQType.label)
+                    .foregroundStyle(SQColor.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("profile-games-empty")
+            }
+            ForEach(ProfileGamesEditor.ordered(editor.games, defaultGame: model.defaultGame), id: \.self) { game in
+                profileGameRow(game)
+            }
+            HStack(spacing: SQSpace.s) {
+                TextField("Add a game", text: Binding(get: { model.gamesEditor.entry }, set: { model.gamesEditor.entry = $0 }))
+                    .textFieldStyle(.roundedBorder)
+                    .submitLabel(.done)
+                    .onSubmit { model.addProfileGame() }
+                    .accessibilityIdentifier("profile-add-game")
+                Button("Add") { model.addProfileGame() }
+                    .disabled(!editor.canEdit)
+                    .accessibilityLabel("Add game")
+                    .accessibilityIdentifier("profile-add-game-button")
+            }
+            if !editor.suggestions.isEmpty, editor.games.count < 4 {
+                WrapLayout(spacing: SQSpace.s) {
+                    ForEach(editor.suggestions, id: \.self) { game in
+                        Button(game) { model.addSuggestedProfileGame(game) }
+                            .font(SQType.label)
+                            .buttonStyle(.bordered)
+                            .disabled(!editor.canEdit)
+                            .accessibilityLabel("Add \(game)")
+                            .accessibilityIdentifier("profile-suggest-\(game)")
+                    }
+                }
+            }
+            if let note = editor.home?.note {
+                Text(note)
+                    .font(SQType.label)
+                    .foregroundStyle(SQColor.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("profile-games-note")
+            }
+        }
+    }
+
+    private func profileGameRow(_ game: String) -> some View {
+        let isDefault = ProfileGamesEditor.isDefault(game, defaultGame: model.defaultGame)
+        let buttons = HStack(spacing: SQSpace.s) {
+            if !isDefault {
+                Button("Make default") { model.makeDefaultGame(game) }
+                    .font(SQType.label)
+                    .disabled(!model.gamesEditor.canEdit)
+                    .accessibilityLabel("Make \(game) the default game")
+                    .accessibilityIdentifier("profile-default-\(game)")
+            }
+            Button {
+                model.removeProfileGame(game)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(SQType.label)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(SQColor.muted)
+            .disabled(!model.gamesEditor.canEdit)
+            .accessibilityLabel("Remove \(game)")
+            .accessibilityIdentifier("profile-remove-\(game)")
+        }
+        let name = Text(isDefault ? "\(game) · default" : game)
+            .font(SQType.body)
+            .foregroundStyle(SQColor.ink)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel(ProfileGamesEditor.rowLabel(game, defaultGame: model.defaultGame))
+        return ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: SQSpace.s) {
+                name.frame(maxWidth: .infinity, alignment: .leading)
+                buttons
+            }
+            VStack(alignment: .leading, spacing: SQSpace.xs) {
+                name
+                buttons
+            }
+        }
+        .padding(.leading, SQSpace.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SQColor.surface2, in: RoundedRectangle(cornerRadius: SQRadius.m, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("profile-games-row-\(game)")
     }
 
     private func panelHeading(_ title: String) -> some View {

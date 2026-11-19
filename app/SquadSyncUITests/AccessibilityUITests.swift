@@ -729,6 +729,92 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(app.buttons["save-profile"].exists, "Save profile was not in the squad panel")
     }
 
+    // MARK: Profile games editor (squad panel)
+
+    private func openProfilePanel(_ extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite"] + extra
+        app.launch()
+        let title = app.descendants(matching: .any)["squad-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "The squad header was missing")
+        title.tap()
+        XCTAssertTrue(app.textFields["profile-name"].waitForExistence(timeout: 5), "The profile was not in the squad panel")
+        return app
+    }
+
+    /// Swipes the panel up until the element can be tapped.
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication, _ message: String) {
+        XCTAssertTrue(element.waitForExistence(timeout: 5), message)
+        var tries = 0
+        while !element.isHittable, tries < 6 {
+            app.swipeUp()
+            tries += 1
+        }
+        XCTAssertTrue(element.isHittable, message + " (not hittable)")
+    }
+
+    func testProfilePanelAddsRemovesAndPicksTheDefaultGame() {
+        let app = openProfilePanel()
+        let empty = element("profile-games-empty", in: app)
+        reveal(empty, in: app, "An empty games list did not say so")
+        XCTAssertEqual(empty.label, "No games yet. Add the ones you play.")
+
+        let fortnite = app.buttons["profile-suggest-Fortnite"]
+        reveal(fortnite, in: app, "Suggestions were missing")
+        XCTAssertEqual(fortnite.label, "Add Fortnite")
+        fortnite.tap()
+        let apex = app.buttons["profile-suggest-Apex Legends"]
+        reveal(apex, in: app, "Apex Legends was not suggested")
+        apex.tap()
+        XCTAssertFalse(app.buttons["profile-suggest-Fortnite"].exists, "An added game is still suggested")
+        XCTAssertFalse(empty.exists, "The empty line stayed after adding")
+
+        let entry = app.textFields["profile-add-game"]
+        reveal(entry, in: app, "The add-a-game field was missing")
+        entry.tap()
+        XCTAssertTrue(app.buttons["profile-add-game-button"].exists, "The Add button was missing")
+        entry.typeText("Halo Infinite\n")
+        XCTAssertTrue(element("profile-games-row-Halo Infinite", in: app).waitForExistence(timeout: 5), "A typed game was not added")
+
+        let makeDefault = app.buttons["profile-default-Fortnite"]
+        reveal(makeDefault, in: app, "Make default was missing")
+        XCTAssertEqual(makeDefault.label, "Make Fortnite the default game")
+        makeDefault.tap()
+        XCTAssertTrue(app.staticTexts["Fortnite, default game"].waitForExistence(timeout: 5), "The default was not marked for VoiceOver")
+        XCTAssertFalse(app.buttons["profile-default-Fortnite"].exists, "The default still offers Make default")
+        XCTAssertEqual(app.textFields["profile-game"].value as? String, "Fortnite", "The default game field did not follow")
+
+        let removeApex = app.buttons["profile-remove-Apex Legends"]
+        reveal(removeApex, in: app, "Remove was missing")
+        XCTAssertEqual(removeApex.label, "Remove Apex Legends")
+        removeApex.tap()
+        XCTAssertFalse(element("profile-games-row-Apex Legends", in: app).waitForExistence(timeout: 2), "A removed game stayed")
+
+        let save = app.buttons["save-profile"]
+        reveal(save, in: app, "Save profile was missing")
+        save.tap()
+        let saved = element("profile-saved", in: app)
+        XCTAssertTrue(saved.waitForExistence(timeout: 5), "Saving did not confirm")
+        XCTAssertTrue(saved.label.hasPrefix("Profile saved."), "Unexpected save line: \(saved.label)")
+        XCTAssertFalse(element("profile-games-error", in: app).exists, "Saving showed an error")
+        XCTAssertTrue(element("profile-games-row-Fortnite", in: app).exists)
+        XCTAssertTrue(element("profile-games-row-Halo Infinite", in: app).exists)
+        XCTAssertFalse(element("profile-games-row-Apex Legends", in: app).exists)
+    }
+
+    func testProfileGamesSayWhyWhenTheyCantLoadAndOfferTryAgain() {
+        let app = openProfilePanel(["-SQ8NetworkFault", "offline"])
+        let failed = element("profile-games-load-error", in: app)
+        reveal(failed, in: app, "A failed games read did not say so")
+        XCTAssertEqual(failed.label, "You're offline. Your games will load when you're back online.")
+        XCTAssertFalse(element("profile-games-empty", in: app).exists, "A failed read claimed there are no games")
+        XCTAssertFalse(app.textFields["profile-add-game"].exists, "Editing was offered before the list loaded")
+        let retry = app.buttons["profile-games-retry"]
+        reveal(retry, in: app, "Try again was missing")
+        retry.tap()
+        XCTAssertTrue(failed.waitForExistence(timeout: 5), "Still offline, the error should stay")
+    }
+
     func testPresenceStripIsPresentAndHittable() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "invite"]

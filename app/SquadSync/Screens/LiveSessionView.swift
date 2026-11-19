@@ -3651,18 +3651,28 @@ struct LiveSessionView: View {
         .padding(.top, bubble.startsGroup ? SQSpace.s : 0)
         .padding(.bottom, bubble.endsGroup ? SQSpace.xs : 0)
         .frame(maxWidth: .infinity, minHeight: 44, alignment: frameEdge)
-        .contentShape(Rectangle())
+        // The row's taps live on a background layer beside the bubble, not on the row
+        // itself. A tap gesture on the row made SwiftUI give its full-row frame to the
+        // single accessible element inside (the bubble), so chat.bubble.* reported the
+        // row's frame. Only a row with several accessible children (the latest, with
+        // Sent and Seen by) escaped. Seen on the iOS 26.2 simulator: with the gestures
+        // here every bubble reports its own frame. A tap or double tap beside a short
+        // bubble still picks the message or opens the emoji row, as before.
+        .background {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) {
+                    guard actions.contains(.react) else { return }
+                    model.selectedMessage = entry.id
+                    model.reacting = true
+                }
+                .onTapGesture {
+                    model.selectedMessage = entry.id
+                }
+                .accessibilityHidden(true)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(ChatSeed.rowIdentifier(for: entry.id))
-        .onTapGesture(count: 2) {
-            guard actions.contains(.react) else { return }
-            model.selectedMessage = entry.id
-            model.reacting = true
-        }
-        // A tap beside a short bubble still picks the message, as the full-width row did.
-        .onTapGesture {
-            model.selectedMessage = entry.id
-        }
     }
 
     @ViewBuilder

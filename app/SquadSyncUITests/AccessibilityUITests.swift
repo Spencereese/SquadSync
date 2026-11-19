@@ -1406,10 +1406,11 @@ final class AccessibilityUITests: XCTestCase {
             if target.exists {
                 // Ask isHittable only once the element is on screen in the list: on a lazy
                 // row that exists offscreen, XCUI fails the test outright ("Activation point
-                // invalid") instead of returning false.
-                if onScreen(target, in: list), target.isHittable { return true }
+                // invalid") instead of returning false. One frame read each per drag.
                 let frame = target.frame
-                if !frame.isEmpty { towardOlder = frame.midY < list.frame.midY }
+                let visible = list.frame
+                if onScreen(frame, in: visible), target.isHittable { return true }
+                if !frame.isEmpty { towardOlder = frame.midY < visible.midY }
             } else {
                 blindDrags += 1
             }
@@ -1422,9 +1423,12 @@ final class AccessibilityUITests: XCTestCase {
 
     /// The element has a real frame whose centre is inside the visible list.
     private func onScreen(_ element: XCUIElement, in list: XCUIElement) -> Bool {
-        let frame = element.frame
+        onScreen(element.frame, in: list.frame)
+    }
+
+    private func onScreen(_ frame: CGRect, in visible: CGRect) -> Bool {
         guard !frame.isEmpty, frame.width > 0, frame.height > 0 else { return false }
-        return list.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
+        return visible.contains(CGPoint(x: frame.midX, y: frame.midY))
     }
 
     /// A third of the list per drag, slow so there's no fling past lazy rows. Pressed
@@ -1444,8 +1448,8 @@ final class AccessibilityUITests: XCTestCase {
 
     /// The bubble itself, by its own identifier (`chat.bubble.<token>.start` or
     /// `.continues`), so frames are the colored shape and not the full-width row.
-    private func bubble(_ rowIdentifier: String, in app: XCUIApplication) -> XCUIElement {
-        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat.bubble.\(token(rowIdentifier)).")).firstMatch
+    private func bubble(_ rowIdentifier: String, in container: XCUIElement) -> XCUIElement {
+        container.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat.bubble.\(token(rowIdentifier)).")).firstMatch
     }
 
     private func bubbleIdentifier(_ rowIdentifier: String, startsGroup: Bool) -> String {
@@ -1468,32 +1472,40 @@ final class AccessibilityUITests: XCTestCase {
     func testThreadGroupsBySenderUnderDaySeparators() {
         let app = launchChat("chatPolish")
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15), "The seeded thread didn't load")
-        let days = app.staticTexts.matching(identifier: "day-separator")
-        let today = days.matching(NSPredicate(format: "label == 'Today'")).firstMatch
+        // Every query is scoped to the message list and resolves one element by
+        // identifier (plus label) with firstMatch, so no step walks the whole tree.
+        let list = app.scrollViews["message-list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5), "No message list")
+        let today = daySeparator("Today", in: list)
         guard scrollChat(to: today, in: app) else { return }
 
-        let first = bubble(Polish.question, in: app)
+        let first = bubble(Polish.question, in: list)
         guard scrollChat(to: first, in: app) else { return }
         XCTAssertEqual(first.identifier, bubbleIdentifier(Polish.question, startsGroup: true), "Alex's first line should open a group")
         XCTAssertTrue(first.label.hasPrefix("Alex, Who's on tonight?, "), first.label)
 
-        let second = bubble(Polish.alexSecond, in: app)
+        let second = bubble(Polish.alexSecond, in: list)
         guard scrollChat(to: second, in: app) else { return }
         XCTAssertEqual(second.identifier, bubbleIdentifier(Polish.alexSecond, startsGroup: false), "Alex's second line should continue his group")
         XCTAssertTrue(second.label.hasPrefix("Alex, I can do 9, "), second.label)
 
-        let mine = bubble(Polish.mineFirst, in: app)
+        let mine = bubble(Polish.mineFirst, in: list)
         guard scrollChat(to: mine, in: app) else { return }
         XCTAssertEqual(mine.identifier, bubbleIdentifier(Polish.mineFirst, startsGroup: true), "A new sender should open a new group")
         if first.exists && second.exists {
             XCTAssertLessThan(first.frame.minY, second.frame.minY, "Alex's lines are out of order")
         }
 
-        let yesterday = days.matching(NSPredicate(format: "label == 'Yesterday'")).firstMatch
+        let yesterday = daySeparator("Yesterday", in: list)
         guard scrollChat(to: yesterday, in: app) else { return }
         if today.exists {
             XCTAssertLessThanOrEqual(yesterday.frame.maxY, today.frame.minY, "Yesterday should sit above Today")
         }
+    }
+
+    /// One day separator in the list, by identifier and label in a single predicate.
+    private func daySeparator(_ label: String, in list: XCUIElement) -> XCUIElement {
+        list.staticTexts.matching(NSPredicate(format: "identifier == 'day-separator' AND label == %@", label)).firstMatch
     }
 
     func testOnlyTheLatestMessageShowsSeenBy() {

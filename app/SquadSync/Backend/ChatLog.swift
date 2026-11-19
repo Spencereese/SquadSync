@@ -191,13 +191,24 @@ enum ChatSeed {
     static let messageId = UUID(uuidString: "00000000-0000-0000-0000-00000000A001")!
 
     static func rowIdentifier(for id: UUID) -> String {
-        id == messageId ? "message-row-seed-1" : "message-row-\(id.uuidString)"
+        "message-row-\(token(for: id))"
     }
 
-    /// Identifier on a message bubble: whether it opens a sender group (and so
-    /// carries the name header) or continues the one above. Never spoken.
-    static func bubbleIdentifier(startsGroup: Bool) -> String {
-        startsGroup ? "bubble-group-start" : "bubble-group-continues"
+    /// The id part shared by a message's row, bubble, and reaction identifiers.
+    static func token(for id: UUID) -> String {
+        id == messageId ? "seed-1" : id.uuidString
+    }
+
+    /// Identifier on the bubble itself (just the colored shape, not the row):
+    /// `chat.bubble.<id>.start` when it opens a sender group (and so carries the
+    /// name header), `.continues` when it continues the one above. Never spoken.
+    static func bubbleIdentifier(for id: UUID, startsGroup: Bool) -> String {
+        "chat.bubble.\(token(for: id)).\(startsGroup ? "start" : "continues")"
+    }
+
+    /// Identifier on the row of reaction chips under a bubble.
+    static func reactionsIdentifier(for id: UUID) -> String {
+        "chat.reactions.\(token(for: id))"
     }
 }
 

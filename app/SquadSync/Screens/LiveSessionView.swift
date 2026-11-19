@@ -3315,7 +3315,7 @@ struct LiveSessionView: View {
                 .buttonStyle(.plain)
                 .accessibilityLabel(ChatSpeech.bubble(bubble))
                 // Not spoken; lets UI tests read sender grouping without measuring gaps.
-                .accessibilityIdentifier(ChatSeed.bubbleIdentifier(startsGroup: bubble.startsGroup))
+                .accessibilityIdentifier(ChatSeed.bubbleIdentifier(for: entry.id, startsGroup: bubble.startsGroup))
                 .accessibilityActions {
                     ForEach(actions, id: \.title) { action in
                         Button(action.title) { run(action, on: entry.id) }
@@ -3335,6 +3335,8 @@ struct LiveSessionView: View {
                             }
                         }
                     }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier(ChatSeed.reactionsIdentifier(for: entry.id))
                     .padding(.top, 2)
                 }
                 if let caption = bubble.caption {

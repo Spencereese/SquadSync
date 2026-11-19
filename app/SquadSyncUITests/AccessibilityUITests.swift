@@ -111,8 +111,14 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(chip.waitForExistence(timeout: 5), "The reaction chip was not visible")
         XCTAssertEqual(chip.label, "👍 1, you reacted")
         XCTAssertTrue(chip.isSelected, "Your own reaction should read as selected")
-        let bubble = row.buttons.element(boundBy: 0)
-        XCTAssertLessThanOrEqual(abs(chip.frame.minX - bubble.frame.minX), 2, "Riley's chip should sit under his bubble on the left: chip \(chip.frame), bubble \(bubble.frame)")
+        let seedBubble = bubble("message-row-seed-1", in: app)
+        let chips = reactions("message-row-seed-1", in: app)
+        XCTAssertTrue(seedBubble.exists, "Riley's bubble has no chat.bubble identifier")
+        XCTAssertTrue(chips.exists, "Riley's chips have no chat.reactions identifier")
+        XCTAssertLessThan(seedBubble.frame.width, row.frame.width - 40, "Measured the row, not the bubble: bubble \(seedBubble.frame), row \(row.frame)")
+        XCTAssertLessThanOrEqual(abs(chips.frame.minX - seedBubble.frame.minX), 2, "Riley's chips should sit under his bubble on the left: chips \(chips.frame), bubble \(seedBubble.frame)")
+        XCTAssertLessThanOrEqual(seedBubble.frame.minX, row.frame.minX + 40, "Riley's bubble should sit at the left of the row: bubble \(seedBubble.frame), row \(row.frame)")
+        XCTAssertGreaterThanOrEqual(chips.frame.minY, seedBubble.frame.maxY - 1, "The chips overlap the bubble")
 
         // Tapping your own chip again turns it off.
         chip.tap()
@@ -1335,8 +1341,24 @@ final class AccessibilityUITests: XCTestCase {
     }
 
     /// The message bubble inside a row: the row's first button.
+    /// The id part of a row identifier ("message-row-<token>").
+    private func token(_ rowIdentifier: String) -> String {
+        String(rowIdentifier.dropFirst("message-row-".count))
+    }
+
+    /// The bubble itself, by its own identifier (`chat.bubble.<token>.start` or
+    /// `.continues`), so frames are the colored shape and not the full-width row.
     private func bubble(_ rowIdentifier: String, in app: XCUIApplication) -> XCUIElement {
-        element(rowIdentifier, in: app).buttons.element(boundBy: 0)
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat.bubble.\(token(rowIdentifier)).")).firstMatch
+    }
+
+    private func bubbleIdentifier(_ rowIdentifier: String, startsGroup: Bool) -> String {
+        "chat.bubble.\(token(rowIdentifier)).\(startsGroup ? "start" : "continues")"
+    }
+
+    /// The row of reaction chips under a message.
+    private func reactions(_ rowIdentifier: String, in app: XCUIApplication) -> XCUIElement {
+        element("chat.reactions.\(token(rowIdentifier))", in: app)
     }
 
     private func waitForLabel(_ target: XCUIElement, _ predicate: String, timeout: TimeInterval = 5) -> Bool {
@@ -1356,17 +1378,17 @@ final class AccessibilityUITests: XCTestCase {
 
         let first = bubble(Polish.question, in: app)
         guard scrollChat(to: first, in: app) else { return }
-        XCTAssertEqual(first.identifier, "bubble-group-start", "Alex's first line should open a group")
+        XCTAssertEqual(first.identifier, bubbleIdentifier(Polish.question, startsGroup: true), "Alex's first line should open a group")
         XCTAssertTrue(first.label.hasPrefix("Alex, Who's on tonight?, "), first.label)
 
         let second = bubble(Polish.alexSecond, in: app)
         guard scrollChat(to: second, in: app) else { return }
-        XCTAssertEqual(second.identifier, "bubble-group-continues", "Alex's second line should continue his group")
+        XCTAssertEqual(second.identifier, bubbleIdentifier(Polish.alexSecond, startsGroup: false), "Alex's second line should continue his group")
         XCTAssertTrue(second.label.hasPrefix("Alex, I can do 9, "), second.label)
 
         let mine = bubble(Polish.mineFirst, in: app)
         guard scrollChat(to: mine, in: app) else { return }
-        XCTAssertEqual(mine.identifier, "bubble-group-start", "A new sender should open a new group")
+        XCTAssertEqual(mine.identifier, bubbleIdentifier(Polish.mineFirst, startsGroup: true), "A new sender should open a new group")
         if first.exists && second.exists {
             XCTAssertLessThan(first.frame.minY, second.frame.minY, "Alex's lines are out of order")
         }
@@ -1451,26 +1473,29 @@ final class AccessibilityUITests: XCTestCase {
     func testOwnMessagesSitRightAndOthersLeftWithTheirName() {
         let app = launchChat("chatPolish")
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15), "The seeded thread didn't load")
-        let window = app.windows.firstMatch.frame
 
         let alex = bubble(Polish.question, in: app)
         guard scrollChat(to: alex, in: app) else { return }
+        let alexRow = element(Polish.question, in: app).frame
         XCTAssertTrue(alex.label.hasPrefix("Alex, "), alex.label)
-        XCTAssertEqual(alex.identifier, "bubble-group-start", "Alex's run should open with his name")
-        XCTAssertLessThan(alex.frame.midX, window.midX, "Alex's message should sit on the left: \(alex.frame)")
-        XCTAssertLessThanOrEqual(alex.frame.maxX, window.maxX - 40, "Alex's bubble should leave room on the right: \(alex.frame)")
+        XCTAssertEqual(alex.identifier, bubbleIdentifier(Polish.question, startsGroup: true), "Alex's run should open with his name")
+        XCTAssertLessThan(alex.frame.width, alexRow.width - 40, "Measured the row, not the bubble: bubble \(alex.frame), row \(alexRow)")
+        // Avatar column (28) plus spacing (8) is all that sits left of his bubble.
+        XCTAssertLessThanOrEqual(alex.frame.minX, alexRow.minX + 40, "Alex's bubble should sit at the left of the row: bubble \(alex.frame), row \(alexRow)")
+        XCTAssertLessThanOrEqual(alex.frame.maxX, alexRow.maxX - 40, "Alex's bubble should leave room on the right: bubble \(alex.frame), row \(alexRow)")
 
         let alexAgain = bubble(Polish.alexSecond, in: app)
         guard scrollChat(to: alexAgain, in: app) else { return }
-        XCTAssertEqual(alexAgain.identifier, "bubble-group-continues", "Alex's name should show once per run")
+        XCTAssertEqual(alexAgain.identifier, bubbleIdentifier(Polish.alexSecond, startsGroup: false), "Alex's name should show once per run")
         XCTAssertLessThanOrEqual(abs(alexAgain.frame.minX - alex.frame.minX), 1, "Alex's run should line up on the left")
 
         let mine = bubble(Polish.mineFirst, in: app)
         guard scrollChat(to: mine, in: app) else { return }
+        let mineRow = element(Polish.mineFirst, in: app).frame
         XCTAssertTrue(mine.label.hasPrefix("You, "), mine.label)
-        XCTAssertGreaterThan(mine.frame.midX, window.midX, "Your message should sit on the right: \(mine.frame)")
-        XCTAssertGreaterThanOrEqual(mine.frame.maxX, window.maxX - 40, "Your bubble should hug the right edge: \(mine.frame)")
-        XCTAssertGreaterThanOrEqual(mine.frame.minX, window.minX + 40, "Your bubble should leave room on the left: \(mine.frame)")
+        XCTAssertLessThan(mine.frame.width, mineRow.width - 40, "Measured the row, not the bubble: bubble \(mine.frame), row \(mineRow)")
+        XCTAssertGreaterThanOrEqual(mine.frame.maxX, mineRow.maxX - 2, "Your bubble should hug the row's right edge: bubble \(mine.frame), row \(mineRow)")
+        XCTAssertGreaterThanOrEqual(mine.frame.minX, mineRow.minX + 40, "Your bubble should leave room on the left: bubble \(mine.frame), row \(mineRow)")
         XCTAssertGreaterThan(mine.frame.maxX, alex.frame.maxX + 20, "Yours and Alex's are on the same side")
     }
 
@@ -1487,18 +1512,20 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(menuThumbs.waitForExistence(timeout: 5), "Long-press had no reactions")
         menuThumbs.tap()
 
-        let row = element(Polish.mineFirst, in: app)
-        let chip = row.buttons["reaction-chip-hand.thumbsup.fill"]
+        let chips = reactions(Polish.mineFirst, in: app)
+        let chip = chips.buttons["reaction-chip-hand.thumbsup.fill"]
         guard scrollChat(to: chip, in: app) else { return }
         XCTAssertEqual(chip.label, "👍 1, you reacted")
         XCTAssertTrue(chip.isSelected)
-        XCTAssertLessThanOrEqual(abs(chip.frame.maxX - mine.frame.maxX), 2, "Your chip should sit under your bubble on the right: chip \(chip.frame), bubble \(mine.frame)")
+        let rowFrame = element(Polish.mineFirst, in: app).frame
+        XCTAssertLessThanOrEqual(abs(chips.frame.maxX - mine.frame.maxX), 2, "Your chips should sit under your bubble on the right: chips \(chips.frame), bubble \(mine.frame)")
+        XCTAssertGreaterThanOrEqual(mine.frame.maxX, rowFrame.maxX - 2, "Your bubble should hug the row's right edge at AX5: bubble \(mine.frame), row \(rowFrame)")
         XCTAssertGreaterThanOrEqual(chip.frame.minX, 0, "The chip is clipped on the left at AX5: \(chip.frame)")
         XCTAssertLessThanOrEqual(chip.frame.maxX, width + 1, "The chip runs off screen at AX5: \(chip.frame)")
         XCTAssertGreaterThan(chip.frame.minY, mine.frame.maxY - 1, "The chip overlaps the bubble: chip \(chip.frame), bubble \(mine.frame)")
         assertHitSize(chip.frame.height)
 
-        let add = row.buttons["reaction-add"]
+        let add = chips.buttons["reaction-add"]
         XCTAssertTrue(add.exists, "No + to open the emoji row")
         XCTAssertEqual(add.label, "Add a reaction")
         add.tap()

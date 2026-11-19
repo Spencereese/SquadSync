@@ -1400,15 +1400,21 @@ final class AccessibilityUITests: XCTestCase {
             XCTFail("No message list to scroll", file: file, line: line)
             return false
         }
+        // XCUI round trips, not drags, are what this costs: each one waits for the app
+        // to idle and snapshots its tree on the main thread. So the list's frame is
+        // read once (it doesn't move while the thread scrolls under it; a keyboard
+        // the drag dismisses only makes the first reading the stricter one), and the
+        // target is read once per drag, as one snapshot that answers both "is it in
+        // the tree" and "where". isHittable, a third round trip, is asked only once
+        // that snapshot puts it on screen. Was exists + frame + list.frame per drag.
+        let visible = list.frame
         var blindDrags = 0
         for _ in 0..<maxDrags {
             var towardOlder = blindDrags < maxDrags / 3
-            if target.exists {
+            if let frame = try? target.snapshot().frame {
                 // Ask isHittable only once the element is on screen in the list: on a lazy
                 // row that exists offscreen, XCUI fails the test outright ("Activation point
-                // invalid") instead of returning false. One frame read each per drag.
-                let frame = target.frame
-                let visible = list.frame
+                // invalid") instead of returning false.
                 if onScreen(frame, in: visible), target.isHittable { return true }
                 if !frame.isEmpty { towardOlder = frame.midY < visible.midY }
             } else {
@@ -1416,16 +1422,12 @@ final class AccessibilityUITests: XCTestCase {
             }
             dragChat(list, towardOlder: towardOlder)
         }
-        let found = target.exists && onScreen(target, in: list) && target.isHittable
+        let found = (try? target.snapshot().frame).map { onScreen($0, in: list.frame) } == true && target.isHittable
         XCTAssertTrue(found, "Couldn't scroll to \(target) in \(maxDrags) drags", file: file, line: line)
         return found
     }
 
     /// The element has a real frame whose centre is inside the visible list.
-    private func onScreen(_ element: XCUIElement, in list: XCUIElement) -> Bool {
-        onScreen(element.frame, in: list.frame)
-    }
-
     private func onScreen(_ frame: CGRect, in visible: CGRect) -> Bool {
         guard !frame.isEmpty, frame.width > 0, frame.height > 0 else { return false }
         return visible.contains(CGPoint(x: frame.midX, y: frame.midY))
@@ -1479,28 +1481,49 @@ final class AccessibilityUITests: XCTestCase {
         let today = daySeparator("Today", in: list)
         guard scrollChat(to: today, in: app) else { return }
 
+        // Each bubble is read as one snapshot (identifier, label and frame in one
+        // round trip) right after it's on screen, and the order checks use those
+        // readings instead of querying again.
         let first = bubble(Polish.question, in: list)
-        guard scrollChat(to: first, in: app) else { return }
-        XCTAssertEqual(first.identifier, bubbleIdentifier(Polish.question, startsGroup: true), "Alex's first line should open a group")
-        XCTAssertTrue(first.label.hasPrefix("Alex, Who's on tonight?, "), first.label)
+        guard scrollChat(to: first, in: app), let firstSeen = seen(first) else { return }
+        XCTAssertEqual(firstSeen.identifier, bubbleIdentifier(Polish.question, startsGroup: true), "Alex's first line should open a group")
+        XCTAssertTrue(firstSeen.label.hasPrefix("Alex, Who's on tonight?, "), firstSeen.label)
 
         let second = bubble(Polish.alexSecond, in: list)
-        guard scrollChat(to: second, in: app) else { return }
-        XCTAssertEqual(second.identifier, bubbleIdentifier(Polish.alexSecond, startsGroup: false), "Alex's second line should continue his group")
-        XCTAssertTrue(second.label.hasPrefix("Alex, I can do 9, "), second.label)
+        guard scrollChat(to: second, in: app), let secondSeen = seen(second) else { return }
+        XCTAssertEqual(secondSeen.identifier, bubbleIdentifier(Polish.alexSecond, startsGroup: false), "Alex's second line should continue his group")
+        XCTAssertTrue(secondSeen.label.hasPrefix("Alex, I can do 9, "), secondSeen.label)
 
         let mine = bubble(Polish.mineFirst, in: list)
-        guard scrollChat(to: mine, in: app) else { return }
-        XCTAssertEqual(mine.identifier, bubbleIdentifier(Polish.mineFirst, startsGroup: true), "A new sender should open a new group")
-        if first.exists && second.exists {
-            XCTAssertLessThan(first.frame.minY, second.frame.minY, "Alex's lines are out of order")
+        guard scrollChat(to: mine, in: app), let mineSeen = seen(mine) else { return }
+        XCTAssertEqual(mineSeen.identifier, bubbleIdentifier(Polish.mineFirst, startsGroup: true), "A new sender should open a new group")
+        // Both of Alex's lines in one reading, so the comparison is from one layout.
+        if let firstNow = read(first), let secondNow = read(second) {
+            XCTAssertLessThan(firstNow.frame.minY, secondNow.frame.minY, "Alex's lines are out of order")
         }
 
         let yesterday = daySeparator("Yesterday", in: list)
-        guard scrollChat(to: yesterday, in: app) else { return }
-        if today.exists {
-            XCTAssertLessThanOrEqual(yesterday.frame.maxY, today.frame.minY, "Yesterday should sit above Today")
+        guard scrollChat(to: yesterday, in: app), let yesterdaySeen = seen(yesterday) else { return }
+        if let todayNow = read(today) {
+            XCTAssertLessThanOrEqual(yesterdaySeen.frame.maxY, todayNow.frame.minY, "Yesterday should sit above Today")
         }
+    }
+
+    /// One round trip for an element's identifier, label and frame; nil when it
+    /// isn't in the tree (the same answer `exists` gives).
+    private func read(_ element: XCUIElement) -> (identifier: String, label: String, frame: CGRect)? {
+        guard let snapshot = try? element.snapshot() else { return nil }
+        return (snapshot.identifier, snapshot.label, snapshot.frame)
+    }
+
+    /// `read`, for an element the test just scrolled to: gone by now is a failure,
+    /// as reading `identifier` off a missing element was.
+    private func seen(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) -> (identifier: String, label: String, frame: CGRect)? {
+        guard let reading = read(element) else {
+            XCTFail("\(element) left the tree right after scrolling to it", file: file, line: line)
+            return nil
+        }
+        return reading
     }
 
     /// One day separator in the list, by identifier and label in a single predicate.

@@ -16,12 +16,63 @@ struct URLSessionTransport: HTTPTransport {
     }
 
     func data(for request: URLRequest) async throws -> (Data, URLResponse) {
+        #if DEBUG
+        try NetworkFault.shared.check()
+        #endif
         if DebugSendFailures.failIfNeeded(request) {
             throw URLError(.networkConnectionLost)
         }
         return try await session.data(for: request)
     }
 }
+
+#if DEBUG
+/// DEBUG-only network fault switch, for simulators without Airplane Mode.
+/// `-SQ8NetworkFault` arms it (online) and shows the toggle on the chat
+/// screen; `-SQ8NetworkFault offline` starts offline. While offline every HTTP
+/// request fails the way a phone with no signal does
+/// (`URLError.notConnectedToInternet`), on the live transport and the mock
+/// chat server alike, until the toggle turns the network back on.
+/// None of this exists in a Release build.
+final class NetworkFault: @unchecked Sendable {
+    static let launchArgument = "-SQ8NetworkFault"
+    static let shared = NetworkFault(arguments: ProcessInfo.processInfo.arguments)
+
+    /// The toggle shows only when the launch argument is there.
+    let armed: Bool
+    private let lock = NSLock()
+    private var offline: Bool
+
+    init(arguments: [String]) {
+        let mode = Self.mode(arguments)
+        armed = mode != nil
+        offline = mode == "offline"
+    }
+
+    /// nil without the argument; otherwise the word after it ("offline"), or "online".
+    static func mode(_ arguments: [String]) -> String? {
+        guard let index = arguments.firstIndex(of: launchArgument) else { return nil }
+        let next = arguments.index(after: index)
+        if next < arguments.endIndex, arguments[next].lowercased() == "offline" { return "offline" }
+        return "online"
+    }
+
+    var isOffline: Bool {
+        lock.lock(); defer { lock.unlock() }
+        return offline
+    }
+
+    func setOffline(_ value: Bool) {
+        lock.lock(); defer { lock.unlock() }
+        offline = value
+    }
+
+    /// Throws like a request made with no signal.
+    func check() throws {
+        if isOffline { throw URLError(.notConnectedToInternet) }
+    }
+}
+#endif
 
 enum DebugSendFailures {
     private static var remaining: Int = {

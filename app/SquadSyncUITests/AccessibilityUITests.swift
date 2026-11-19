@@ -1630,6 +1630,40 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertFalse(element("unread-divider", in: app).exists, "Sending should clear the unread divider")
     }
 
+    /// The phone repro without Airplane Mode: DEBUG -SQ8NetworkFault turns the
+    /// network off and on. Offline send: Not delivered and Reconnecting…; back
+    /// online, Retry: the banner goes and there's one bubble.
+    func testBannerClearsAfterRetryOnceTheNetworkIsBack() {
+        let app = launchChat("chatPolish", extra: ["-SQ8NetworkFault"])
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
+        let title = element("squad-title", in: app)
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertEqual(title.value as? String ?? "", "", "No banner before going offline")
+        let network = app.buttons["debug-network-fault"]
+        XCTAssertTrue(network.waitForExistence(timeout: 5), "The DEBUG network switch is missing")
+        XCTAssertEqual(network.value as? String, "On")
+        network.tap()
+        XCTAssertTrue(waitForLabel(network, "value == 'Off'"), "The network didn't go off")
+
+        let field = app.textFields["Message"]
+        field.tap()
+        field.typeText("offline once")
+        app.buttons["send-message"].tap()
+        XCTAssertTrue(caption("Not delivered", in: app).waitForExistence(timeout: 5), "The offline send didn't say Not delivered")
+        XCTAssertTrue(waitForLabel(title, "value == 'Reconnecting…'"), "The header didn't say Reconnecting…: \(title.value ?? "nil")")
+
+        network.tap()
+        XCTAssertTrue(waitForLabel(network, "value == 'On'"), "The network didn't come back on")
+        let retry = app.buttons["retry-send"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        retry.tap()
+        XCTAssertTrue(caption("Sent", in: app).waitForExistence(timeout: 5), "The retried message didn't say Sent")
+        XCTAssertFalse(caption("Not delivered", in: app).exists)
+        XCTAssertTrue(waitForLabel(title, "value == nil OR value == ''"), "Reconnecting… stayed after the retry went through: \(title.value ?? "nil")")
+        let sent = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "You, offline once, "))
+        XCTAssertEqual(sent.count, 1, "Retry made a second bubble")
+    }
+
     func testEmptySquadSaysSo() {
         let app = launchChat("chatEmpty")
         let empty = element("chat-empty", in: app)

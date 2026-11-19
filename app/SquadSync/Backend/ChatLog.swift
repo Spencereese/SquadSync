@@ -274,8 +274,11 @@ enum SendRecovery {
 /// own note ("Reconnecting…") while it refreshes; otherwise the socket's link
 /// notice shows.
 enum ConnectionRecovery {
-    static func header(resumeNote: String, link: RealtimeLink) -> String? {
+    /// `reconnecting` is the app's own proof it's offline (a request just failed
+    /// for want of a connection), so the banner shows even before the socket notices.
+    static func header(resumeNote: String, link: RealtimeLink, reconnecting: Bool = false) -> String? {
         if !resumeNote.isEmpty { return resumeNote }
+        if reconnecting { return SessionFailurePolicy.reconnecting }
         return link.notice
     }
 

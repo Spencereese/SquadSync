@@ -1745,6 +1745,25 @@ final class LiveSessionModel {
     }
 
     var usesLiveSocket: Bool { mockChat == nil }
+
+    /// DEBUG `-SQ8NetworkFault`: the mock chat shows the connection banner and the
+    /// network toggle. Always false in Release.
+    var networkFaultArmed: Bool {
+        #if DEBUG
+        return NetworkFault.shared.armed
+        #else
+        return false
+        #endif
+    }
+
+    #if DEBUG
+    var networkFaultOffline = NetworkFault.shared.isOffline
+
+    func toggleNetworkFault() {
+        networkFaultOffline.toggle()
+        NetworkFault.shared.setOffline(networkFaultOffline)
+    }
+    #endif
     var showsLiveGaps: Bool { mockSpots == nil }
 
     private var usesSocket: Bool { usesLiveSocket }
@@ -2241,8 +2260,8 @@ struct LiveSessionView: View {
     }
 
     private var liveNotice: String? {
-        guard model.usesLiveSocket else { return nil }
-        return ConnectionRecovery.header(resumeNote: model.presenceNote, link: model.link)
+        guard model.usesLiveSocket || model.networkFaultArmed else { return nil }
+        return ConnectionRecovery.header(resumeNote: model.presenceNote, link: model.link, reconnecting: model.reconnecting)
     }
 
     private var chatList: some View {
@@ -2491,6 +2510,11 @@ struct LiveSessionView: View {
                 if let quote = model.replyQuote {
                     ChatReplyBanner(quote: quote) { model.cancelReply() }
                 }
+                #if DEBUG
+                if model.networkFaultArmed {
+                    networkFaultToggle
+                }
+                #endif
                 composer
             }
             .padding(.top, typeSize.isAccessibilitySize ? SQSpace.s : SQSpace.m)
@@ -2499,6 +2523,26 @@ struct LiveSessionView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(SQColor.surface0)
     }
+
+    #if DEBUG
+    /// DEBUG `-SQ8NetworkFault` only: turns the network off and back on.
+    private var networkFaultToggle: some View {
+        Button {
+            model.toggleNetworkFault()
+        } label: {
+            Text(model.networkFaultOffline ? "Debug: network off. Tap to turn on." : "Debug: network on. Tap to turn off.")
+                .font(SQType.caption)
+                .foregroundStyle(model.networkFaultOffline ? SQColor.danger : SQColor.subtle)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Debug network")
+        .accessibilityValue(model.networkFaultOffline ? "Off" : "On")
+        .accessibilityIdentifier("debug-network-fault")
+    }
+    #endif
 
     /// Room under the last message. At accessibility sizes with the keyboard up
     /// the list is only a few rows tall, so it keeps just a sliver.

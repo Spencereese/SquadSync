@@ -178,6 +178,8 @@ enum PushStoreFailure {
 
     static func reason(_ error: Error) -> String {
         if let failure = error as? BackendFailure {
+            // The real POST is the check now: a missing function reads as missing.
+            if case .notSetUp = failure { return missingRPC }
             switch SessionFailurePolicy.surface(failure) {
             case .message(let text):
                 return text

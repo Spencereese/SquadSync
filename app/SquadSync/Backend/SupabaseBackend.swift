@@ -368,47 +368,20 @@ final class SupabaseSquadService: SquadService {
     }
 
     func pushTokenRPCAvailable() async -> Bool {
-        do {
-            _ = try await http.send(
-                path: "rest/v1/rpc/sq8_register_device_token",
-                method: "GET",
-                query: [
-                    URLQueryItem(name: "device_token", value: "probe"),
-                    URLQueryItem(name: "device_platform", value: "ios")
-                ],
-                feature: .squad,
-                probe: true
-            )
-            return true
-        } catch let failure as BackendFailure {
-            if case .notSetUp = failure { return false }
-            if case .rejected(let message) = failure {
-                return LeaveProbe.available(status: 400, body: message)
-            }
-            return false
-        } catch {
-            return false
-        }
+        // No probe: sq8_register_device_token is volatile, so the old GET
+        // (device_token=probe) could only earn a 405. The real POST is the check;
+        // a 404 / PGRST202 on it is remembered for the session (FunctionPresence).
+        !presence.isMissing(FunctionPresence.registerDeviceToken)
     }
 
     func registerPushToken(_ token: String) async throws {
         let body = try BackendJSON.encoder.encode(DeviceTokenBody(deviceToken: token, devicePlatform: "ios"))
-        _ = try await http.send(
-            path: "rest/v1/rpc/sq8_register_device_token",
-            method: "POST",
-            body: body,
-            feature: .squad
-        )
+        _ = try await callOptionalRPC(FunctionPresence.registerDeviceToken, body: body)
     }
 
     func unregisterPushToken(_ token: String) async throws {
         let body = try BackendJSON.encoder.encode(DeviceTokenOnly(deviceToken: token))
-        _ = try await http.send(
-            path: "rest/v1/rpc/sq8_unregister_device_token",
-            method: "POST",
-            body: body,
-            feature: .squad
-        )
+        _ = try await callOptionalRPC(FunctionPresence.unregisterDeviceToken, body: body)
     }
 
     func leaveAvailable() async -> Bool {

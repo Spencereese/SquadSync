@@ -1095,6 +1095,33 @@ final class InviteFlowTests: XCTestCase {
         }
     }
 
+    func testPushTokenCheckSendsNoProbeAndTheRealPostDecides() async throws {
+        let presence = FunctionPresence()
+        let missing = Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function public.sq8_register_device_token in the schema cache\"}".utf8)
+        let transport = ScriptedTransport(responses: [(404, missing)])
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: transport, presence: presence)
+        let assumed = await service.pushTokenRPCAvailable()
+        XCTAssertTrue(assumed)
+        XCTAssertTrue(transport.requests.isEmpty, "No GET device_token=probe (a volatile function answers GET with 405)")
+        do {
+            try await service.registerPushToken("abc")
+            XCTFail("A missing register function should throw")
+        } catch BackendFailure.notSetUp {
+        }
+        XCTAssertEqual(PushStoreFailure.reason(BackendFailure.notSetUp(.squad)), PushStoreFailure.missingRPC)
+        let request = try XCTUnwrap(transport.requests.first)
+        XCTAssertEqual(request.httpMethod, "POST")
+        XCTAssertTrue(request.url?.path.hasSuffix("rpc/sq8_register_device_token") == true)
+        XCTAssertNil(request.url?.query, "The register call carries no query")
+        let remembered = await service.pushTokenRPCAvailable()
+        XCTAssertFalse(remembered, "Missing is remembered for the session")
+        XCTAssertTrue(presence.isMissing(FunctionPresence.registerDeviceToken))
+        presence.reset()
+        let again = await service.pushTokenRPCAvailable()
+        XCTAssertTrue(again, "Sign-out resets it")
+        XCTAssertEqual(transport.requests.count, 1)
+    }
+
     func testLeaveSendsNoProbeAndNeverANullUUID() async throws {
         let quiet = ScriptedTransport()
         let unprobed = SupabaseSquadService(config: config, accessToken: "access", transport: quiet, presence: FunctionPresence())

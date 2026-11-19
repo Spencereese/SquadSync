@@ -123,25 +123,30 @@ final class PushRouteTests: XCTestCase {
         let config = BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
         let missing = Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function public.sq8_register_device_token in the schema cache\"}".utf8)
         let hidden = ScriptedTransport(responses: [(404, missing)])
-        let absent = SupabaseSquadService(config: config, accessToken: "access", transport: hidden)
+        let absent = SupabaseSquadService(config: config, accessToken: "access", transport: hidden, presence: FunctionPresence())
+        let assumed = await absent.pushTokenRPCAvailable()
+        XCTAssertTrue(assumed, "Available until a real call says otherwise")
+        XCTAssertTrue(hidden.requests.isEmpty, "The availability check sends nothing (it used to GET device_token=probe)")
+        do {
+            try await absent.registerPushToken("abc")
+            XCTFail("A missing function should throw")
+        } catch BackendFailure.notSetUp {
+        }
         let available = await absent.pushTokenRPCAvailable()
-        XCTAssertFalse(available)
-        let probe = try XCTUnwrap(hidden.requests.first)
-        XCTAssertEqual(probe.httpMethod, "GET")
-        XCTAssertNil(probe.httpBody)
-        XCTAssertTrue(probe.url?.query?.contains("device_token=probe") == true)
-        XCTAssertTrue(probe.url?.query?.contains("device_platform=ios") == true)
+        XCTAssertFalse(available, "A 404 / PGRST202 on the real POST is remembered")
+        XCTAssertEqual(hidden.requests.count, 1)
+        XCTAssertEqual(hidden.requests.first?.httpMethod, "POST")
 
         let present = ScriptedTransport(responses: [
-            (405, Data("{\"message\":\"cannot execute INSERT in a read-only transaction\"}".utf8)),
             (204, Data()),
             (204, Data())
         ])
-        let service = SupabaseSquadService(config: config, accessToken: "access", transport: present)
+        let service = SupabaseSquadService(config: config, accessToken: "access", transport: present, presence: FunctionPresence())
         let ready = await service.pushTokenRPCAvailable()
         XCTAssertTrue(ready)
         try await service.registerPushToken("abc")
         try await service.unregisterPushToken("abc")
+        XCTAssertFalse(present.requests.contains { $0.httpMethod == "GET" }, "No GET probe")
         let posts = present.requests.filter { $0.httpMethod == "POST" }
         XCTAssertEqual(posts.count, 2)
         let registered = try JSONSerialization.jsonObject(with: posts[0].httpBody ?? Data()) as? [String: Any]
@@ -221,33 +226,35 @@ final class PushRouteTests: XCTestCase {
         let config = BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
         let missingBody = Data("{\"code\":\"PGRST202\",\"message\":\"Could not find the function public.sq8_register_device_token in the schema cache\"}".utf8)
         let missing = ScriptedTransport(responses: [(404, missingBody)])
-        let absent = SupabaseSquadService(config: config, accessToken: "access", transport: missing)
+        let absentPresence = FunctionPresence()
+        let absent = SupabaseSquadService(config: config, accessToken: "access", transport: missing, presence: absentPresence)
         let injected = try XCTUnwrap(coordinator.seenToken)
         await PushTokenSync.apply(token: injected, service: absent, coordinator: coordinator)
         XCTAssertEqual(coordinator.storeFailure, PushStoreFailure.missingRPC)
         XCTAssertNil(coordinator.storedToken)
         XCTAssertEqual(coordinator.seenToken, "aabbcc")
-        XCTAssertFalse(missing.requests.contains { $0.httpMethod == "POST" })
+        XCTAssertEqual(missing.requests.map(\.httpMethod), ["POST"], "One real POST is the check; no GET probe")
+        await PushTokenSync.apply(token: injected, service: absent, coordinator: coordinator)
+        XCTAssertEqual(missing.requests.count, 1, "Missing is remembered for the session")
+        XCTAssertEqual(coordinator.storeFailure, PushStoreFailure.missingRPC)
 
-        let refused = Data("{\"message\":\"cannot execute INSERT in a read-only transaction\"}".utf8)
         let failedStore = ScriptedTransport(responses: [
-            (405, refused),
             (500, Data("{\"message\":\"not stored\"}".utf8))
         ])
-        let failing = SupabaseSquadService(config: config, accessToken: "access", transport: failedStore)
+        let failing = SupabaseSquadService(config: config, accessToken: "access", transport: failedStore, presence: FunctionPresence())
         await PushTokenSync.apply(token: "aabbcc", service: failing, coordinator: coordinator)
         XCTAssertEqual(coordinator.storeFailure, "not stored")
         XCTAssertNil(coordinator.storedToken)
         XCTAssertEqual(coordinator.plan("aabbcc"), .register("aabbcc"))
 
         let stored = ScriptedTransport(responses: [
-            (405, refused),
             (204, Data())
         ])
-        let ready = SupabaseSquadService(config: config, accessToken: "access", transport: stored)
+        let ready = SupabaseSquadService(config: config, accessToken: "access", transport: stored, presence: FunctionPresence())
         await PushTokenSync.apply(token: "aabbcc", service: ready, coordinator: coordinator)
         let posts = stored.requests.filter { $0.httpMethod == "POST" }
         XCTAssertEqual(posts.count, 1)
+        XCTAssertEqual(stored.requests.count, 1, "No GET probe before the register")
         let body = try JSONSerialization.jsonObject(with: posts[0].httpBody ?? Data()) as? [String: Any]
         XCTAssertEqual(body?["device_token"] as? String, "aabbcc")
         XCTAssertEqual(body?["device_platform"] as? String, "ios")
@@ -256,7 +263,7 @@ final class PushRouteTests: XCTestCase {
         XCTAssertEqual(coordinator.storeFailure, "")
 
         let idle = ScriptedTransport(responses: [])
-        let done = SupabaseSquadService(config: config, accessToken: "access", transport: idle)
+        let done = SupabaseSquadService(config: config, accessToken: "access", transport: idle, presence: FunctionPresence())
         await PushTokenSync.apply(token: "aabbcc", service: done, coordinator: coordinator)
         XCTAssertTrue(idle.requests.isEmpty)
         coordinator.resetForTests()

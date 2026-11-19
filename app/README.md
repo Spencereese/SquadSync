@@ -103,7 +103,7 @@ The prototype starts in the inbox. The States menu shows loading, empty, and err
 
 ## Live backend
 
-Mock data is the default. `-backend live` uses the existing Supabase project for email sign-in, your profile, your squad, and squad chat. Voice stays mock. Spots and presence use the live project when those migrations are applied. Push registration and tap routing are in the app; delivery still needs the human gates in `supabase/functions/sq8-notify-message/README.md` (`20261110_0012_device_tokens.sql` was applied live on Nov 18, 2026; the APNs `.p8` and the Push capability on the App ID are still needed). `SquadSync.entitlements` (`aps-environment` = development) is set as `CODE_SIGN_ENTITLEMENTS` for Debug and Release. Unsigned simulator builds ignore it; a signed device build signs it in (check with `codesign -d --entitlements :- <path to SquadSync.app>`).
+Mock data is the default. `-backend live` uses the existing Supabase project for email sign-in, your profile, your squad, and squad chat. Voice uses the live path in [Voice](#voice) and shows "Voice isn't set up yet" until it is wired. Spots and presence use the live project when those migrations are applied. Push registration and tap routing are in the app; delivery still needs the human gates in `supabase/functions/sq8-notify-message/README.md` (`20261110_0012_device_tokens.sql` was applied live on Nov 18, 2026; the APNs `.p8` and the Push capability on the App ID are still needed). `SquadSync.entitlements` (`aps-environment` = development) is set as `CODE_SIGN_ENTITLEMENTS` for Debug and Release. Unsigned simulator builds ignore it; a signed device build signs it in (check with `codesign -d --entitlements :- <path to SquadSync.app>`).
 
 Before building, create the local config. The anon key is not in git.
 
@@ -122,3 +122,20 @@ xcrun simctl launch "$UDID" com.spencereese.squadsync -backend live
 ```
 
 Leave the flag off for the mock prototype and for the existing UI tests. Use `-backend mock -scenario noSquad` when you need the create-squad form without a live row.
+
+## Voice
+
+With `-backend live`, the voice pill opens `SquadVoiceSheet`, an audio-only room for the squad. It has join, leave, mute, and a list of who is in the room. The mock backend keeps the in-memory pill.
+
+How it works (`Backend/SquadVoice.swift`):
+
+- `SupabaseSquadVoiceTokens` POSTs `{"squad_id": ...}` to `functions/v1/sq8-voice-token` with your session. On a 401 it refreshes the session once and tries again. A 404, a 503, or `voice_not_configured` means "Voice isn't set up yet". A 403 means you aren't in the squad.
+- `SquadVoiceEngine` is the seam for the media SDK. `LiveSessionModel.makeVoiceEngine` returns `UnlinkedSquadVoiceEngine` by default. It never connects, and the room says "Voice isn't set up yet" without asking for a token.
+- `SquadVoiceSession` holds the state for the sheet and the pill: idle, joining, connected, not set up, or failed. Leaving during a slow join wins, and mute only changes once the engine accepts it.
+
+Still needed before anyone can talk:
+
+1. **Deploy `sq8-voice-token`.** It is not deployed and needs Spencer's yes. See `supabase/functions/sq8-voice-token/README.md`.
+2. **Link the Stream Video Swift SDK.** It is not in the project and needs Spencer's yes for the dependency. Add the SPM package, write a `SquadVoiceEngine` that joins call type `default`, id `sq8-<squad uuid>`, as audio only, with the grant's `api_key`, `token`, and `user_id`, and set it as `makeVoiceEngine`. Only then can a device test show a real connection.
+
+The mic prompt comes from the build setting `INFOPLIST_KEY_NSMicrophoneUsageDescription` (Debug and Release): "SquadSync uses the microphone only while you're in your squad's voice room."

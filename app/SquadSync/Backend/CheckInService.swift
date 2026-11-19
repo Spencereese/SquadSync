@@ -3,7 +3,9 @@ import Foundation
 // Check-ins and Steam presence for the who's-in sheet (redesign S4).
 // Reads and writes only `sq8_check_ins` (0006, live) under its own row level
 // security, plus one optional call to the sq8-steam-presence function, which
-// is not deployed today. Nothing here runs SQL or changes the schema.
+// is not deployed today. That call is made only when BackendConfig.steamPresence
+// is on, and a 404 turns it off for the session. Nothing here runs SQL or
+// changes the schema.
 
 enum CheckInProblem: Error, Equatable {
     /// `sq8_check_ins` isn't on the server.
@@ -59,16 +61,21 @@ enum SteamFunction {
 final class SupabaseCheckInService: CheckInServing {
     private let http: SupabaseHTTP
     private var details: Bool?
+    private let steamEnabled: Bool
+    private let presence: FunctionPresence
 
     init(
         config: BackendConfig,
         accessToken: String,
         refresher: TokenRefreshing? = nil,
         transport: HTTPTransport = URLSessionTransport.shared,
-        knownDetails: Bool? = nil
+        knownDetails: Bool? = nil,
+        presence: FunctionPresence = .shared
     ) {
         self.http = SupabaseHTTP(config: config, accessToken: accessToken, transport: transport, refresher: refresher)
         self.details = knownDetails
+        self.steamEnabled = config.steamPresence
+        self.presence = presence
     }
 
     /// One read-only request that names 0022's columns and asks for no rows
@@ -161,17 +168,23 @@ final class SupabaseCheckInService: CheckInServing {
         }
     }
 
+    /// Not called unless the config turns Steam on and it hasn't already
+    /// answered 404 this session. That first 404 is logged once, at info.
     func steam() async -> SteamRead {
+        guard steamEnabled, !presence.isMissing(FunctionPresence.steamPresence) else { return .notSetUp }
         do {
             let data = try await http.send(
                 path: SteamFunction.path,
                 method: "POST",
                 body: Data(#"{"op":"presence"}"#.utf8),
-                feature: .checkIns
+                feature: .checkIns,
+                optional: true
             )
             return SteamRead.parse(data)
         } catch let failure as BackendFailure {
-            return SteamFunction.isMissing(failure) ? .notSetUp : .failed
+            guard SteamFunction.isMissing(failure) else { return .failed }
+            presence.markMissing(FunctionPresence.steamPresence)
+            return .notSetUp
         } catch {
             return .failed
         }

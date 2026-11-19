@@ -727,7 +727,11 @@ final class LiveSessionModel {
             status = "Renamed."
         } catch let failure as BackendFailure {
             membershipIsError = true
-            if case .rejected(let message) = failure {
+            if case .notSetUp = failure {
+                // The real call is the check: 404 / PGRST202 hides the control for the session.
+                renameAvailable = false
+                status = RenameAccess.unavailable
+            } else if case .rejected(let message) = failure {
                 status = message
             } else {
                 status = "Could not rename the squad."
@@ -775,6 +779,11 @@ final class LiveSessionModel {
             } catch let problem as InviteProblem {
                 membershipIsError = true
                 status = problem.message
+            } catch BackendFailure.notSetUp {
+                // The real call is the check: the function isn't on this server.
+                leaveAvailable = false
+                membershipIsError = true
+                status = LeaveAvailabilityCopy.line(isOwner: squad.ownerId == me, leaveShown: false) ?? ""
             }
         }
     }
@@ -1308,6 +1317,7 @@ final class LiveSessionModel {
         olderPagedThisSquad = false
         olderHoldAnchor = nil
         pendingOpen.clear()
+        FunctionPresence.shared.reset()
         realtime?.stop()
         realtime = nil
         poll?.cancel()

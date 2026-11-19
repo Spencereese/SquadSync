@@ -21,5 +21,7 @@
 	<string>$(SUPABASE_URL)</string>
 	<key>SupabaseAnonKey</key>
 	<string>$(SUPABASE_ANON_KEY)</string>
+	<key>SQ8SteamPresence</key>
+	<false/>
 </dict>
 </plist>

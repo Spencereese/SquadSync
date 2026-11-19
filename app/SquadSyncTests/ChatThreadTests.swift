@@ -69,9 +69,14 @@ final class ChatThreadTests: XCTestCase {
         XCTAssertEqual(shown.map(\.startsGroup), [true, false, true, true])
         XCTAssertEqual(shown.map(\.endsGroup), [false, true, true, true])
         XCTAssertEqual(shown.map(\.senderName), ["Riley", "Riley", "Riley", "Alex"])
-        XCTAssertEqual(shown.map { ChatSeed.bubbleIdentifier(startsGroup: $0.startsGroup) },
-                       ["bubble-group-start", "bubble-group-continues", "bubble-group-start", "bubble-group-start"],
+        XCTAssertEqual(shown.map { ChatSeed.bubbleIdentifier(for: $0.entry.id, startsGroup: $0.startsGroup) },
+                       shown.map { "chat.bubble.\($0.entry.id.uuidString)." + ($0.startsGroup ? "start" : "continues") },
                        "The UI tests read grouping from these identifiers")
+        XCTAssertEqual(shown.map { ChatSeed.bubbleIdentifier(for: $0.entry.id, startsGroup: $0.startsGroup).components(separatedBy: ".").last },
+                       ["start", "continues", "start", "start"])
+        XCTAssertEqual(ChatSeed.rowIdentifier(for: ChatSeed.messageId), "message-row-seed-1")
+        XCTAssertEqual(ChatSeed.bubbleIdentifier(for: ChatSeed.messageId, startsGroup: true), "chat.bubble.seed-1.start")
+        XCTAssertEqual(ChatSeed.reactionsIdentifier(for: ChatSeed.messageId), "chat.reactions.seed-1")
         XCTAssertEqual(shown.first?.time, "2:54 PM")
     }
 
@@ -216,12 +221,77 @@ final class ChatThreadTests: XCTestCase {
         XCTAssertEqual(chips.map(\.emoji), ["👍", "🔥"])
         XCTAssertEqual(chips.map(\.count), [2, 1])
         XCTAssertEqual(chips.map(\.mine), [true, false])
-        XCTAssertEqual(chips[0].spoken, "Thumbs up, 2 reactions, including yours")
-        XCTAssertEqual(chips[1].spoken, "Emphasis, 1 reaction")
+        XCTAssertEqual(chips[0].spoken, "👍 2, you reacted")
+        XCTAssertEqual(chips[1].spoken, "🔥 1")
         XCTAssertEqual(chips[0].hint, "Removes your reaction")
         XCTAssertEqual(chips[1].hint, "Adds your Emphasis reaction")
         XCTAssertEqual(ChatReactions.spoken(chips), "Reactions: Thumbs up 2, Emphasis 1")
         XCTAssertNil(ChatReactions.spoken([]))
+    }
+
+    func testReactionPickerSelectsYoursAndPickingItAgainTakesItBack() {
+        let message = UUID()
+        var board = ReactionBoard()
+        board.replace(with: [ReactionMark(messageId: message, userId: alex, emoji: "👍")])
+        let fresh = ChatReactions.options(marks: board.marks, messageId: message, viewerId: me)
+        XCTAssertEqual(fresh.map(\.emoji), ["👍", "❤️", "😂", "🔥", "😮", "🎮"], "Only the six emoji the server's check allows")
+        XCTAssertFalse(fresh.contains { $0.selected }, "Someone else's reaction is not yours")
+
+        // Add: the chip counts both people and is marked yours.
+        XCTAssertEqual(board.toggle(messageId: message, userId: me, emoji: "👍"), [.insert("👍")])
+        var chips = ChatReactions.chips(marks: board.marks, messageId: message, viewerId: me)
+        XCTAssertEqual(chips.map(\.spoken), ["👍 2, you reacted"])
+        let picked = ChatReactions.options(marks: board.marks, messageId: message, viewerId: me)
+        XCTAssertEqual(picked.filter(\.selected).map(\.emoji), ["👍"])
+        XCTAssertEqual(picked.first?.hint, "Removes your reaction")
+
+        // Toggle off: the same emoji again removes yours and keeps Alex's.
+        XCTAssertEqual(board.toggle(messageId: message, userId: me, emoji: "👍"), [.remove("👍")])
+        chips = ChatReactions.chips(marks: board.marks, messageId: message, viewerId: me)
+        XCTAssertEqual(chips.map(\.spoken), ["👍 1"])
+        XCTAssertEqual(chips.map(\.mine), [false])
+
+        // One per person: a different emoji replaces yours with a delete then an insert,
+        // the two writes sq8_message_reactions' own-row policies allow.
+        _ = board.toggle(messageId: message, userId: me, emoji: "🔥")
+        XCTAssertEqual(board.toggle(messageId: message, userId: me, emoji: "😂"), [.remove("🔥"), .insert("😂")])
+        XCTAssertEqual(ChatReactions.chips(marks: board.marks, messageId: message, viewerId: me).map(\.spoken), ["👍 1", "😂 1, you reacted"])
+        XCTAssertFalse(ChatReactions.options(marks: board.marks, messageId: message, viewerId: nil).contains { $0.selected })
+    }
+
+    func testOwnMessagesSitTrailingAndOthersLeadingWithTheirNameOncePerRun() {
+        let entries = [
+            entry(1, alex, at: -600),
+            entry(2, alex, at: -540),
+            entry(3, me, at: -500),
+            entry(4, me, at: -480),
+            entry(5, riley, at: -400),
+            entry(6, alex, at: -300)
+        ]
+        let shown = bubbles(ChatThread.rows(items: items(entries), context: context()))
+        XCTAssertEqual(shown.map(\.mine), [false, false, true, true, false, false])
+        XCTAssertEqual(shown.map(\.side), [.leading, .leading, .trailing, .trailing, .leading, .leading])
+        XCTAssertEqual(shown.map(\.showsName), [true, false, false, false, true, true], "Their name once per run, never on yours")
+        XCTAssertEqual(shown.map(\.showsAvatar), shown.map(\.showsName))
+        XCTAssertEqual(shown.map(\.initial), ["A", "A", "Y", "Y", "R", "A"])
+        XCTAssertEqual(ChatBubbleSide.initial("  sam"), "S")
+        XCTAssertEqual(ChatBubbleSide.initial(" "), "?")
+    }
+
+    func testMineMatchesTheSenderIdHoweverTheUUIDTextIsCased() {
+        // sender_id comes back from PostgREST lower-case; a session id may be parsed
+        // from upper-case text. Both are the same UUID value, so the side is right.
+        let lower = UUID(uuidString: "6f1c2d3e-4b5a-4c6d-8e7f-90a1b2c3d4e5")!
+        let upper = UUID(uuidString: "6F1C2D3E-4B5A-4C6D-8E7F-90A1B2C3D4E5")!
+        let mine = ChatEntry(id: UUID(), senderId: lower, body: "hi", sentAt: now, delivery: .sent, replyToId: nil)
+        let theirs = entry(2, alex, at: 10)
+        var ctx = context()
+        ctx.viewerId = upper
+        let shown = bubbles(ChatThread.rows(items: items([mine, theirs]), context: ctx))
+        XCTAssertEqual(shown.map(\.side), [.trailing, .leading])
+        ctx.viewerId = nil
+        XCTAssertEqual(bubbles(ChatThread.rows(items: items([mine]), context: ctx)).map(\.side), [.leading],
+                       "Without a viewer nothing is yours")
     }
 
     func testLongPressOffersReplyOnlyWhenTheServerHasIt() {

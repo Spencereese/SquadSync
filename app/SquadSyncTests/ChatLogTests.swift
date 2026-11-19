@@ -541,6 +541,101 @@ final class SquadNameTests: XCTestCase {
         XCTAssertFalse(HTTPFailureLog.isExpectedProbeRefusal(status: 400, body: Data("{\"message\":\"spot_not_ready\"}".utf8)))
     }
 
+    func testReconnectingBannerClearsAfterAProvenRoundTrip() {
+        // Repro from the phone: airplane mode on, back to the app (the resume's
+        // refresh fails, so the header keeps "Reconnecting…"), airplane off,
+        // Retry goes through. The header must clear.
+        var resume = SessionFailurePolicy.reconnecting
+        XCTAssertEqual(ConnectionRecovery.header(resumeNote: resume, link: .reconnecting), "Reconnecting…")
+        resume = ConnectionRecovery.resumeNote(afterProof: resume)
+        XCTAssertNil(ConnectionRecovery.header(resumeNote: resume, link: .connected), "Reconnecting… stayed after the connection came back")
+        XCTAssertEqual(ConnectionRecovery.header(resumeNote: resume, link: .reconnecting), "Reconnecting…", "A socket still retrying says so")
+        XCTAssertEqual(ConnectionRecovery.resumeNote(afterProof: "Back online"), "Back online", "Other notes run their course")
+        XCTAssertEqual(ConnectionRecovery.status(afterProof: SessionFailurePolicy.reconnecting), "")
+        XCTAssertEqual(ConnectionRecovery.status(afterProof: "Renamed."), "Renamed.")
+    }
+
+    func testArmedMockLinkIsSimulatedAndClearsOnlyAfterProof() {
+        XCTAssertEqual(SimulatedLink.start(offline: false), .connected, "Armed mock chat must not say Live chat is down")
+        XCTAssertEqual(SimulatedLink.start(offline: true), .reconnecting)
+        var link = SimulatedLink.start(offline: false)
+        XCTAssertNil(ConnectionRecovery.header(resumeNote: "", link: link))
+        link = SimulatedLink.faultChanged(offline: true, current: link)
+        XCTAssertEqual(ConnectionRecovery.header(resumeNote: "", link: link), "Reconnecting…")
+        link = SimulatedLink.faultChanged(offline: false, current: link)
+        XCTAssertEqual(link, .reconnecting, "Back online is not proof; the banner waits for a round trip")
+        XCTAssertEqual(ConnectionRecovery.header(resumeNote: "", link: link, reconnecting: true), "Reconnecting…")
+        link = SimulatedLink.afterProof(link)
+        XCTAssertEqual(link, .connected)
+        XCTAssertNil(ConnectionRecovery.header(resumeNote: "", link: link, reconnecting: false), "A proven retry clears the banner")
+        XCTAssertEqual(SimulatedLink.afterProof(.down), .down, "Proof only ends reconnecting")
+    }
+
+    func testAFailedRequestShowsReconnectingUntilAProvenRoundTrip() {
+        // Offline send: the request failed for want of a connection, so the
+        // header says so even while the socket hasn't noticed yet.
+        XCTAssertEqual(ConnectionRecovery.header(resumeNote: "", link: .connected, reconnecting: true), "Reconnecting…")
+        XCTAssertEqual(ConnectionRecovery.header(resumeNote: "Back online", link: .connected, reconnecting: true), "Back online")
+        // Retry goes through: connectionProven() clears the flag, and the banner goes.
+        XCTAssertNil(ConnectionRecovery.header(resumeNote: "", link: .connected, reconnecting: false))
+        XCTAssertNil(ConnectionRecovery.header(resumeNote: ConnectionRecovery.resumeNote(afterProof: SessionFailurePolicy.reconnecting), link: .connected, reconnecting: false))
+    }
+
+    #if DEBUG
+    func testNetworkFaultSwitchParsesItsLaunchArgument() {
+        XCTAssertNil(NetworkFault.mode(["SquadSync"]))
+        XCTAssertEqual(NetworkFault.mode(["SquadSync", "-SQ8NetworkFault"]), "online")
+        XCTAssertEqual(NetworkFault.mode(["SquadSync", "-SQ8NetworkFault", "offline"]), "offline")
+        XCTAssertEqual(NetworkFault.mode(["SquadSync", "-SQ8NetworkFault", "-backend", "mock"]), "online")
+        let off = NetworkFault(arguments: ["x", "-SQ8NetworkFault", "OFFLINE"])
+        XCTAssertTrue(off.armed)
+        XCTAssertTrue(off.isOffline)
+        XCTAssertThrowsError(try off.check()) { error in
+            XCTAssertEqual((error as? URLError)?.code, .notConnectedToInternet)
+        }
+        off.setOffline(false)
+        XCTAssertNoThrow(try off.check())
+        let idle = NetworkFault(arguments: ["x"])
+        XCTAssertFalse(idle.armed)
+        XCTAssertFalse(idle.isOffline)
+    }
+
+    @MainActor
+    func testNetworkFaultFailsLiveAndMockRequestsThenRecovers() async throws {
+        let fault = NetworkFault.shared
+        let before = fault.isOffline
+        defer { fault.setOffline(before) }
+        fault.setOffline(true)
+
+        // Live transport: fails before it reaches URLSession, and reads as reconnecting.
+        let http = SupabaseHTTP(config: BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test"), accessToken: "a", transport: URLSessionTransport.shared)
+        do {
+            _ = try await http.send(path: "rest/v1/sq8_messages", method: "GET", feature: .messages)
+            XCTFail("Offline should fail the request")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .reconnecting)
+        }
+
+        // Mock server: the send fails, nothing is stored; back online, the retry
+        // with the same id stores exactly one row.
+        let chat = MockChatService()
+        let message = RemoteMessage(id: UUID(), squadId: ChatSeed.squadId, senderId: UUID(), body: "offline hello", sentAt: Date(timeIntervalSince1970: 1_700_000_000))
+        do {
+            _ = try await chat.send(message)
+            XCTFail("Offline should fail the send")
+        } catch let failure as BackendFailure {
+            XCTAssertEqual(failure, .reconnecting)
+        }
+        fault.setOffline(false)
+        let receipt = try await chat.send(message)
+        XCTAssertEqual(receipt, .stored)
+        let again = try await chat.send(message)
+        XCTAssertEqual(again, .stored)
+        let history = try await chat.history(squadId: ChatSeed.squadId)
+        XCTAssertEqual(history.filter { $0.body == "offline hello" }.count, 1, "One bubble after the retry")
+    }
+    #endif
+
     func testProbeAnswersAreInfoAndRealFailuresStayErrors() {
         let missingColumn = Data("{\"code\":\"42703\",\"message\":\"column sq8_spot_rsvps.ready does not exist\"}".utf8)
         XCTAssertEqual(HTTPFailureLog.level(status: 400, body: missingColumn, probe: true), .info)

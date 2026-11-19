@@ -1,8 +1,8 @@
 import Foundation
 
-/// The games-you-play list on a profile (S5). The live `sq8_profiles` has only
-/// `default_game`; proposed migration 0023 adds `games text[]`. Until it's applied the
-/// list is kept on this phone and the profile step says so.
+/// The games-you-play list on a profile (S5). Migration 0023 (live since PR36)
+/// adds `sq8_profiles.games text[]` beside `default_game`. On a server without
+/// it the list is kept on this phone and the profile says so.
 struct ProfileGames: Equatable {
     var games: [String]
     var home: GamesHome
@@ -103,7 +103,8 @@ final class SupabaseProfileGames: ProfileGamesServing {
     }
 }
 
-/// Mock games: like live today (no column, so the phone keeps it) unless told otherwise.
+/// Mock games: kept "on the phone" (a server without 0023) unless told otherwise,
+/// so the phone-only note stays covered. Live has the column since PR36.
 @MainActor
 final class MockProfileGames: ProfileGamesServing {
     var home: GamesHome
@@ -119,11 +120,17 @@ final class MockProfileGames: ProfileGamesServing {
 
     func load(userId: UUID) async throws -> ProfileGames {
         if loadsDown { throw BackendFailure.reconnecting }
+        #if DEBUG
+        if NetworkFault.shared.isOffline { throw BackendFailure.reconnecting }
+        #endif
         return ProfileGames(games: stored[userId] ?? [], home: home)
     }
 
     func save(userId: UUID, games: [String]) async throws -> GamesHome {
         if savesDown { throw BackendFailure.reconnecting }
+        #if DEBUG
+        if NetworkFault.shared.isOffline { throw BackendFailure.reconnecting }
+        #endif
         stored[userId] = games
         return home
     }

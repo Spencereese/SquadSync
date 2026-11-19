@@ -57,7 +57,6 @@ struct SQAvatar: View {
     private var ringColor: Color {
         switch status {
         case .locked: SQColor.accent
-        case .ready: SQColor.online
         case .inSpot: SQColor.signal
         case .availableNow: SQColor.online.opacity(0.8)
         case .later: SQColor.warning
@@ -70,7 +69,6 @@ struct SQAvatar: View {
     private var badgeSymbol: String? {
         switch status {
         case .locked: "lock.fill"
-        case .ready: "checkmark"
         case .inSpot: "gamecontroller.fill"
         case .later: "clock"
         case .cantPlay: "minus"

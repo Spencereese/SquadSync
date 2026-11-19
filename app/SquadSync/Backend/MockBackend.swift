@@ -280,6 +280,7 @@ final class MockChatService: ChatService {
         if historyDelay > 0 {
             try await Task.sleep(nanoseconds: UInt64(historyDelay * 1_000_000_000))
         }
+        try failIfOffline()
         if historyDown { throw BackendFailure.rejected(ChatHistoryState.failedText) }
         // Like live: the newest `historyLimit` rows, oldest first.
         return Array(ordered(squadId).suffix(SupabaseChatService.historyLimit))
@@ -328,7 +329,16 @@ final class MockChatService: ChatService {
         }
     }
 
+    /// The DEBUG network fault switch reaches the mock server too, as the
+    /// error the live HTTP layer turns a dropped connection into.
+    private func failIfOffline() throws {
+        #if DEBUG
+        if NetworkFault.shared.isOffline { throw BackendFailure.reconnecting }
+        #endif
+    }
+
     func send(_ message: RemoteMessage) async throws -> SendReceipt {
+        try failIfOffline()
         var probe = URLRequest(url: URL(string: "https://example.supabase.co/rest/v1/sq8_messages")!)
         probe.httpMethod = "POST"
         if DebugSendFailures.failIfNeeded(probe) {
@@ -348,7 +358,8 @@ final class MockChatService: ChatService {
     }
 
     func newer(squadId: UUID, after: Date) async throws -> [RemoteMessage] {
-        stored.filter { $0.squadId == squadId && $0.sentAt > after }
+        try failIfOffline()
+        return stored.filter { $0.squadId == squadId && $0.sentAt > after }
     }
 
     func markRead(squadId: UUID, userId: UUID, at: Date, messageId: UUID?) async throws {

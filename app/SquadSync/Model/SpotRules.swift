@@ -100,7 +100,9 @@ struct SpotRsvp: Equatable, Identifiable {
     var name: String
     var response: String
     var starter: Bool
-    /// Ready is a phone value until 0020's column and RPC are both present.
+    /// 0020's `ready`. The app has no Ready step: joining sets it (see
+    /// `SpotCallRules.hasJoined`). A starter the server seated from a check-in
+    /// starts with it off.
     var ready: Bool
 
     var id: UUID { userId }
@@ -120,7 +122,8 @@ struct SpotCall: Equatable, Identifiable {
     var rsvps: [SpotRsvp]
     /// Stored by 0020. Nil when that column is not on the server yet.
     var seatTarget: Int? = nil
-    /// True when `sq8_lock_spot_when_ready` is present. Lock then waits for Ready.
+    /// True when 0020's lock gate is on the server. Lock then waits for everyone
+    /// who is in to have joined (ready on the server).
     var serverOwnsLock: Bool = false
     /// True when `sq8_read_open_spot` is present. Expiry then comes from `status`.
     var serverOwnsExpiry: Bool = false
@@ -173,10 +176,33 @@ enum SpotCallRules {
         return call.status == .open && call.closedAt == nil && now >= call.joinUntil
     }
 
+    /// Joining means ready. With 0020's gate, a seat has joined once it is ready:
+    /// sq8_call_spot seats checked-in starters (and the caller) as `in` with ready
+    /// off, so they haven't joined until they tap Join. Without the gate, `in` is joined.
+    static func hasJoined(_ call: SpotCall, userId: UUID) -> Bool {
+        guard let seat = call.seat(for: userId) else { return false }
+        return hasJoined(seat, in: call)
+    }
+
+    static func hasJoined(_ seat: SpotRsvp, in call: SpotCall) -> Bool {
+        guard seat.isIn else { return false }
+        return call.serverOwnsLock ? seat.ready : true
+    }
+
+    /// Whether Join also sets 0020's ready: the call is gated, or the server has the column and RPC.
+    static func joinMarksReady(_ call: SpotCall, server: SpotServerCapabilities) -> Bool {
+        call.serverOwnsLock || server.ready
+    }
+
     static func canJoin(_ call: SpotCall, userId: UUID, now: Date) -> Bool {
         guard call.closedAt == nil, call.lockedAt == nil else { return false }
         guard call.status == .open || call.status == .expired else { return false }
-        if call.seat(for: userId)?.isIn == true { return false }
+        if let seat = call.seat(for: userId), seat.isIn {
+            // Seated but not joined: Join marks them ready. 0020's set_spot_ready
+            // refuses once join_until has passed, starter or not.
+            guard call.serverOwnsLock, !seat.ready else { return false }
+            return call.status == .open && now < call.joinUntil
+        }
         if call.filled >= cap { return false }
         if call.seat(for: userId)?.starter == true { return true }
         if call.status == .expired { return false }
@@ -185,7 +211,7 @@ enum SpotCallRules {
 
     /// 0013 lets the caller or the owner lock an open call. It does not look at Ready.
     /// Once `join_until` has passed the row stays `open`, but the client does not offer Lock.
-    /// When 0020's lock RPC is present, every in-joiner must also be Ready.
+    /// With 0020's gate, everyone who is in must also have joined (ready).
     static func canLock(_ call: SpotCall, actorId: UUID, ownerId: UUID, now: Date) -> Bool {
         guard call.status == .open, call.closedAt == nil, call.lockedAt == nil else { return false }
         if now >= call.joinUntil { return false }
@@ -226,21 +252,17 @@ enum SpotCallRules {
         guard showsPinnedBar(call, now: now) else { return nil }
         if viewerId == call.callerId {
             if canLock(call, actorId: viewerId, ownerId: ownerId, now: now) { return .lock }
+            // The caller's own join didn't stick (sq8_call_spot seats them not ready).
+            if canJoin(call, userId: viewerId, now: now) { return .join }
             if canCancel(call, actorId: viewerId, now: now) { return .cancel }
             return nil
         }
-        if let seat = call.seat(for: viewerId), seat.isIn {
+        if hasJoined(call, userId: viewerId) {
             if now >= call.joinUntil || call.status == .expired { return nil }
-            return seat.ready ? .leave : .ready
+            return .leave
         }
         if canJoin(call, userId: viewerId, now: now) { return .join }
         return nil
-    }
-
-    /// What a full Ready lock would require. 0020 does not use this. `SpotLockRule` is the lock gate.
-    static func everyoneReady(_ call: SpotCall) -> Bool {
-        let seated = call.rsvps.filter(\.isIn)
-        return seated.count >= cap && seated.allSatisfy(\.ready)
     }
 }
 
@@ -262,6 +284,25 @@ enum SpotLockRule {
     static func allows(_ call: SpotCall) -> Bool {
         let seated = call.rsvps.filter(\.isIn)
         return !seated.isEmpty && seated.allSatisfy(\.ready)
+    }
+
+    /// Who the gated lock is waiting on: in, but hasn't joined. Empty without the gate.
+    static func waitingOn(_ call: SpotCall) -> [SpotRsvp] {
+        guard call.serverOwnsLock else { return [] }
+        return call.rsvps.filter { $0.isIn && !$0.ready }
+    }
+
+    /// "Lock waits for Quinn and Avery to join." Nil when nobody is pending.
+    static func waitingLine(_ call: SpotCall) -> String? {
+        let names = waitingOn(call).map(\.name)
+        guard !names.isEmpty else { return nil }
+        let list: String
+        switch names.count {
+        case 1: list = names[0]
+        case 2: list = "\(names[0]) and \(names[1])"
+        default: list = names.dropLast().joined(separator: ", ") + ", and " + names[names.count - 1]
+        }
+        return "Lock waits for \(list) to join."
     }
 }
 
@@ -306,7 +347,6 @@ enum SpotProbe {
 enum SpotBarAction: Equatable {
     case join
     case leave
-    case ready
     case lock
     case cancel
 
@@ -314,7 +354,6 @@ enum SpotBarAction: Equatable {
         switch self {
         case .join: "active-call-join"
         case .leave: "active-call-leave"
-        case .ready: "active-call-ready"
         case .lock: "active-call-lock"
         case .cancel: "active-call-cancel"
         }
@@ -324,7 +363,6 @@ enum SpotBarAction: Equatable {
         switch self {
         case .join: "Join"
         case .leave: "Leave"
-        case .ready: "Ready"
         case .lock: "Lock"
         case .cancel: "Cancel"
         }
@@ -364,8 +402,8 @@ enum SpotProblem: Error, Equatable {
         case .full: "That spot call is full (8)."
         case .notCaller: "Only the caller or the owner can do that."
         case .notLocked: "Lock the call before ending it."
-        case .notReady: "Everyone who is in has to be Ready before this locks."
-        case .notIn: "Join before you mark Ready."
+        case .notReady: "Everyone who is in has to join before this locks."
+        case .notIn: "Join the call first."
         case .expired: "The 5 minute window has ended."
         case .badResponse: "Join or leave. Those are the only answers this server stores."
         case .unavailable: "Spot calls aren't set up on this server yet."
@@ -447,7 +485,7 @@ enum SpotSeed {
         return card
     }
 
-    /// Seven people are in. One seat is open. They are not all Ready, so the 0020 lock rule says no.
+    /// Seven people are in. One seat is open. Quinn and Avery haven't joined (ready off), so the 0020 lock rule says no.
     static func nearlyFull(ownerId: UUID, squadId: UUID, now: Date) -> SpotCall {
         let seated: [(UUID, String, Bool)] = [
             (alex, "Alex", true),
@@ -535,32 +573,4 @@ enum SpotSeed {
     static let morgan = UUID(uuidString: "00000000-0000-0000-0000-00000000B015")!
     static let quinn = UUID(uuidString: "00000000-0000-0000-0000-00000000B016")!
     static let avery = UUID(uuidString: "00000000-0000-0000-0000-00000000B017")!
-}
-
-enum PartyLauncher {
-    struct Destination: Equatable, Identifiable {
-        let title: String
-        let scheme: URL
-        let web: URL
-        var id: String { title }
-        var note: String { "Launcher only. This does not show who is already there." }
-    }
-
-    static let destinations: [Destination] = [
-        Destination(
-            title: "Discord",
-            scheme: URL(string: "discord://")!,
-            web: URL(string: "https://discord.com/app")!
-        ),
-        Destination(
-            title: "Xbox",
-            scheme: URL(string: "xbox://")!,
-            web: URL(string: "https://www.xbox.com/")!
-        ),
-        Destination(
-            title: "PlayStation",
-            scheme: URL(string: "psapp://")!,
-            web: URL(string: "https://www.playstation.com/")!
-        )
-    ]
 }

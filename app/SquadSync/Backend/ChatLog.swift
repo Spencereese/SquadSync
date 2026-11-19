@@ -191,13 +191,24 @@ enum ChatSeed {
     static let messageId = UUID(uuidString: "00000000-0000-0000-0000-00000000A001")!
 
     static func rowIdentifier(for id: UUID) -> String {
-        id == messageId ? "message-row-seed-1" : "message-row-\(id.uuidString)"
+        "message-row-\(token(for: id))"
     }
 
-    /// Identifier on a message bubble: whether it opens a sender group (and so
-    /// carries the name header) or continues the one above. Never spoken.
-    static func bubbleIdentifier(startsGroup: Bool) -> String {
-        startsGroup ? "bubble-group-start" : "bubble-group-continues"
+    /// The id part shared by a message's row, bubble, and reaction identifiers.
+    static func token(for id: UUID) -> String {
+        id == messageId ? "seed-1" : id.uuidString
+    }
+
+    /// Identifier on the bubble itself (just the colored shape, not the row):
+    /// `chat.bubble.<id>.start` when it opens a sender group (and so carries the
+    /// name header), `.continues` when it continues the one above. Never spoken.
+    static func bubbleIdentifier(for id: UUID, startsGroup: Bool) -> String {
+        "chat.bubble.\(token(for: id)).\(startsGroup ? "start" : "continues")"
+    }
+
+    /// Identifier on the row of reaction chips under a bubble.
+    static func reactionsIdentifier(for id: UUID) -> String {
+        "chat.reactions.\(token(for: id))"
     }
 }
 
@@ -256,6 +267,31 @@ enum SendRecovery {
         if current == SessionFailurePolicy.reconnecting { return "" }
         if let sendFailure, !sendFailure.isEmpty, current == sendFailure { return "" }
         return current
+    }
+}
+
+/// The connection line at the top of the chat. A foreground resume sets its
+/// own note ("Reconnecting…") while it refreshes; otherwise the socket's link
+/// notice shows.
+enum ConnectionRecovery {
+    /// `reconnecting` is the app's own proof it's offline (a request just failed
+    /// for want of a connection), so the banner shows even before the socket notices.
+    static func header(resumeNote: String, link: RealtimeLink, reconnecting: Bool = false) -> String? {
+        if !resumeNote.isEmpty { return resumeNote }
+        if reconnecting { return SessionFailurePolicy.reconnecting }
+        return link.notice
+    }
+
+    /// A proven round-trip (a delivered send, a poll or refresh that came back,
+    /// the channel joining again) ends "Reconnecting…". Before this, only a
+    /// delivered send cleared the status line, and nothing cleared the resume
+    /// note, so a resume that ran while offline left it at the top for good.
+    static func resumeNote(afterProof current: String) -> String {
+        current == SessionFailurePolicy.reconnecting ? "" : current
+    }
+
+    static func status(afterProof current: String) -> String {
+        current == SessionFailurePolicy.reconnecting ? "" : current
     }
 }
 
@@ -476,5 +512,25 @@ enum InviteProblem: Error, Equatable {
         case "signed_out": .signedOut
         default: .other(serverCode)
         }
+    }
+}
+
+/// DEBUG `-SQ8NetworkFault` on the mock backend. Mock chat has no socket, so its
+/// link used to sit at `.down` and the header said "Live chat is down" for good.
+/// With the switch armed the link is simulated like the live socket: connected
+/// while online, reconnecting once the fault is on, and connected again only after
+/// a proven round trip (a poll, send or retry that came back), as on the live path.
+enum SimulatedLink {
+    static func start(offline: Bool) -> RealtimeLink {
+        offline ? .reconnecting : .connected
+    }
+
+    /// Turning the fault on drops the link; turning it off waits for proof.
+    static func faultChanged(offline: Bool, current: RealtimeLink) -> RealtimeLink {
+        offline ? .reconnecting : current
+    }
+
+    static func afterProof(_ current: RealtimeLink) -> RealtimeLink {
+        current == .reconnecting ? .connected : current
     }
 }

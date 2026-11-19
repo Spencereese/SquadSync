@@ -305,6 +305,100 @@ struct ProfileDraft: Equatable {
     }
 }
 
+/// The games editor in the signed-in profile panel: add or remove games and pick
+/// the default. The list is `sq8_profiles.games` (0023) through ProfileGames;
+/// the default is `default_game`. Same rules as the profile step (ProfileDraft).
+/// Games are saved only once the list has loaded, so a failed read never
+/// overwrites the server's list with an empty one.
+struct ProfileGamesEditor: Equatable {
+    enum Load: Equatable {
+        case idle
+        case loading
+        case loaded
+        case failed(String)
+    }
+
+    static let emptyText = "No games yet. Add the ones you play."
+    static let loadingText = "Loading your games…"
+    static let loadFailedText = "Your games didn't load. Try again."
+    static let offlineLoadText = "You're offline. Your games will load when you're back online."
+    static let saveFailedText = "Your games didn't save. Try again."
+    static let offlineSaveText = "You're offline. Your games weren't saved. Try again."
+
+    var load: Load = .idle
+    var games: [String] = []
+    var entry = ""
+    var error = ""
+    var message = ""
+    var saving = false
+    var home: GamesHome?
+
+    var canEdit: Bool { load == .loaded && !saving }
+    var showsEmpty: Bool { load == .loaded && games.isEmpty }
+
+    mutating func begin() {
+        load = .loading
+        error = ""
+    }
+
+    /// The read came back: the list, tidied and de-duplicated like the profile step.
+    mutating func loaded(_ read: ProfileGames, defaultGame: String) {
+        games = ProfileDraft(name: "", defaultGame: defaultGame, games: read.games).games
+        home = read.home
+        load = .loaded
+    }
+
+    mutating func failed(offline: Bool) {
+        load = .failed(offline ? Self.offlineLoadText : Self.loadFailedText)
+    }
+
+    /// Adds the typed (or suggested) game. Returns true when it went in.
+    @discardableResult
+    mutating func add(_ raw: String) -> Bool {
+        var draft = ProfileDraft(name: "", defaultGame: "", games: games)
+        if let problem = draft.addGame(raw) {
+            error = problem
+            return false
+        }
+        games = draft.games
+        error = ""
+        message = ""
+        if raw == entry { entry = "" }
+        return true
+    }
+
+    mutating func remove(_ game: String) {
+        var draft = ProfileDraft(name: "", defaultGame: "", games: games)
+        draft.removeGame(game)
+        games = draft.games
+        error = ""
+        message = ""
+    }
+
+    /// Suggestions not in the list yet, for the empty and short-list states.
+    var suggestions: [String] {
+        ProfileDraft(name: "", defaultGame: "", games: games).openSuggestions
+    }
+
+    static func isDefault(_ game: String, defaultGame: String) -> Bool {
+        ProfileDraft.tidy(game).lowercased() == ProfileDraft.tidy(defaultGame).lowercased()
+    }
+
+    /// VoiceOver for one row: "Warzone, default game" or "Fortnite".
+    static func rowLabel(_ game: String, defaultGame: String) -> String {
+        isDefault(game, defaultGame: defaultGame) ? "\(game), default game" : game
+    }
+
+    /// The list shown: the default first (it's saved that way), then the rest.
+    static func ordered(_ games: [String], defaultGame: String) -> [String] {
+        games.filter { isDefault($0, defaultGame: defaultGame) } + games.filter { !isDefault($0, defaultGame: defaultGame) }
+    }
+
+    static func savedMessage(_ home: GamesHome?) -> String {
+        home == .phone ? "Profile saved. Your games list is on this phone only." : "Profile saved."
+    }
+}
+
 /// How much things move. Reduce Motion (or the `-reduceMotion` launch flag in tests)
 /// swaps slides and springs for short fades, and scrolls jump instead of gliding.
 enum MotionPolicy: Equatable {

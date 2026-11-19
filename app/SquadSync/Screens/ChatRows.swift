@@ -64,13 +64,73 @@ struct ChatUnreadDivider: View {
     }
 }
 
+enum ChatRowMetrics {
+    /// Space kept on the far side of a bubble so yours and theirs never line up.
+    static let gutter: CGFloat = 48
+    static let avatar: CGFloat = 28
+}
+
+/// Their initial beside the first message of a run. The column stays reserved
+/// on the rest of the run so the bubbles line up. VoiceOver hears the name on the bubble.
+struct ChatSenderAvatar: View {
+    let initial: String
+    let visible: Bool
+
+    var body: some View {
+        ZStack {
+            if visible {
+                Circle().fill(SQColor.surface3)
+                Text(initial)
+                    .font(SQType.label.weight(.bold))
+                    .foregroundStyle(SQColor.ink)
+                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+            }
+        }
+        .frame(width: ChatRowMetrics.avatar, height: ChatRowMetrics.avatar)
+        .padding(.top, visible ? SQSpace.l : 0)
+        .accessibilityHidden(true)
+    }
+}
+
+/// "+" after the chips: opens the emoji row for this message.
+struct ChatAddReactionButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "face.smiling")
+                .font(SQType.label)
+                .foregroundStyle(SQColor.muted)
+                .frame(minWidth: 44, minHeight: 44)
+                .background(SQColor.surface2, in: Capsule())
+                .overlay { Capsule().stroke(SQColor.hairline, lineWidth: 1) }
+                .contentShape(Capsule())
+                .accessibilityHidden(true)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Add a reaction")
+        .accessibilityIdentifier("reaction-add")
+    }
+}
+
 /// Name and quiet time at the top of a group. VoiceOver hears both on the bubble.
+/// Your own runs show only the time: the side and color already say it's you.
 struct ChatGroupHeader: View {
     let name: String
     let time: String
     let mine: Bool
 
     var body: some View {
+        if mine {
+            timeText
+                .accessibilityHidden(true)
+        } else {
+            named
+        }
+    }
+
+    private var named: some View {
         ViewThatFits(in: .horizontal) {
             HStack(alignment: .firstTextBaseline, spacing: SQSpace.s) {
                 nameText

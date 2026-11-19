@@ -31,6 +31,11 @@ final class LiveSessionModel {
     var followSend: UUID?
     var selectedMessage: UUID?
     var reacting = false
+
+    /// Who "mine" means in the thread: the signed-in account, the id sq8 writes
+    /// as sender_id and user_id (auth.uid()). The profile id is the same row key,
+    /// so it's only a fallback before the session is known.
+    var chatViewerId: UUID? { viewerId ?? profile?.id }
     /// History read for the open squad: loading, loaded, or why it failed.
     var chatLoad = ChatHistoryState.idle
     /// The row at the top of the thread that pages older messages.
@@ -123,6 +128,8 @@ final class LiveSessionModel {
     var gameEntry = ""
     var gamesError = ""
     var gamesHome: GamesHome?
+    /// The squad panel's games editor (signed in, after onboarding).
+    var gamesEditor = ProfileGamesEditor()
     /// Set when the profile step was finished in this launch, so the squad step
     /// counts "Step 4 of 4". Someone who left a squad later sees no count.
     var onboardedThisSession = false
@@ -605,15 +612,80 @@ final class LiveSessionModel {
         mockGames ?? SupabaseProfileGames(config: config, accessToken: session.accessToken, refresher: tokenRefresher)
     }
 
+    /// Reads the games list for the panel's editor. A failure says so and keeps
+    /// editing off, so Save can't replace the server's list with an empty one.
+    func loadProfileGames() async {
+        guard let session = try? requiredSession() else { return }
+        gamesEditor.begin()
+        do {
+            let read = try await gamesService(session).load(userId: session.userId)
+            gamesEditor.loaded(read, defaultGame: defaultGame)
+            gamesHome = read.home
+        } catch {
+            if RequestNoise.isCancellation(error) { return }
+            gamesEditor.failed(offline: Self.offline(error))
+        }
+    }
+
+    func addProfileGame() {
+        gamesEditor.add(gamesEditor.entry)
+    }
+
+    func addSuggestedProfileGame(_ game: String) {
+        gamesEditor.add(game)
+    }
+
+    func removeProfileGame(_ game: String) {
+        gamesEditor.remove(game)
+        if ProfileGamesEditor.isDefault(game, defaultGame: defaultGame) {
+            // The default has to be one of your games; the next one takes over.
+            defaultGame = gamesEditor.games.first ?? ""
+        }
+    }
+
+    func makeDefaultGame(_ game: String) {
+        defaultGame = game
+        gamesEditor.message = ""
+    }
+
+    /// Name and default game go to `sq8_profiles`; the games list (default
+    /// first) goes to `games` through ProfileGames, once it has loaded.
     func saveProfile() async {
         guard var profile else { return }
-        profile.displayName = displayName
-        profile.defaultGame = defaultGame
-        self.profile = profile
-        await run {
-            let session = try requiredSession()
+        let draft = ProfileDraft(name: displayName, defaultGame: defaultGame, games: gamesEditor.games)
+        if let problem = draft.nameError ?? draft.gameError {
+            gamesEditor.error = problem
+            return
+        }
+        let saved = draft.saved
+        profile.displayName = saved.name
+        profile.defaultGame = saved.defaultGame
+        let writesGames = gamesEditor.load == .loaded
+        gamesEditor.error = ""
+        gamesEditor.message = ""
+        gamesEditor.saving = true
+        defer { gamesEditor.saving = false }
+        guard let session = try? requiredSession() else { return }
+        do {
             try await profileService(session).save(profile)
+            self.profile = profile
+            displayName = saved.name
+            defaultGame = saved.defaultGame
+            if writesGames {
+                let home = try await gamesService(session).save(userId: session.userId, games: saved.games)
+                gamesHome = home
+                gamesEditor.home = home
+                gamesEditor.games = saved.games
+            }
+            gamesEditor.message = ProfileGamesEditor.savedMessage(writesGames ? gamesEditor.home : .server)
             status = "Profile saved."
+        } catch {
+            if RequestNoise.isCancellation(error) { return }
+            if let failure = error as? BackendFailure, case .signIn = SessionFailurePolicy.surface(failure) {
+                handleSessionError(error)
+                return
+            }
+            gamesEditor.error = Self.offline(error) ? ProfileGamesEditor.offlineSaveText : ProfileGamesEditor.saveFailedText
         }
     }
 
@@ -839,9 +911,6 @@ final class LiveSessionModel {
                     if copy.name == "Player" {
                         copy.name = squad.members.first { $0.id == seat.userId }?.displayName ?? "Player"
                     }
-                    if let previous = spot?.seat(for: seat.userId), mockSpots != nil, previous.response == copy.response {
-                        copy.ready = previous.ready
-                    }
                     return copy
                 }
                 spot = loaded
@@ -922,7 +991,13 @@ final class LiveSessionModel {
         do {
             let session = try requiredSession()
             guard let squad else { return false }
-            _ = try await spotService(session).call(squadId: squad.id, game: game, startsAt: Date())
+            let service = spotService(session)
+            let created = try await service.call(squadId: squad.id, game: game, startsAt: Date())
+            // Calling is joining: sq8_call_spot seats the caller as in with ready off.
+            // If this doesn't go through, the caller's bar offers Join instead of Lock.
+            if await service.serverCapabilities().ready {
+                try? await service.setReady(callId: created, userId: session.userId, ready: true)
+            }
             await loadSpot(session)
             spotNote = "Calling spots: \(game), 8 seats."
             spotCalledSerial += 1
@@ -939,9 +1014,19 @@ final class LiveSessionModel {
         }
     }
 
+    /// Join means ready: one tap answers in, then sets 0020's ready when the
+    /// server has it. A seat the server already holds (a check-in starter, or
+    /// the caller) only needs the ready half.
     func joinSpot() async {
         await changeSpot { session, call in
-            try await spotService(session).rsvp(callId: call.id, response: "in")
+            let service = spotService(session)
+            let me = viewerId ?? session.userId
+            if call.seat(for: me)?.isIn != true {
+                try await service.rsvp(callId: call.id, response: "in")
+            }
+            if SpotCallRules.joinMarksReady(call, server: await service.serverCapabilities()) {
+                try await service.setReady(callId: call.id, userId: me, ready: true)
+            }
             spotNote = "You're in."
         }
     }
@@ -953,32 +1038,10 @@ final class LiveSessionModel {
         }
     }
 
-    func toggleReady() async {
-        guard let call = spot, let user = viewerId ?? profile?.id else { return }
-        let next = !(call.seat(for: user)?.ready ?? false)
-        guard spotGate.begin() else { return }
-        defer { spotGate.finish() }
-        do {
-            let session = try requiredSession()
-            try await spotService(session).setReady(callId: call.id, userId: user, ready: next)
-            await loadSpot(session)
-            if var call = spot, let index = call.rsvps.firstIndex(where: { $0.userId == user }) {
-                call.rsvps[index].ready = next
-                spot = call
-            }
-        } catch let problem as SpotProblem {
-            spotNote = problem.message
-            await reloadSpotAfterFailure()
-        } catch {
-            report(error)
-            await reloadSpotAfterFailure()
-        }
-    }
-
     func lockSpot() async {
         await changeSpot(reloadAfterFailure: true) { session, call in
             try await spotService(session).lock(callId: call.id)
-            spotNote = "Locked. Open in another app is only a launcher."
+            spotNote = "Locked."
         }
     }
 
@@ -1322,6 +1385,7 @@ final class LiveSessionModel {
         olderHoldAnchor = nil
         pendingOpen.clear()
         FunctionPresence.shared.reset()
+        gamesEditor = ProfileGamesEditor()
         realtime?.stop()
         realtime = nil
         poll?.cancel()
@@ -1410,7 +1474,15 @@ final class LiveSessionModel {
     func recoverAfterSend() {
         status = SendRecovery.status(afterSuccess: status, sendFailure: sendFailureStatus)
         sendFailureStatus = nil
+        connectionProven()
+    }
+
+    /// Any round-trip that worked: clears "Reconnecting…" wherever it is shown.
+    func connectionProven() {
         reconnecting = false
+        if simulatesLink { link = SimulatedLink.afterProof(link) }
+        status = ConnectionRecovery.status(afterProof: status)
+        presenceNote = ConnectionRecovery.resumeNote(afterProof: presenceNote)
     }
 
     func becameActive() async {
@@ -1426,7 +1498,7 @@ final class LiveSessionModel {
             phase = .ready
             email = session.email
             viewerId = session.userId
-            presenceNote = "Reconnecting…"
+            presenceNote = SessionFailurePolicy.reconnecting
             await refresh(session)
             if squad != nil { startLive(session) }
             if !reconnecting {
@@ -1450,7 +1522,7 @@ final class LiveSessionModel {
             defaultGame = loaded.defaultGame
             let squads = squadService(session)
             squad = try await squads.currentSquad(userId: session.userId)
-            reconnecting = false
+            connectionProven()
             if let marks {
                 // Someone already in a squad never sees the profile step.
                 if squad != nil { marks.confirmProfile(session.userId) }
@@ -1742,8 +1814,38 @@ final class LiveSessionModel {
     }
 
     var usesLiveSocket: Bool { mockChat == nil }
+
+    /// DEBUG `-SQ8NetworkFault`: the mock chat shows the connection banner and the
+    /// network toggle. Always false in Release.
+    var networkFaultArmed: Bool {
+        #if DEBUG
+        return NetworkFault.shared.armed
+        #else
+        return false
+        #endif
+    }
+
+    /// Mock chat with the DEBUG switch armed: the link is simulated (SimulatedLink).
+    private var simulatesLink: Bool { !usesLiveSocket && networkFaultArmed }
+
+    private var networkFaultIsOffline: Bool {
+        #if DEBUG
+        return NetworkFault.shared.isOffline
+        #else
+        return false
+        #endif
+    }
+
+    #if DEBUG
+    var networkFaultOffline = NetworkFault.shared.isOffline
+
+    func toggleNetworkFault() {
+        networkFaultOffline.toggle()
+        NetworkFault.shared.setOffline(networkFaultOffline)
+        if simulatesLink { link = SimulatedLink.faultChanged(offline: networkFaultOffline, current: link) }
+    }
+    #endif
     var showsLiveGaps: Bool { mockSpots == nil }
-    var readyIsLocalOnly: Bool { showsLiveGaps && !spotServer.ready }
 
     private var usesSocket: Bool { usesLiveSocket }
 
@@ -1753,7 +1855,7 @@ final class LiveSessionModel {
         poll?.cancel()
         guard let squad else { return }
         guard usesSocket else {
-            link = .down
+            link = simulatesLink ? SimulatedLink.start(offline: networkFaultIsOffline) : .down
             beginPoll(session)
             return
         }
@@ -1770,6 +1872,7 @@ final class LiveSessionModel {
         case .phase(let next):
             let opened = next == .connected && link != .connected
             link = next
+            if next == .connected { connectionProven() }
             if next.polls {
                 beginPoll(session)
                 await loadChat(session)
@@ -1831,6 +1934,7 @@ final class LiveSessionModel {
             guard HistoryMerge.accepts(requestSquad: requested, loadedSquad: loadedSquad) else { return }
             log.adopt(replacingSquad: false, history: rows.map { $0.entry() })
             chatLoad = .loaded
+            connectionProven()
             await loadSpot(session)
             // Without the socket, check-ins only refresh while someone is looking at them.
             if whosInOpen { await loadWhosIn() }
@@ -2237,9 +2341,8 @@ struct LiveSessionView: View {
     }
 
     private var liveNotice: String? {
-        guard model.usesLiveSocket else { return nil }
-        if !model.presenceNote.isEmpty { return model.presenceNote }
-        return model.link.notice
+        guard model.usesLiveSocket || model.networkFaultArmed else { return nil }
+        return ConnectionRecovery.header(resumeNote: model.presenceNote, link: model.link, reconnecting: model.reconnecting)
     }
 
     private var chatList: some View {
@@ -2488,6 +2591,11 @@ struct LiveSessionView: View {
                 if let quote = model.replyQuote {
                     ChatReplyBanner(quote: quote) { model.cancelReply() }
                 }
+                #if DEBUG
+                if model.networkFaultArmed {
+                    networkFaultToggle
+                }
+                #endif
                 composer
             }
             .padding(.top, typeSize.isAccessibilitySize ? SQSpace.s : SQSpace.m)
@@ -2496,6 +2604,26 @@ struct LiveSessionView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(SQColor.surface0)
     }
+
+    #if DEBUG
+    /// DEBUG `-SQ8NetworkFault` only: turns the network off and back on.
+    private var networkFaultToggle: some View {
+        Button {
+            model.toggleNetworkFault()
+        } label: {
+            Text(model.networkFaultOffline ? "Debug: network off. Tap to turn on." : "Debug: network on. Tap to turn off.")
+                .font(SQType.caption)
+                .foregroundStyle(model.networkFaultOffline ? SQColor.danger : SQColor.subtle)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Debug network")
+        .accessibilityValue(model.networkFaultOffline ? "Off" : "On")
+        .accessibilityIdentifier("debug-network-fault")
+    }
+    #endif
 
     /// Room under the last message. At accessibility sizes with the keyboard up
     /// the list is only a few rows tall, so it keeps just a sliver.
@@ -2574,7 +2702,7 @@ struct LiveSessionView: View {
     private var spotViewer: UUID? { model.viewerId ?? model.profile?.id }
 
     private var unreadForViewer: Int {
-        model.log.unreadCount(viewerId: model.profile?.id ?? model.viewerId ?? UUID())
+        model.log.unreadCount(viewerId: model.chatViewerId ?? UUID())
     }
 
     /// Thread rows with day separators, the unread divider, and message groups.
@@ -2587,7 +2715,7 @@ struct LiveSessionView: View {
         return rowMemo.rows(
             items: threadItems,
             context: ChatThread.Context(
-                viewerId: model.profile?.id ?? model.viewerId,
+                viewerId: model.chatViewerId,
                 names: model.memberNames,
                 reads: model.reads,
                 unreadAnchor: model.unreadMarker.anchor,
@@ -2670,7 +2798,6 @@ struct LiveSessionView: View {
             let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
             let expired = SpotCallRules.showsExpired(spot, now: now)
             let viewer = model.viewerId ?? model.profile?.id
-            let mine = viewer.flatMap { spot.seat(for: $0) }
             VStack(alignment: .leading, spacing: SQSpace.s) {
                 Text("Calling spots: \(spot.game), \(spot.filled) of \(spot.seatTotal) seats")
                     .font(.headline)
@@ -2684,21 +2811,14 @@ struct LiveSessionView: View {
                     .foregroundStyle(SQColor.warning)
                     .accessibilityIdentifier("spot-countdown")
                 ForEach(spot.rsvps.filter(\.isIn)) { seat in
-                    seatChips(seat)
+                    seatChips(seat, in: spot)
                 }
                 Text("Check-in starters can join after the timer. 0013 does not know who is in a game.")
                     .font(.caption2)
                     .foregroundStyle(SQColor.muted)
                     .fixedSize(horizontal: false, vertical: true)
-                if model.showsLiveGaps && !model.spotServer.ready {
-                    Text("Ready isn't stored on the server yet.")
-                        .font(.caption2)
-                        .foregroundStyle(SQColor.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("spot-gap-ready")
-                }
                 if model.showsLiveGaps && !model.spotServer.gatedLock {
-                    Text("Lock doesn't wait for Ready yet.")
+                    Text("Lock doesn't wait for everyone to join yet.")
                         .font(.caption2)
                         .foregroundStyle(SQColor.muted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -2723,11 +2843,12 @@ struct LiveSessionView: View {
                         .disabled(model.spotGate.busy || viewer == nil || !SpotCallRules.canJoin(spot, userId: viewer!, now: now))
                         .accessibilityIdentifier("spot-join")
                         .accessibilityLabel("Join the spot call")
-                    if mine?.isIn == true && now < spot.joinUntil {
-                        Button(mine?.ready == true ? "Ready" : "Ready") { Task { await model.toggleReady() } }
-                            .disabled(model.spotGate.busy || model.readyIsLocalOnly)
-                            .accessibilityIdentifier("spot-ready")
-                            .accessibilityLabel(mine?.ready == true ? "Ready, on" : "Ready, off")
+                    if let waiting = SpotLockRule.waitingLine(spot) {
+                        Text(waiting)
+                            .font(.caption)
+                            .foregroundStyle(SQColor.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("spot-lock-waiting")
                     }
                     if let viewer, SpotCallRules.canLock(spot, actorId: viewer, ownerId: model.squad?.ownerId ?? viewer, now: now) {
                         Button("Lock") {
@@ -2762,26 +2883,6 @@ struct LiveSessionView: View {
                         .disabled(model.spotGate.busy)
                         .accessibilityIdentifier("spot-end")
                         .accessibilityLabel("End the spot call")
-                    }
-                    Text("Open in")
-                        .font(.caption.weight(.semibold))
-                        .accessibilityAddTraits(.isHeader)
-                    ForEach(PartyLauncher.destinations) { destination in
-                        Button {
-                            openLauncher(destination)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text("Open in \(destination.title)")
-                                    .font(.body)
-                                    .lineLimit(2)
-                                Text(destination.note)
-                                    .font(.caption2)
-                                    .foregroundStyle(SQColor.muted)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
-                        }
-                        .accessibilityIdentifier("spot-open-\(destination.title.lowercased())")
-                        .accessibilityLabel("Open in \(destination.title). \(destination.note)")
                     }
                 }
             }
@@ -2833,8 +2934,8 @@ struct LiveSessionView: View {
         return "\(SpotCallRules.countdown(joinUntil: spot.joinUntil, now: now)) left"
     }
 
-    private func seatChips(_ seat: SpotRsvp) -> some View {
-        let parts = seatParts(seat)
+    private func seatChips(_ seat: SpotRsvp, in spot: SpotCall) -> some View {
+        let parts = seatParts(seat, in: spot)
         return ChipFlow(spacing: SQSpace.xs) {
             ForEach(Array(parts.enumerated()), id: \.offset) { _, part in
                 Text(part)
@@ -2847,19 +2948,14 @@ struct LiveSessionView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(parts.joined(separator: ", "))
+        .accessibilityIdentifier("spot-seat-\(seat.name)")
     }
 
-    private func seatParts(_ seat: SpotRsvp) -> [String] {
+    private func seatParts(_ seat: SpotRsvp, in spot: SpotCall) -> [String] {
         var parts = [seat.name]
         if seat.starter { parts.append("starter") }
-        parts.append(seat.ready ? "Ready" : "In")
+        parts.append(SpotCallRules.hasJoined(seat, in: spot) ? "In" : "Hasn't joined")
         return parts
-    }
-
-    private func openLauncher(_ destination: PartyLauncher.Destination) {
-        let application = UIApplication.shared
-        let url = application.canOpenURL(destination.scheme) ? destination.scheme : destination.web
-        application.open(url)
     }
 
     /// Pinned spot bar. One row when it fits: game, countdown, and seats beside the
@@ -2930,7 +3026,7 @@ struct LiveSessionView: View {
 
     private func barButton(_ action: SpotBarAction) -> some View {
         Button(action.title) { Task { await runBar(action) } }
-            .disabled(model.spotGate.busy || (action == .ready && model.readyIsLocalOnly))
+            .disabled(model.spotGate.busy)
             .accessibilityIdentifier(action.identifier)
             .accessibilityLabel(barLabel(action))
     }
@@ -2939,10 +3035,6 @@ struct LiveSessionView: View {
         switch action {
         case .join: return "Join the spot call"
         case .leave: return "Leave the spot call"
-        case .ready:
-            let viewer = model.viewerId ?? model.profile?.id
-            let on = viewer.flatMap { model.spot?.seat(for: $0)?.ready } == true
-            return on ? "Ready, on" : "Ready, off"
         case .lock: return "Lock the spot call"
         case .cancel: return "Cancel the spot call"
         }
@@ -2952,7 +3044,6 @@ struct LiveSessionView: View {
         switch action {
         case .join: await model.joinSpot()
         case .leave: await model.leaveSpot()
-        case .ready: await model.toggleReady()
         case .lock: await model.lockSpot()
         case .cancel: await model.cancelSpot()
         }
@@ -3235,12 +3326,147 @@ struct LiveSessionView: View {
                     TextField("Default game", text: Binding(get: { model.defaultGame }, set: { model.defaultGame = $0 }))
                         .textFieldStyle(.roundedBorder)
                         .accessibilityIdentifier("profile-game")
+                    profileGamesEditor
+                    if !model.gamesEditor.error.isEmpty {
+                        Text(model.gamesEditor.error)
+                            .font(SQType.label)
+                            .foregroundStyle(SQColor.danger)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("profile-games-error")
+                    }
                     Button("Save profile") { Task { await model.saveProfile() } }
-                        .disabled(model.busy)
+                        .disabled(model.busy || model.gamesEditor.saving)
                         .accessibilityIdentifier("save-profile")
+                    if !model.gamesEditor.message.isEmpty {
+                        Text(model.gamesEditor.message)
+                            .font(SQType.label)
+                            .foregroundStyle(SQColor.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("profile-saved")
+                    }
                 }
             }
+            .task { await model.loadProfileGames() }
         }
+    }
+
+    /// Games you play, the default first. Editing waits for the list to load.
+    @ViewBuilder
+    private var profileGamesEditor: some View {
+        let editor = model.gamesEditor
+        Text("Games you play")
+            .font(SQType.label)
+            .foregroundStyle(SQColor.muted)
+            .accessibilityAddTraits(.isHeader)
+            .accessibilityIdentifier("profile-games-heading")
+        switch editor.load {
+        case .idle, .loading:
+            HStack(spacing: SQSpace.s) {
+                ProgressView()
+                Text(ProfileGamesEditor.loadingText)
+                    .font(SQType.label)
+                    .foregroundStyle(SQColor.muted)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("profile-games-loading")
+        case .failed(let message):
+            VStack(alignment: .leading, spacing: SQSpace.xs) {
+                Text(message)
+                    .font(SQType.label)
+                    .foregroundStyle(SQColor.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("profile-games-load-error")
+                Button("Try again") { Task { await model.loadProfileGames() } }
+                    .accessibilityIdentifier("profile-games-retry")
+            }
+        case .loaded:
+            if editor.showsEmpty {
+                Text(ProfileGamesEditor.emptyText)
+                    .font(SQType.label)
+                    .foregroundStyle(SQColor.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("profile-games-empty")
+            }
+            ForEach(ProfileGamesEditor.ordered(editor.games, defaultGame: model.defaultGame), id: \.self) { game in
+                profileGameRow(game)
+            }
+            HStack(spacing: SQSpace.s) {
+                TextField("Add a game", text: Binding(get: { model.gamesEditor.entry }, set: { model.gamesEditor.entry = $0 }))
+                    .textFieldStyle(.roundedBorder)
+                    .submitLabel(.done)
+                    .onSubmit { model.addProfileGame() }
+                    .accessibilityIdentifier("profile-add-game")
+                Button("Add") { model.addProfileGame() }
+                    .disabled(!editor.canEdit)
+                    .accessibilityLabel("Add game")
+                    .accessibilityIdentifier("profile-add-game-button")
+            }
+            if !editor.suggestions.isEmpty, editor.games.count < 4 {
+                WrapLayout(spacing: SQSpace.s) {
+                    ForEach(editor.suggestions, id: \.self) { game in
+                        Button(game) { model.addSuggestedProfileGame(game) }
+                            .font(SQType.label)
+                            .buttonStyle(.bordered)
+                            .disabled(!editor.canEdit)
+                            .accessibilityLabel("Add \(game)")
+                            .accessibilityIdentifier("profile-suggest-\(game)")
+                    }
+                }
+            }
+            if let note = editor.home?.note {
+                Text(note)
+                    .font(SQType.label)
+                    .foregroundStyle(SQColor.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("profile-games-note")
+            }
+        }
+    }
+
+    private func profileGameRow(_ game: String) -> some View {
+        let isDefault = ProfileGamesEditor.isDefault(game, defaultGame: model.defaultGame)
+        let buttons = HStack(spacing: SQSpace.s) {
+            if !isDefault {
+                Button("Make default") { model.makeDefaultGame(game) }
+                    .font(SQType.label)
+                    .disabled(!model.gamesEditor.canEdit)
+                    .accessibilityLabel("Make \(game) the default game")
+                    .accessibilityIdentifier("profile-default-\(game)")
+            }
+            Button {
+                model.removeProfileGame(game)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(SQType.label)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(SQColor.muted)
+            .disabled(!model.gamesEditor.canEdit)
+            .accessibilityLabel("Remove \(game)")
+            .accessibilityIdentifier("profile-remove-\(game)")
+        }
+        let name = Text(isDefault ? "\(game) · default" : game)
+            .font(SQType.body)
+            .foregroundStyle(SQColor.ink)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel(ProfileGamesEditor.rowLabel(game, defaultGame: model.defaultGame))
+        return ViewThatFits(in: .horizontal) {
+            HStack(alignment: .center, spacing: SQSpace.s) {
+                name.frame(maxWidth: .infinity, alignment: .leading)
+                buttons
+            }
+            VStack(alignment: .leading, spacing: SQSpace.xs) {
+                name
+                buttons
+            }
+        }
+        .padding(.leading, SQSpace.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(SQColor.surface2, in: RoundedRectangle(cornerRadius: SQRadius.m, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("profile-games-row-\(game)")
     }
 
     private func panelHeading(_ title: String) -> some View {
@@ -3305,119 +3531,178 @@ struct LiveSessionView: View {
         }
     }
 
-    private var viewerForChat: UUID? { model.profile?.id ?? model.viewerId }
+    private var viewerForChat: UUID? { model.chatViewerId }
 
     /// One message: group header, reply quote, bubble, reaction chips, then the
-    /// delivery caption or seen line. Long-press for React, Reply, Copy, and Retry.
+    /// delivery caption or seen line. Yours sit on the trailing side in the accent
+    /// color; everyone else's on the leading side with their name and avatar once
+    /// per run. Long-press for reactions, Reply, Copy, and Retry; double-tap or
+    /// React (or + under the chips) opens the emoji row.
     private func messageRow(_ bubble: ChatBubble) -> some View {
         let entry = bubble.entry
         let chipsForRow = ChatReactions.chips(marks: model.board.marks, messageId: entry.id, viewerId: viewerForChat)
         let actions = ChatAction.available(for: entry, repliesAvailable: model.chatCaps.replies)
-        return VStack(alignment: .leading, spacing: 2) {
-            if bubble.startsGroup {
-                ChatGroupHeader(name: bubble.senderName, time: bubble.time, mine: bubble.mine)
+        let trailing = bubble.side == .trailing
+        let edge: HorizontalAlignment = trailing ? .trailing : .leading
+        let frameEdge: Alignment = trailing ? .trailing : .leading
+        return HStack(alignment: .top, spacing: SQSpace.s) {
+            if trailing {
+                Spacer(minLength: ChatRowMetrics.gutter)
+            } else {
+                ChatSenderAvatar(initial: bubble.initial, visible: bubble.showsAvatar)
             }
-            if let reply = bubble.reply {
-                ChatReplyQuoteView(quote: reply)
-            }
-            Button {
-                model.selectedMessage = entry.id
-            } label: {
+            VStack(alignment: edge, spacing: 2) {
+                if bubble.startsGroup {
+                    ChatGroupHeader(name: bubble.senderName, time: bubble.time, mine: bubble.mine)
+                }
+                if let reply = bubble.reply {
+                    ChatReplyQuoteView(quote: reply)
+                }
+                // The bubble shape itself is the accessibility element (a button), so
+                // its frame is the bubble, not the full-width row around it. A SwiftUI
+                // Button here reported the row's frame on device and simulator.
                 Text(entry.body)
                     .font(SQType.body)
-                    .foregroundStyle(entry.delivery == .failed ? SQColor.muted : SQColor.ink)
+                    .foregroundStyle(bubbleInk(bubble))
+                    .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-            }
-            .accessibilityLabel(ChatSpeech.bubble(bubble))
-            // Not spoken; lets UI tests read sender grouping without measuring gaps.
-            .accessibilityIdentifier(ChatSeed.bubbleIdentifier(startsGroup: bubble.startsGroup))
-            .accessibilityActions {
-                ForEach(actions, id: \.title) { action in
-                    Button(action.title) { run(action, on: entry.id) }
-                }
-            }
-            .buttonStyle(WideRowButtonStyle())
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            if !chipsForRow.isEmpty {
-                ChipFlow(spacing: SQSpace.xs) {
-                    ForEach(chipsForRow) { chip in
-                        ChatReactionChipButton(chip: chip) {
-                            Task { await model.tap(chip.tapback, on: entry.id) }
+                    .padding(.horizontal, SQSpace.m)
+                    .padding(.vertical, SQSpace.s)
+                    .frame(minHeight: 44)
+                    .background(bubbleFill(bubble), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    // On the bubble, not the row: the long-press lifts just the bubble, and no
+                    // row-wide menu host wraps the bubble's accessibility element.
+                    .contextMenu { messageMenu(entry.id, actions: actions) }
+                    .onTapGesture { model.selectedMessage = entry.id }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel(ChatSpeech.bubble(bubble))
+                    // Not spoken; lets UI tests read sender grouping without measuring gaps.
+                    .accessibilityIdentifier(ChatSeed.bubbleIdentifier(for: entry.id, startsGroup: bubble.startsGroup))
+                    .accessibilityAction { model.selectedMessage = entry.id }
+                    .accessibilityActions {
+                        ForEach(actions, id: \.title) { action in
+                            Button(action.title) { run(action, on: entry.id) }
                         }
                     }
+                if !chipsForRow.isEmpty {
+                    ChipFlow(spacing: SQSpace.xs, alignment: edge) {
+                        ForEach(chipsForRow) { chip in
+                            ChatReactionChipButton(chip: chip) {
+                                Task { await model.tap(chip.tapback, on: entry.id) }
+                            }
+                        }
+                        if actions.contains(.react) {
+                            ChatAddReactionButton {
+                                model.selectedMessage = entry.id
+                                model.reacting = true
+                            }
+                        }
+                    }
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier(ChatSeed.reactionsIdentifier(for: entry.id))
+                    .padding(.top, 2)
                 }
-                .padding(.top, 2)
-            }
-            if let caption = bubble.caption {
-                Text(caption)
-                    .font(SQType.micro)
-                    .foregroundStyle(entry.delivery == .failed ? SQColor.danger : SQColor.subtle)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("delivery-caption")
-            }
-            if let seen = bubble.seen {
-                Text(seen)
-                    .font(SQType.micro)
-                    .foregroundStyle(SQColor.subtle)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("seen-by")
-            }
-            if model.selectedMessage == entry.id, actions.contains(.react) {
-                Button { model.reacting = true } label: {
-                    Text("React")
-                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
-                        .contentShape(Rectangle())
+                if let caption = bubble.caption {
+                    Text(caption)
+                        .font(SQType.micro)
+                        .foregroundStyle(entry.delivery == .failed ? SQColor.danger : SQColor.subtle)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("delivery-caption")
                 }
-                .accessibilityIdentifier("react")
-            }
-            if model.reacting, model.selectedMessage == entry.id {
-                reactionChoices(entry.id)
-            }
-            if entry.delivery == .failed {
-                // The frame sits on the label, not the Button, so the hit target and
-                // the accessibility frame are both at least 44 pt tall.
-                Button { Task { await model.retry(entry.id) } } label: {
-                    Text("Retry")
-                        .font(SQType.label)
-                        .frame(minWidth: 44, minHeight: 44, alignment: .leading)
-                        .contentShape(Rectangle())
+                if let seen = bubble.seen {
+                    Text(seen)
+                        .font(SQType.micro)
+                        .foregroundStyle(SQColor.subtle)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("seen-by")
                 }
-                .accessibilityIdentifier("retry-send")
-                .accessibilityLabel("Retry sending")
+                if model.selectedMessage == entry.id, actions.contains(.react), !model.reacting {
+                    Button { model.reacting = true } label: {
+                        Text("React")
+                            .frame(minWidth: 44, minHeight: 44, alignment: frameEdge)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityIdentifier("react")
+                }
+                if model.reacting, model.selectedMessage == entry.id {
+                    reactionChoices(entry.id, alignment: edge)
+                }
+                if entry.delivery == .failed {
+                    // The frame sits on the label, not the Button, so the hit target and
+                    // the accessibility frame are both at least 44 pt tall.
+                    Button { Task { await model.retry(entry.id) } } label: {
+                        Text("Retry")
+                            .font(SQType.label)
+                            .frame(minWidth: 44, minHeight: 44, alignment: frameEdge)
+                            .contentShape(Rectangle())
+                    }
+                    .accessibilityIdentifier("retry-send")
+                    .accessibilityLabel("Retry sending")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: frameEdge)
+            if !trailing {
+                Spacer(minLength: ChatRowMetrics.gutter)
             }
         }
         .padding(.top, bubble.startsGroup ? SQSpace.s : 0)
         .padding(.bottom, bubble.endsGroup ? SQSpace.xs : 0)
-        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-        .contentShape(Rectangle())
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: frameEdge)
+        // The row's taps live on a background layer beside the bubble, not on the row
+        // itself. A tap gesture on the row made SwiftUI give its full-row frame to the
+        // single accessible element inside (the bubble), so chat.bubble.* reported the
+        // row's frame. Only a row with several accessible children (the latest, with
+        // Sent and Seen by) escaped. Seen on the iOS 26.2 simulator: with the gestures
+        // here every bubble reports its own frame. A tap or double tap beside a short
+        // bubble still picks the message or opens the emoji row, as before.
+        .background {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) {
+                    guard actions.contains(.react) else { return }
+                    model.selectedMessage = entry.id
+                    model.reacting = true
+                }
+                .onTapGesture {
+                    model.selectedMessage = entry.id
+                }
+                .accessibilityHidden(true)
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(ChatSeed.rowIdentifier(for: entry.id))
-        .onTapGesture(count: 2) {
-            guard actions.contains(.react) else { return }
-            model.selectedMessage = entry.id
-            model.reacting = true
-        }
-        .contextMenu {
-            if actions.contains(.react) {
-                Section {
-                    ForEach(Tapback.allCases) { reaction in
-                        Button(reaction.spoken) { Task { await model.tap(reaction, on: entry.id) } }
-                    }
-                }
-            }
+    }
+
+    @ViewBuilder
+    private func messageMenu(_ id: UUID, actions: [ChatAction]) -> some View {
+        if actions.contains(.react) {
             Section {
-                if actions.contains(.reply) {
-                    Button { run(.reply, on: entry.id) } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
-                }
-                Button { run(.copy, on: entry.id) } label: { Label("Copy", systemImage: "doc.on.doc") }
-                if actions.contains(.retry) {
-                    Button { run(.retry, on: entry.id) } label: { Label("Retry sending", systemImage: "arrow.clockwise") }
+                ForEach(Tapback.allCases) { reaction in
+                    Button(reaction.spoken) { Task { await model.tap(reaction, on: id) } }
                 }
             }
         }
+        Section {
+            if actions.contains(.reply) {
+                Button { run(.reply, on: id) } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
+            }
+            Button { run(.copy, on: id) } label: { Label("Copy", systemImage: "doc.on.doc") }
+            if actions.contains(.retry) {
+                Button { run(.retry, on: id) } label: { Label("Retry sending", systemImage: "arrow.clockwise") }
+            }
+        }
+    }
+
+    private func bubbleFill(_ bubble: ChatBubble) -> Color {
+        guard bubble.mine else { return SQColor.theirs }
+        return bubble.entry.delivery == .failed ? SQColor.mine.opacity(0.55) : SQColor.mine
+    }
+
+    private func bubbleInk(_ bubble: ChatBubble) -> Color {
+        if bubble.mine { return .white }
+        return bubble.entry.delivery == .failed ? SQColor.muted : SQColor.ink
     }
 
     private func run(_ action: ChatAction, on id: UUID) {
@@ -3435,25 +3720,46 @@ struct LiveSessionView: View {
         }
     }
 
-    private func reactionChoices(_ id: UUID) -> some View {
-        VStack(alignment: .leading, spacing: SQSpace.xs) {
-            ForEach(ChatReactions.order) { reaction in
-                Button { Task { await model.tap(reaction, on: id) } } label: {
-                    Text("\(SquadReaction.emoji(for: reaction))  \(reaction.spoken)")
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(minHeight: 44, alignment: .leading)
-                        .contentShape(Rectangle())
+    /// The emoji row: one 44 pt button per reaction, on the bubble's side, wrapping
+    /// at large text. Your current one is selected; picking it again takes it back.
+    /// Picking closes the row.
+    private func reactionChoices(_ id: UUID, alignment: HorizontalAlignment) -> some View {
+        let options = ChatReactions.options(marks: model.board.marks, messageId: id, viewerId: viewerForChat)
+        return ChipFlow(spacing: SQSpace.xs, alignment: alignment) {
+            ForEach(options) { option in
+                Button {
+                    model.reacting = false
+                    Task { await model.tap(option.tapback, on: id) }
+                } label: {
+                    Text(option.emoji)
+                        .font(SQType.body)
+                        .fixedSize()
+                        .frame(minWidth: 44, minHeight: 44)
+                        .background(option.selected ? SQColor.surface3 : SQColor.surface2, in: Circle())
+                        .overlay {
+                            Circle().stroke(option.selected ? SQColor.accent : SQColor.hairline, lineWidth: option.selected ? 1.5 : 1)
+                        }
+                        .contentShape(Circle())
                 }
-                .accessibilityLabel(reaction.spoken)
-                .accessibilityIdentifier("tapback-\(reaction.rawValue)")
+                .buttonStyle(.plain)
+                .accessibilityLabel(option.tapback.spoken)
+                .accessibilityHint(option.hint)
+                .accessibilityAddTraits(option.selected ? .isSelected : [])
+                .accessibilityIdentifier("tapback-\(option.tapback.rawValue)")
             }
         }
+        .padding(SQSpace.xs)
+        .background(SQColor.surface1, in: RoundedRectangle(cornerRadius: SQRadius.l, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("reaction-picker")
     }
 
 }
 
 private struct ChipFlow: Layout {
     var spacing: CGFloat = 4
+    /// Which side ragged rows hug. Trailing for reactions under your own bubble.
+    var alignment: HorizontalAlignment = .leading
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         let width = proposal.width ?? 0
@@ -3466,7 +3772,13 @@ private struct ChipFlow: Layout {
         let rows = rows(width: width, subviews: subviews)
         let height = rows.map { $0.map(\.height).max() ?? 0 }.reduce(0, +)
             + spacing * CGFloat(max(rows.count - 1, 0))
-        return CGSize(width: width, height: height)
+        // As wide as the widest row, so a parent stack can put it on either side.
+        let widest = rows.map(rowWidth).max() ?? 0
+        return CGSize(width: min(width, widest), height: height)
+    }
+
+    private func rowWidth(_ row: [CGSize]) -> CGFloat {
+        row.map(\.width).reduce(0, +) + spacing * CGFloat(max(row.count - 1, 0))
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
@@ -3475,7 +3787,7 @@ private struct ChipFlow: Layout {
         var index = 0
         for row in rows {
             let rowHeight = row.map(\.height).max() ?? 0
-            var x = bounds.minX
+            var x = alignment == .trailing ? max(bounds.minX, bounds.maxX - rowWidth(row)) : bounds.minX
             for size in row {
                 subviews[index].place(
                     at: CGPoint(x: x, y: y),
@@ -3503,14 +3815,6 @@ private struct ChipFlow: Layout {
             }
         }
         return rows
-    }
-}
-
-private struct WideRowButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
     }
 }
 

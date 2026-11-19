@@ -156,18 +156,6 @@ final class SpotCallRulesTests: XCTestCase {
         XCTAssertTrue(SpotCallRules.canLock(open, actorId: owner, ownerId: owner, now: start))
         XCTAssertFalse(SpotCallRules.canLock(open, actorId: member, ownerId: owner, now: start))
         XCTAssertFalse(SpotCallRules.canLock(call(status: .cancelled), actorId: caller, ownerId: owner, now: start))
-        XCTAssertFalse(SpotCallRules.everyoneReady(open))
-        var full = open
-        full.rsvps = (0..<8).map { index in
-            SpotRsvp(
-                userId: UUID(uuidString: "00000000-0000-0000-0000-00000000000\(index)")!,
-                name: "P\(index)",
-                response: "in",
-                starter: false,
-                ready: true
-            )
-        }
-        XCTAssertTrue(SpotCallRules.everyoneReady(full))
         XCTAssertEqual(SpotProblem.from(serverMessage: "spot_full").message, "That spot call is full (8).")
         XCTAssertEqual(SpotProblem.from(serverMessage: "spot_join_closed"), .joinClosed)
     }
@@ -268,25 +256,6 @@ final class SpotCallRulesTests: XCTestCase {
         XCTAssertFalse(SpotLockRule.allows(nobody))
         XCTAssertEqual(SpotProblem.from(serverMessage: "spot_not_ready"), .notReady)
         XCTAssertEqual(SpotProblem.from(serverMessage: "spot_expired"), .expired)
-    }
-
-    func testReadyAndLeaveHideAfterThePhoneWindow() {
-        var card = call()
-        card.joinUntil = start
-        card.rsvps = [SpotRsvp(userId: member, name: "Sam", response: "in", starter: true, ready: false)]
-        let later = start.addingTimeInterval(1)
-        XCTAssertNil(SpotCallRules.barAction(card, viewerId: member, ownerId: owner, now: later))
-        card.rsvps[0].ready = true
-        XCTAssertNil(SpotCallRules.barAction(card, viewerId: member, ownerId: owner, now: later))
-        XCTAssertEqual(
-            SpotCallRules.barAction(card, viewerId: member, ownerId: owner, now: start.addingTimeInterval(-10)),
-            .leave
-        )
-        card.rsvps[0].ready = false
-        XCTAssertEqual(
-            SpotCallRules.barAction(card, viewerId: member, ownerId: owner, now: start.addingTimeInterval(-10)),
-            .ready
-        )
     }
 
     func testExpiryReadWaitsUntilJustAfterTheWindow() {
@@ -436,6 +405,126 @@ final class SpotCallRulesTests: XCTestCase {
     }
 }
 
+/// Join means ready (PR37). Pure rules plus the mock server, so the Linux harness runs it.
+final class SpotJoinIsReadyTests: XCTestCase {
+    private let owner = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+    private let caller = UUID(uuidString: "00000000-0000-0000-0000-00000000B011")!
+    private let member = UUID(uuidString: "00000000-0000-0000-0000-00000000B013")!
+    private let start = Date(timeIntervalSince1970: 1_700_000_000)
+
+    private func call() -> SpotCall {
+        SpotCall(
+            id: SpotSeed.callId,
+            squadId: ChatSeed.squadId,
+            callerId: caller,
+            game: "Warzone",
+            calledAt: start,
+            joinUntil: start.addingTimeInterval(SpotCallRules.window),
+            lockedAt: nil,
+            closedAt: nil,
+            status: .open,
+            rsvps: [SpotRsvp(userId: caller, name: "Alex", response: "in", starter: false, ready: false)]
+        )
+    }
+
+    func testGatedSeatHasNotJoinedUntilReadyAndJoinIsOffered() {
+        var card = call()
+        card.serverOwnsLock = true
+        card.rsvps = [SpotRsvp(userId: member, name: "Sam", response: "in", starter: true, ready: false)]
+        let before = start.addingTimeInterval(-10)
+        XCTAssertFalse(SpotCallRules.hasJoined(card, userId: member))
+        XCTAssertTrue(SpotCallRules.canJoin(card, userId: member, now: before))
+        XCTAssertEqual(SpotCallRules.barAction(card, viewerId: member, ownerId: owner, now: before), .join)
+        XCTAssertFalse(SpotCallRules.canJoin(card, userId: member, now: card.joinUntil), "set_spot_ready refuses after join_until")
+        card.rsvps[0].ready = true
+        XCTAssertTrue(SpotCallRules.hasJoined(card, userId: member))
+        XCTAssertFalse(SpotCallRules.canJoin(card, userId: member, now: before))
+        XCTAssertEqual(SpotCallRules.barAction(card, viewerId: member, ownerId: owner, now: before), .leave)
+    }
+
+    func testGatedCallerWhoseJoinDidNotStickSeesJoinNotLock() {
+        var card = call()
+        card.serverOwnsLock = true
+        card.rsvps = [SpotRsvp(userId: caller, name: "Alex", response: "in", starter: false, ready: false)]
+        XCTAssertFalse(SpotCallRules.canLock(card, actorId: caller, ownerId: owner, now: start))
+        XCTAssertEqual(SpotCallRules.barAction(card, viewerId: caller, ownerId: owner, now: start), .join)
+        card.rsvps[0].ready = true
+        XCTAssertEqual(SpotCallRules.barAction(card, viewerId: caller, ownerId: owner, now: start), .lock)
+    }
+
+    func testJoinMarksReadyWhenTheServerHasReadyOrTheGate() {
+        var card = call()
+        XCTAssertFalse(SpotCallRules.joinMarksReady(card, server: .unavailable))
+        XCTAssertTrue(SpotCallRules.joinMarksReady(card, server: SpotServerCapabilities(ready: true, gatedLock: false, expiry: false, seatTarget: false)))
+        card.serverOwnsLock = true
+        XCTAssertTrue(SpotCallRules.joinMarksReady(card, server: .unavailable))
+    }
+
+    func testLockWaitingLineNamesOnlyGatedSeatsThatHaveNotJoined() {
+        var card = call()
+        card.rsvps = [
+            SpotRsvp(userId: caller, name: "Alex", response: "in", starter: false, ready: true),
+            SpotRsvp(userId: member, name: "Quinn", response: "in", starter: true, ready: false),
+            SpotRsvp(userId: owner, name: "Avery", response: "in", starter: true, ready: false)
+        ]
+        XCTAssertNil(SpotLockRule.waitingLine(card), "No gate, nothing to wait for")
+        card.serverOwnsLock = true
+        XCTAssertEqual(SpotLockRule.waitingLine(card), "Lock waits for Quinn and Avery to join.")
+        card.rsvps[2].ready = true
+        XCTAssertEqual(SpotLockRule.waitingLine(card), "Lock waits for Quinn to join.")
+        card.rsvps[1].ready = true
+        XCTAssertNil(SpotLockRule.waitingLine(card))
+        XCTAssertTrue(SpotLockRule.allows(card))
+    }
+
+    func testLeaveHidesAfterThePhoneWindowAndThereIsNoReadyStep() {
+        var card = call()
+        card.joinUntil = start
+        card.rsvps = [SpotRsvp(userId: member, name: "Sam", response: "in", starter: true, ready: false)]
+        let later = start.addingTimeInterval(1)
+        XCTAssertNil(SpotCallRules.barAction(card, viewerId: member, ownerId: owner, now: later))
+        let before = start.addingTimeInterval(-10)
+        // Without 0020's gate, in is joined: the only action is Leave.
+        XCTAssertEqual(SpotCallRules.barAction(card, viewerId: member, ownerId: owner, now: before), .leave)
+        card.rsvps[0].ready = true
+        XCTAssertEqual(SpotCallRules.barAction(card, viewerId: member, ownerId: owner, now: before), .leave)
+    }
+
+    @MainActor
+    func testGatedJoinThenLockFollowsTheServerLockRule() async throws {
+        let squad = ChatSeed.squadId
+        var card = SpotSeed.nearlyFull(ownerId: owner, squadId: squad, now: start)
+        XCTAssertTrue(card.serverOwnsLock)
+        // Keep two seats so the flow is short: one starter who hasn't joined, one who has.
+        card.rsvps = Array(card.rsvps.prefix(2))
+        card.rsvps[0].ready = true
+        card.rsvps[1].ready = false
+        let pending = card.rsvps[1].userId
+        let service = MockSpotService(viewerId: owner, ownerId: owner, call: card, now: { self.start })
+        // The owner joins: one tap is in plus ready, as joinSpot does.
+        try await service.rsvp(callId: card.id, response: "in")
+        if SpotCallRules.joinMarksReady(card, server: await service.serverCapabilities()) {
+            try await service.setReady(callId: card.id, userId: owner, ready: true)
+        }
+        let joined = try await service.current(squadId: squad)
+        let mine = joined?.seat(for: owner)
+        XCTAssertEqual(mine?.ready, true)
+        XCTAssertEqual(joined.map { SpotLockRule.waitingOn($0).map(\.userId) }, [pending])
+        do {
+            try await service.lock(callId: card.id)
+            XCTFail("Lock has to wait for the starter who hasn't joined")
+        } catch let problem as SpotProblem {
+            XCTAssertEqual(problem, .notReady)
+        }
+        try await service.setReady(callId: card.id, userId: pending, ready: true)
+        let everyone = try await service.current(squadId: squad)
+        XCTAssertEqual(everyone.map { SpotCallRules.canLock($0, actorId: owner, ownerId: owner, now: start) }, true)
+        try await service.lock(callId: card.id)
+        let locked = try await service.current(squadId: squad)
+        XCTAssertEqual(locked?.status, .locked)
+    }
+}
+
 final class SpotServerTests: XCTestCase {
     private let config = BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test")
     private let squad = UUID(uuidString: "00000000-0000-0000-0000-0000000000C1")!
@@ -517,7 +606,7 @@ final class SpotServerTests: XCTestCase {
             XCTFail("Lock should fail until every joiner is Ready")
         } catch let problem as SpotProblem {
             XCTAssertEqual(problem, .notReady)
-            XCTAssertEqual(problem.message, "Everyone who is in has to be Ready before this locks.")
+            XCTAssertEqual(problem.message, "Everyone who is in has to join before this locks.")
         }
         let post = try XCTUnwrap(transport.requests.last)
         XCTAssertEqual(post.httpMethod, "POST")

@@ -413,7 +413,6 @@ struct WhosInEntry: Identifiable, Equatable {
     var seatLine: String? {
         switch seat {
         case .some(.locked): "Locked in on the spot call"
-        case .some(.ready): "Ready on the spot call"
         case .some(.inSpot): "In the spot call"
         default: nil
         }
@@ -497,7 +496,7 @@ enum WhosIn {
             let record = latest[member.id]
             let availability: WhosInAvailability = caps.table ? CheckInRules.availability(record, now: now) : .untracked
             let seatStatus = SquadPresence.status(memberId: member.id, viewerId: nil, spot: spot, now: now)
-            let seat: SquadPresenceStatus? = [.locked, .ready, .inSpot].contains(seatStatus) ? seatStatus : nil
+            let seat: SquadPresenceStatus? = [.locked, .inSpot].contains(seatStatus) ? seatStatus : nil
             let steamPresence = steam.presence(for: member.id)
             let checkInCounts: Bool
             switch availability {

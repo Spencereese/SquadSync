@@ -98,19 +98,34 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(react.waitForExistence(timeout: 5), "React button was not visible")
         react.tap()
 
+        let picker = app.descendants(matching: .any)["reaction-picker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5), "React did not open the emoji row")
         let thumbs = app.buttons["Thumbs up"]
         XCTAssertTrue(thumbs.waitForExistence(timeout: 5), "Thumbs up was not in the reaction row")
+        XCTAssertEqual(picker.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'tapback-'")).count, 6, "The emoji row should offer the six reactions")
+        assertHitSize(thumbs.frame.height, "An emoji in the row is too short to hit: \(thumbs.frame)")
         thumbs.tap()
+        XCTAssertTrue(picker.waitForNonExistence(timeout: 5), "Picking a reaction should close the emoji row")
 
         let chip = app.buttons["reaction-chip-hand.thumbsup.fill"]
         XCTAssertTrue(chip.waitForExistence(timeout: 5), "The reaction chip was not visible")
-        XCTAssertEqual(chip.label, "Thumbs up, 1 reaction, including yours")
+        XCTAssertEqual(chip.label, "👍 1, you reacted")
+        XCTAssertTrue(chip.isSelected, "Your own reaction should read as selected")
+        let seedBubble = bubble("message-row-seed-1", in: app)
+        let chips = reactions("message-row-seed-1", in: app)
+        XCTAssertTrue(seedBubble.exists, "Riley's bubble has no chat.bubble identifier")
+        XCTAssertTrue(chips.exists, "Riley's chips have no chat.reactions identifier")
+        XCTAssertLessThan(seedBubble.frame.width, row.frame.width - 40, "Measured the row, not the bubble: bubble \(seedBubble.frame), row \(row.frame)")
+        XCTAssertLessThanOrEqual(abs(chips.frame.minX - seedBubble.frame.minX), 2, "Riley's chips should sit under his bubble on the left: chips \(chips.frame), bubble \(seedBubble.frame)")
+        XCTAssertLessThanOrEqual(seedBubble.frame.minX, row.frame.minX + 40, "Riley's bubble should sit at the left of the row: bubble \(seedBubble.frame), row \(row.frame)")
+        XCTAssertGreaterThanOrEqual(chips.frame.minY, seedBubble.frame.maxY - 1, "The chips overlap the bubble")
 
-        thumbs.tap()
+        // Tapping your own chip again turns it off.
+        chip.tap()
         XCTAssertTrue(chip.waitForNonExistence(timeout: 5), "The reaction chip stayed after it was removed")
     }
 
-    func testMockSpotCallJoinAndReady() {
+    func testMockSpotCallJoinIsOneTapWithNoReadyStep() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "spotCall"]
         app.launch()
@@ -129,14 +144,39 @@ final class AccessibilityUITests: XCTestCase {
         reveal(join, in: app)
         join.tap()
 
-        let ready = app.buttons["spot-ready"]
-        XCTAssertTrue(ready.waitForExistence(timeout: 5), "Ready was not on the spot card after joining")
-        XCTAssertEqual(ready.label, "Ready, off")
-        ready.tap()
-        XCTAssertEqual(ready.label, "Ready, on")
-        ready.tap()
-        XCTAssertEqual(ready.label, "Ready, off")
+        let seat = app.descendants(matching: .any)["spot-seat-You"]
+        XCTAssertTrue(seat.waitForExistence(timeout: 5), "Joining did not seat the viewer")
+        XCTAssertEqual(seat.label, "You, In")
+        XCTAssertTrue(waitForLabel(join, "isEnabled == false"), "Join stayed enabled after joining")
+        XCTAssertFalse(app.buttons["spot-ready"].exists, "There is no Ready step any more")
+        XCTAssertFalse(app.buttons["active-call-ready"].exists, "The pinned bar still offers Ready")
+        XCTAssertTrue(app.buttons["active-call-leave"].waitForExistence(timeout: 5), "The pinned bar did not offer Leave after joining")
         assertListClearsComposer(app)
+    }
+
+    func testGatedSpotJoinMarksReadyAndLockWaitsForTheRest() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallNearlyFull"]
+        app.launch()
+
+        let waiting = app.descendants(matching: .any)["spot-lock-waiting"]
+        XCTAssertTrue(waiting.waitForExistence(timeout: 15), "The card did not say who Lock waits for")
+        XCTAssertEqual(waiting.label, "Lock waits for Quinn and Avery to join.")
+        let quinn = app.descendants(matching: .any)["spot-seat-Quinn"]
+        XCTAssertTrue(quinn.exists, "Quinn's seat was not on the card")
+        XCTAssertEqual(quinn.label, "Quinn, Hasn't joined")
+        XCTAssertFalse(app.buttons["spot-lock"].exists, "Lock showed before everyone who is in had joined")
+        let join = app.buttons["spot-join"]
+        XCTAssertTrue(join.waitForExistence(timeout: 5))
+        reveal(join, in: app)
+        join.tap()
+
+        let seat = app.descendants(matching: .any)["spot-seat-You"]
+        XCTAssertTrue(seat.waitForExistence(timeout: 5), "Joining did not seat the viewer")
+        XCTAssertEqual(seat.label, "You, In", "Join on a gated server has to set ready in the same tap")
+        XCTAssertEqual(waiting.label, "Lock waits for Quinn and Avery to join.", "The viewer's own join should not be waited on")
+        XCTAssertFalse(app.buttons["spot-ready"].exists, "There is no Ready step any more")
+        XCTAssertFalse(app.buttons["spot-lock"].exists, "Lock must still follow the server's rule")
     }
 
     func testExpiredSpotStillOffersCallSpots() {
@@ -689,6 +729,92 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(app.buttons["save-profile"].exists, "Save profile was not in the squad panel")
     }
 
+    // MARK: Profile games editor (squad panel)
+
+    private func openProfilePanel(_ extra: [String] = []) -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite"] + extra
+        app.launch()
+        let title = app.descendants(matching: .any)["squad-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "The squad header was missing")
+        title.tap()
+        XCTAssertTrue(app.textFields["profile-name"].waitForExistence(timeout: 5), "The profile was not in the squad panel")
+        return app
+    }
+
+    /// Swipes the panel up until the element can be tapped.
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication, _ message: String) {
+        XCTAssertTrue(element.waitForExistence(timeout: 5), message)
+        var tries = 0
+        while !element.isHittable, tries < 6 {
+            app.swipeUp()
+            tries += 1
+        }
+        XCTAssertTrue(element.isHittable, message + " (not hittable)")
+    }
+
+    func testProfilePanelAddsRemovesAndPicksTheDefaultGame() {
+        let app = openProfilePanel()
+        let empty = element("profile-games-empty", in: app)
+        reveal(empty, in: app, "An empty games list did not say so")
+        XCTAssertEqual(empty.label, "No games yet. Add the ones you play.")
+
+        let fortnite = app.buttons["profile-suggest-Fortnite"]
+        reveal(fortnite, in: app, "Suggestions were missing")
+        XCTAssertEqual(fortnite.label, "Add Fortnite")
+        fortnite.tap()
+        let apex = app.buttons["profile-suggest-Apex Legends"]
+        reveal(apex, in: app, "Apex Legends was not suggested")
+        apex.tap()
+        XCTAssertFalse(app.buttons["profile-suggest-Fortnite"].exists, "An added game is still suggested")
+        XCTAssertFalse(empty.exists, "The empty line stayed after adding")
+
+        let entry = app.textFields["profile-add-game"]
+        reveal(entry, in: app, "The add-a-game field was missing")
+        entry.tap()
+        XCTAssertTrue(app.buttons["profile-add-game-button"].exists, "The Add button was missing")
+        entry.typeText("Halo Infinite\n")
+        XCTAssertTrue(element("profile-games-row-Halo Infinite", in: app).waitForExistence(timeout: 5), "A typed game was not added")
+
+        let makeDefault = app.buttons["profile-default-Fortnite"]
+        reveal(makeDefault, in: app, "Make default was missing")
+        XCTAssertEqual(makeDefault.label, "Make Fortnite the default game")
+        makeDefault.tap()
+        XCTAssertTrue(app.staticTexts["Fortnite, default game"].waitForExistence(timeout: 5), "The default was not marked for VoiceOver")
+        XCTAssertFalse(app.buttons["profile-default-Fortnite"].exists, "The default still offers Make default")
+        XCTAssertEqual(app.textFields["profile-game"].value as? String, "Fortnite", "The default game field did not follow")
+
+        let removeApex = app.buttons["profile-remove-Apex Legends"]
+        reveal(removeApex, in: app, "Remove was missing")
+        XCTAssertEqual(removeApex.label, "Remove Apex Legends")
+        removeApex.tap()
+        XCTAssertFalse(element("profile-games-row-Apex Legends", in: app).waitForExistence(timeout: 2), "A removed game stayed")
+
+        let save = app.buttons["save-profile"]
+        reveal(save, in: app, "Save profile was missing")
+        save.tap()
+        let saved = element("profile-saved", in: app)
+        XCTAssertTrue(saved.waitForExistence(timeout: 5), "Saving did not confirm")
+        XCTAssertTrue(saved.label.hasPrefix("Profile saved."), "Unexpected save line: \(saved.label)")
+        XCTAssertFalse(element("profile-games-error", in: app).exists, "Saving showed an error")
+        XCTAssertTrue(element("profile-games-row-Fortnite", in: app).exists)
+        XCTAssertTrue(element("profile-games-row-Halo Infinite", in: app).exists)
+        XCTAssertFalse(element("profile-games-row-Apex Legends", in: app).exists)
+    }
+
+    func testProfileGamesSayWhyWhenTheyCantLoadAndOfferTryAgain() {
+        let app = openProfilePanel(["-SQ8NetworkFault", "offline"])
+        let failed = element("profile-games-load-error", in: app)
+        reveal(failed, in: app, "A failed games read did not say so")
+        XCTAssertEqual(failed.label, "You're offline. Your games will load when you're back online.")
+        XCTAssertFalse(element("profile-games-empty", in: app).exists, "A failed read claimed there are no games")
+        XCTAssertFalse(app.textFields["profile-add-game"].exists, "Editing was offered before the list loaded")
+        let retry = app.buttons["profile-games-retry"]
+        reveal(retry, in: app, "Try again was missing")
+        retry.tap()
+        XCTAssertTrue(failed.waitForExistence(timeout: 5), "Still offline, the error should stay")
+    }
+
     func testPresenceStripIsPresentAndHittable() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
@@ -717,10 +843,11 @@ final class AccessibilityUITests: XCTestCase {
 
         let alex = app.buttons["presence-Alex"]
         XCTAssertTrue(alex.waitForExistence(timeout: 15), "Alex was not in the presence strip")
-        XCTAssertTrue(alex.label.contains("ready"), "A Ready seat did not show as ready: \(alex.label)")
+        XCTAssertTrue(alex.label.contains("in the spot call"), "A joined seat did not show as in the spot: \(alex.label)")
+        XCTAssertFalse(alex.label.contains("ready"), "Presence still shows a separate Ready state: \(alex.label)")
         let sam = app.buttons["presence-Sam"]
         XCTAssertTrue(sam.exists, "Sam was not in the presence strip")
-        XCTAssertTrue(sam.label.contains("in the spot call"), "A seat that is not Ready did not show as in the spot: \(sam.label)")
+        XCTAssertTrue(sam.label.contains("in the spot call"), "A joined seat did not show as in the spot: \(sam.label)")
     }
 
     func testVoicePillStaysAMock() {
@@ -1053,7 +1180,7 @@ final class AccessibilityUITests: XCTestCase {
         }
         XCTAssertTrue(call.isHittable, "The sheet's Call spots was not reachable at AX5")
         call.tap()
-        // The caller's bar offers Lock (mock calls have no Ready gate) or Cancel.
+        // The caller's bar offers Lock (mock calls have no lock gate) or Cancel.
         let lock = app.buttons["active-call-lock"]
         let cancel = app.buttons["active-call-cancel"]
         XCTAssertTrue(lock.waitForExistence(timeout: 5) || cancel.exists, "The pinned bar's action was missing at AX5")
@@ -1273,21 +1400,37 @@ final class AccessibilityUITests: XCTestCase {
             XCTFail("No message list to scroll", file: file, line: line)
             return false
         }
+        // XCUI round trips, not drags, are what this costs: each one waits for the app
+        // to idle and snapshots its tree on the main thread. So the list's frame is
+        // read once (it doesn't move while the thread scrolls under it; a keyboard
+        // the drag dismisses only makes the first reading the stricter one), and the
+        // target is read once per drag, as one snapshot that answers both "is it in
+        // the tree" and "where". isHittable, a third round trip, is asked only once
+        // that snapshot puts it on screen. Was exists + frame + list.frame per drag.
+        let visible = list.frame
         var blindDrags = 0
         for _ in 0..<maxDrags {
             var towardOlder = blindDrags < maxDrags / 3
-            if target.exists {
-                if target.isHittable { return true }
-                let frame = target.frame
-                if !frame.isEmpty { towardOlder = frame.midY < list.frame.midY }
+            if let frame = try? target.snapshot().frame {
+                // Ask isHittable only once the element is on screen in the list: on a lazy
+                // row that exists offscreen, XCUI fails the test outright ("Activation point
+                // invalid") instead of returning false.
+                if onScreen(frame, in: visible), target.isHittable { return true }
+                if !frame.isEmpty { towardOlder = frame.midY < visible.midY }
             } else {
                 blindDrags += 1
             }
             dragChat(list, towardOlder: towardOlder)
         }
-        let found = target.exists && target.isHittable
+        let found = (try? target.snapshot().frame).map { onScreen($0, in: list.frame) } == true && target.isHittable
         XCTAssertTrue(found, "Couldn't scroll to \(target) in \(maxDrags) drags", file: file, line: line)
         return found
+    }
+
+    /// The element has a real frame whose centre is inside the visible list.
+    private func onScreen(_ frame: CGRect, in visible: CGRect) -> Bool {
+        guard !frame.isEmpty, frame.width > 0, frame.height > 0 else { return false }
+        return visible.contains(CGPoint(x: frame.midX, y: frame.midY))
     }
 
     /// A third of the list per drag, slow so there's no fling past lazy rows. Pressed
@@ -1300,8 +1443,24 @@ final class AccessibilityUITests: XCTestCase {
     }
 
     /// The message bubble inside a row: the row's first button.
-    private func bubble(_ rowIdentifier: String, in app: XCUIApplication) -> XCUIElement {
-        element(rowIdentifier, in: app).buttons.element(boundBy: 0)
+    /// The id part of a row identifier ("message-row-<token>").
+    private func token(_ rowIdentifier: String) -> String {
+        String(rowIdentifier.dropFirst("message-row-".count))
+    }
+
+    /// The bubble itself, by its own identifier (`chat.bubble.<token>.start` or
+    /// `.continues`), so frames are the colored shape and not the full-width row.
+    private func bubble(_ rowIdentifier: String, in container: XCUIElement) -> XCUIElement {
+        container.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "chat.bubble.\(token(rowIdentifier)).")).firstMatch
+    }
+
+    private func bubbleIdentifier(_ rowIdentifier: String, startsGroup: Bool) -> String {
+        "chat.bubble.\(token(rowIdentifier)).\(startsGroup ? "start" : "continues")"
+    }
+
+    /// The row of reaction chips under a message.
+    private func reactions(_ rowIdentifier: String, in app: XCUIApplication) -> XCUIElement {
+        element("chat.reactions.\(token(rowIdentifier))", in: app)
     }
 
     private func waitForLabel(_ target: XCUIElement, _ predicate: String, timeout: TimeInterval = 5) -> Bool {
@@ -1315,32 +1474,61 @@ final class AccessibilityUITests: XCTestCase {
     func testThreadGroupsBySenderUnderDaySeparators() {
         let app = launchChat("chatPolish")
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15), "The seeded thread didn't load")
-        let days = app.staticTexts.matching(identifier: "day-separator")
-        let today = days.matching(NSPredicate(format: "label == 'Today'")).firstMatch
+        // Every query is scoped to the message list and resolves one element by
+        // identifier (plus label) with firstMatch, so no step walks the whole tree.
+        let list = app.scrollViews["message-list"]
+        XCTAssertTrue(list.waitForExistence(timeout: 5), "No message list")
+        let today = daySeparator("Today", in: list)
         guard scrollChat(to: today, in: app) else { return }
 
-        let first = bubble(Polish.question, in: app)
-        guard scrollChat(to: first, in: app) else { return }
-        XCTAssertEqual(first.identifier, "bubble-group-start", "Alex's first line should open a group")
-        XCTAssertTrue(first.label.hasPrefix("Alex, Who's on tonight?, "), first.label)
+        // Each bubble is read as one snapshot (identifier, label and frame in one
+        // round trip) right after it's on screen, and the order checks use those
+        // readings instead of querying again.
+        let first = bubble(Polish.question, in: list)
+        guard scrollChat(to: first, in: app), let firstSeen = seen(first) else { return }
+        XCTAssertEqual(firstSeen.identifier, bubbleIdentifier(Polish.question, startsGroup: true), "Alex's first line should open a group")
+        XCTAssertTrue(firstSeen.label.hasPrefix("Alex, Who's on tonight?, "), firstSeen.label)
 
-        let second = bubble(Polish.alexSecond, in: app)
-        guard scrollChat(to: second, in: app) else { return }
-        XCTAssertEqual(second.identifier, "bubble-group-continues", "Alex's second line should continue his group")
-        XCTAssertTrue(second.label.hasPrefix("Alex, I can do 9, "), second.label)
+        let second = bubble(Polish.alexSecond, in: list)
+        guard scrollChat(to: second, in: app), let secondSeen = seen(second) else { return }
+        XCTAssertEqual(secondSeen.identifier, bubbleIdentifier(Polish.alexSecond, startsGroup: false), "Alex's second line should continue his group")
+        XCTAssertTrue(secondSeen.label.hasPrefix("Alex, I can do 9, "), secondSeen.label)
 
-        let mine = bubble(Polish.mineFirst, in: app)
-        guard scrollChat(to: mine, in: app) else { return }
-        XCTAssertEqual(mine.identifier, "bubble-group-start", "A new sender should open a new group")
-        if first.exists && second.exists {
-            XCTAssertLessThan(first.frame.minY, second.frame.minY, "Alex's lines are out of order")
+        let mine = bubble(Polish.mineFirst, in: list)
+        guard scrollChat(to: mine, in: app), let mineSeen = seen(mine) else { return }
+        XCTAssertEqual(mineSeen.identifier, bubbleIdentifier(Polish.mineFirst, startsGroup: true), "A new sender should open a new group")
+        // Both of Alex's lines in one reading, so the comparison is from one layout.
+        if let firstNow = read(first), let secondNow = read(second) {
+            XCTAssertLessThan(firstNow.frame.minY, secondNow.frame.minY, "Alex's lines are out of order")
         }
 
-        let yesterday = days.matching(NSPredicate(format: "label == 'Yesterday'")).firstMatch
-        guard scrollChat(to: yesterday, in: app) else { return }
-        if today.exists {
-            XCTAssertLessThanOrEqual(yesterday.frame.maxY, today.frame.minY, "Yesterday should sit above Today")
+        let yesterday = daySeparator("Yesterday", in: list)
+        guard scrollChat(to: yesterday, in: app), let yesterdaySeen = seen(yesterday) else { return }
+        if let todayNow = read(today) {
+            XCTAssertLessThanOrEqual(yesterdaySeen.frame.maxY, todayNow.frame.minY, "Yesterday should sit above Today")
         }
+    }
+
+    /// One round trip for an element's identifier, label and frame; nil when it
+    /// isn't in the tree (the same answer `exists` gives).
+    private func read(_ element: XCUIElement) -> (identifier: String, label: String, frame: CGRect)? {
+        guard let snapshot = try? element.snapshot() else { return nil }
+        return (snapshot.identifier, snapshot.label, snapshot.frame)
+    }
+
+    /// `read`, for an element the test just scrolled to: gone by now is a failure,
+    /// as reading `identifier` off a missing element was.
+    private func seen(_ element: XCUIElement, file: StaticString = #filePath, line: UInt = #line) -> (identifier: String, label: String, frame: CGRect)? {
+        guard let reading = read(element) else {
+            XCTFail("\(element) left the tree right after scrolling to it", file: file, line: line)
+            return nil
+        }
+        return reading
+    }
+
+    /// One day separator in the list, by identifier and label in a single predicate.
+    private func daySeparator(_ label: String, in list: XCUIElement) -> XCUIElement {
+        list.staticTexts.matching(NSPredicate(format: "identifier == 'day-separator' AND label == %@", label)).firstMatch
     }
 
     func testOnlyTheLatestMessageShowsSeenBy() {
@@ -1397,15 +1585,91 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
         let chip = app.buttons[Polish.thumbs]
         guard scrollChat(to: chip, in: app) else { return }
-        XCTAssertEqual(chip.label, "Thumbs up, 2 reactions, including yours")
+        XCTAssertEqual(chip.label, "👍 2, you reacted")
+        XCTAssertTrue(chip.isSelected, "Your reaction should be highlighted")
         assertHitSize(chip.frame.height, "Chip is too short to hit: \(chip.frame)")
         assertHitSize(chip.frame.width, "Chip is too narrow to hit: \(chip.frame)")
         chip.tap()
-        XCTAssertTrue(waitForLabel(chip, "label == 'Thumbs up, 1 reaction'"), "Tapping your chip didn't take yours back: \(chip.label)")
+        XCTAssertTrue(waitForLabel(chip, "label == '👍 1'"), "Tapping your chip didn't take yours back: \(chip.label)")
+        XCTAssertFalse(chip.isSelected, "The chip still read as yours after you took it back")
         chip.tap()
-        XCTAssertTrue(waitForLabel(chip, "label == 'Thumbs up, 2 reactions, including yours'"), "Tapping again didn't add yours: \(chip.label)")
+        XCTAssertTrue(waitForLabel(chip, "label == '👍 2, you reacted'"), "Tapping again didn't add yours: \(chip.label)")
         let fire = app.buttons["reaction-chip-exclamationmark"]
-        XCTAssertEqual(fire.label, "Emphasis, 1 reaction")
+        XCTAssertEqual(fire.label, "🔥 1")
+        XCTAssertFalse(fire.isSelected)
+    }
+
+    /// Bubble sides: yours on the right in the accent color, others on the left
+    /// with their name once per run (read from the group identifiers).
+    func testOwnMessagesSitRightAndOthersLeftWithTheirName() {
+        let app = launchChat("chatPolish")
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15), "The seeded thread didn't load")
+
+        let alex = bubble(Polish.question, in: app)
+        guard scrollChat(to: alex, in: app) else { return }
+        let alexRow = element(Polish.question, in: app).frame
+        XCTAssertTrue(alex.label.hasPrefix("Alex, "), alex.label)
+        XCTAssertEqual(alex.identifier, bubbleIdentifier(Polish.question, startsGroup: true), "Alex's run should open with his name")
+        XCTAssertLessThan(alex.frame.width, alexRow.width - 40, "Measured the row, not the bubble: bubble \(alex.frame), row \(alexRow)")
+        // Avatar column (28) plus spacing (8) is all that sits left of his bubble.
+        XCTAssertLessThanOrEqual(alex.frame.minX, alexRow.minX + 40, "Alex's bubble should sit at the left of the row: bubble \(alex.frame), row \(alexRow)")
+        XCTAssertLessThanOrEqual(alex.frame.maxX, alexRow.maxX - 40, "Alex's bubble should leave room on the right: bubble \(alex.frame), row \(alexRow)")
+
+        let alexAgain = bubble(Polish.alexSecond, in: app)
+        guard scrollChat(to: alexAgain, in: app) else { return }
+        XCTAssertEqual(alexAgain.identifier, bubbleIdentifier(Polish.alexSecond, startsGroup: false), "Alex's name should show once per run")
+        XCTAssertLessThanOrEqual(abs(alexAgain.frame.minX - alex.frame.minX), 1, "Alex's run should line up on the left")
+
+        let mine = bubble(Polish.mineFirst, in: app)
+        guard scrollChat(to: mine, in: app) else { return }
+        let mineRow = element(Polish.mineFirst, in: app).frame
+        XCTAssertTrue(mine.label.hasPrefix("You, "), mine.label)
+        XCTAssertLessThan(mine.frame.width, mineRow.width - 40, "Measured the row, not the bubble: bubble \(mine.frame), row \(mineRow)")
+        XCTAssertGreaterThanOrEqual(mine.frame.maxX, mineRow.maxX - 2, "Your bubble should hug the row's right edge: bubble \(mine.frame), row \(mineRow)")
+        XCTAssertGreaterThanOrEqual(mine.frame.minX, mineRow.minX + 40, "Your bubble should leave room on the left: bubble \(mine.frame), row \(mineRow)")
+        XCTAssertGreaterThan(mine.frame.maxX, alex.frame.maxX + 20, "Yours and Alex's are on the same side")
+    }
+
+    /// A reaction on your own message sits under it on the right, inside the
+    /// screen at AX5, and the + button opens the emoji row there too.
+    func testReactionsSitUnderTheBubbleOnItsSideAtLargeText() {
+        let app = launchChat("chatPolish", largeText: true)
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
+        let width = app.windows.firstMatch.frame.width
+        let mine = bubble(Polish.mineFirst, in: app)
+        guard scrollChat(to: mine, in: app) else { return }
+        mine.press(forDuration: 1.2)
+        let menuThumbs = app.buttons["Thumbs up"]
+        XCTAssertTrue(menuThumbs.waitForExistence(timeout: 5), "Long-press had no reactions")
+        menuThumbs.tap()
+
+        let chips = reactions(Polish.mineFirst, in: app)
+        let chip = chips.buttons["reaction-chip-hand.thumbsup.fill"]
+        guard scrollChat(to: chip, in: app) else { return }
+        XCTAssertEqual(chip.label, "👍 1, you reacted")
+        XCTAssertTrue(chip.isSelected)
+        let rowFrame = element(Polish.mineFirst, in: app).frame
+        XCTAssertLessThanOrEqual(abs(chips.frame.maxX - mine.frame.maxX), 2, "Your chips should sit under your bubble on the right: chips \(chips.frame), bubble \(mine.frame)")
+        XCTAssertGreaterThanOrEqual(mine.frame.maxX, rowFrame.maxX - 2, "Your bubble should hug the row's right edge at AX5: bubble \(mine.frame), row \(rowFrame)")
+        XCTAssertGreaterThanOrEqual(chip.frame.minX, 0, "The chip is clipped on the left at AX5: \(chip.frame)")
+        XCTAssertLessThanOrEqual(chip.frame.maxX, width + 1, "The chip runs off screen at AX5: \(chip.frame)")
+        XCTAssertGreaterThan(chip.frame.minY, mine.frame.maxY - 1, "The chip overlaps the bubble: chip \(chip.frame), bubble \(mine.frame)")
+        assertHitSize(chip.frame.height)
+
+        let add = chips.buttons["reaction-add"]
+        XCTAssertTrue(add.exists, "No + to open the emoji row")
+        XCTAssertEqual(add.label, "Add a reaction")
+        add.tap()
+        let picker = app.descendants(matching: .any)["reaction-picker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 5), "+ did not open the emoji row")
+        let selected = picker.buttons["tapback-hand.thumbsup.fill"]
+        XCTAssertTrue(selected.isSelected, "The row should show your current reaction")
+        for option in picker.buttons.allElementsBoundByIndex {
+            XCTAssertGreaterThanOrEqual(option.frame.minX, 0, "An emoji is clipped at AX5: \(option.frame)")
+            XCTAssertLessThanOrEqual(option.frame.maxX, width + 1, "An emoji runs off screen at AX5: \(option.frame)")
+        }
+        selected.tap()
+        XCTAssertTrue(chip.waitForNonExistence(timeout: 5), "Picking your own reaction again should take it back")
     }
 
     func testLongPressOffersReactReplyAndCopy() {
@@ -1495,6 +1759,41 @@ final class AccessibilityUITests: XCTestCase {
         let sent = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "You, once, "))
         XCTAssertEqual(sent.count, 1, "Retry made a second bubble")
         XCTAssertFalse(element("unread-divider", in: app).exists, "Sending should clear the unread divider")
+    }
+
+    /// The phone repro without Airplane Mode: DEBUG -SQ8NetworkFault turns the
+    /// network off and on. Offline send: Not delivered and Reconnecting…; back
+    /// online, Retry: the banner goes and there's one bubble.
+    func testBannerClearsAfterRetryOnceTheNetworkIsBack() {
+        let app = launchChat("chatPolish", extra: ["-SQ8NetworkFault"])
+        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
+        let title = element("squad-title", in: app)
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        // Armed mock chat simulates a connected link (no "Live chat is down") once it starts.
+        XCTAssertTrue(waitForLabel(title, "value == nil OR value == ''"), "No banner before going offline: \(title.value ?? "nil")")
+        let network = app.buttons["debug-network-fault"]
+        XCTAssertTrue(network.waitForExistence(timeout: 5), "The DEBUG network switch is missing")
+        XCTAssertEqual(network.value as? String, "On")
+        network.tap()
+        XCTAssertTrue(waitForLabel(network, "value == 'Off'"), "The network didn't go off")
+
+        let field = app.textFields["Message"]
+        field.tap()
+        field.typeText("offline once")
+        app.buttons["send-message"].tap()
+        XCTAssertTrue(caption("Not delivered", in: app).waitForExistence(timeout: 5), "The offline send didn't say Not delivered")
+        XCTAssertTrue(waitForLabel(title, "value == 'Reconnecting…'"), "The header didn't say Reconnecting…: \(title.value ?? "nil")")
+
+        network.tap()
+        XCTAssertTrue(waitForLabel(network, "value == 'On'"), "The network didn't come back on")
+        let retry = app.buttons["retry-send"]
+        XCTAssertTrue(retry.waitForExistence(timeout: 5))
+        retry.tap()
+        XCTAssertTrue(caption("Sent", in: app).waitForExistence(timeout: 5), "The retried message didn't say Sent")
+        XCTAssertFalse(caption("Not delivered", in: app).exists)
+        XCTAssertTrue(waitForLabel(title, "value == nil OR value == ''"), "Reconnecting… stayed after the retry went through: \(title.value ?? "nil")")
+        let sent = app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "You, offline once, "))
+        XCTAssertEqual(sent.count, 1, "Retry made a second bubble")
     }
 
     func testEmptySquadSaysSo() {

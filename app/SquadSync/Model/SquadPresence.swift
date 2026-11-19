@@ -11,9 +11,7 @@ import Foundation
 enum SquadPresenceStatus: Equatable, CaseIterable {
     /// Seated on a locked spot call: the squad locked in for this game.
     case locked
-    /// Seated on the open spot call and marked Ready.
-    case ready
-    /// Seated on the open spot call, not Ready yet.
+    /// Seated on the open spot call. Joining means ready, so there is no separate Ready state.
     case inSpot
     /// Checked in as on now, inside the 60-minute window.
     case availableNow
@@ -32,7 +30,6 @@ enum SquadPresenceStatus: Equatable, CaseIterable {
     var rank: Int {
         switch self {
         case .locked: 0
-        case .ready: 1
         case .inSpot: 2
         case .availableNow: 3
         case .later: 4
@@ -47,7 +44,6 @@ enum SquadPresenceStatus: Equatable, CaseIterable {
     var shortLabel: String {
         switch self {
         case .locked: "Locked in"
-        case .ready: "Ready"
         case .inSpot: "In spot"
         case .availableNow: "On now"
         case .later: "Later"
@@ -61,7 +57,6 @@ enum SquadPresenceStatus: Equatable, CaseIterable {
     var spoken: String {
         switch self {
         case .locked: "locked in"
-        case .ready: "ready"
         case .inSpot: "in the spot call"
         case .availableNow: "on now, from their check-in"
         case .later: "on later, from their check-in"
@@ -131,7 +126,7 @@ enum SquadPresence {
         if let spot, let seat = spot.seat(for: memberId), seat.isIn {
             if spot.status == .locked { return .locked }
             if spot.status == .open, spot.closedAt == nil, !SpotCallRules.showsExpired(spot, now: now) {
-                return seat.ready ? .ready : .inSpot
+                return .inSpot
             }
         }
         let isViewer = viewerId != nil && viewerId == memberId
@@ -150,7 +145,7 @@ enum SquadPresence {
         }
     }
 
-    /// Strip order: status rank (locked, ready, in spot, you, unknown), then the
+    /// Strip order: status rank (locked, in spot, you, unknown), then the
     /// owner, then name (case-insensitive), then id so ties never reshuffle.
     static func entries(
         members: [SquadMemberRecord],
@@ -164,7 +159,7 @@ enum SquadPresence {
             // nil map: the server has no check-ins. A map: a missing member hasn't checked in.
             let checkIn = availability.map { $0[member.id] ?? .notCheckedIn }
             let state = Self.status(memberId: member.id, viewerId: viewerId, spot: spot, now: now, availability: checkIn)
-            let seated = state == .locked || state == .ready || state == .inSpot
+            let seated = state == .locked || state == .inSpot
             let fallback = member.defaultGame.trimmingCharacters(in: .whitespacesAndNewlines)
             let game: String?
             let source: SquadPresenceGameSource?
@@ -210,7 +205,7 @@ enum SquadPresence {
 
     /// Members who are on: checked in as on now, or seated on the spot call.
     static func onCount(_ entries: [SquadPresenceEntry]) -> Int {
-        entries.filter { [.availableNow, .ready, .inSpot, .locked].contains($0.status) }.count
+        entries.filter { [.availableNow, .inSpot, .locked].contains($0.status) }.count
     }
 
     /// The strip's entry to the who's-in sheet: a count when anyone is on.

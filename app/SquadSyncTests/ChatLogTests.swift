@@ -555,6 +555,22 @@ final class SquadNameTests: XCTestCase {
         XCTAssertEqual(ConnectionRecovery.status(afterProof: "Renamed."), "Renamed.")
     }
 
+    func testArmedMockLinkIsSimulatedAndClearsOnlyAfterProof() {
+        XCTAssertEqual(SimulatedLink.start(offline: false), .connected, "Armed mock chat must not say Live chat is down")
+        XCTAssertEqual(SimulatedLink.start(offline: true), .reconnecting)
+        var link = SimulatedLink.start(offline: false)
+        XCTAssertNil(ConnectionRecovery.header(resumeNote: "", link: link))
+        link = SimulatedLink.faultChanged(offline: true, current: link)
+        XCTAssertEqual(ConnectionRecovery.header(resumeNote: "", link: link), "Reconnecting…")
+        link = SimulatedLink.faultChanged(offline: false, current: link)
+        XCTAssertEqual(link, .reconnecting, "Back online is not proof; the banner waits for a round trip")
+        XCTAssertEqual(ConnectionRecovery.header(resumeNote: "", link: link, reconnecting: true), "Reconnecting…")
+        link = SimulatedLink.afterProof(link)
+        XCTAssertEqual(link, .connected)
+        XCTAssertNil(ConnectionRecovery.header(resumeNote: "", link: link, reconnecting: false), "A proven retry clears the banner")
+        XCTAssertEqual(SimulatedLink.afterProof(.down), .down, "Proof only ends reconnecting")
+    }
+
     func testAFailedRequestShowsReconnectingUntilAProvenRoundTrip() {
         // Offline send: the request failed for want of a connection, so the
         // header says so even while the socket hasn't noticed yet.

@@ -1404,7 +1404,10 @@ final class AccessibilityUITests: XCTestCase {
         for _ in 0..<maxDrags {
             var towardOlder = blindDrags < maxDrags / 3
             if target.exists {
-                if target.isHittable { return true }
+                // Ask isHittable only once the element is on screen in the list: on a lazy
+                // row that exists offscreen, XCUI fails the test outright ("Activation point
+                // invalid") instead of returning false.
+                if onScreen(target, in: list), target.isHittable { return true }
                 let frame = target.frame
                 if !frame.isEmpty { towardOlder = frame.midY < list.frame.midY }
             } else {
@@ -1412,9 +1415,16 @@ final class AccessibilityUITests: XCTestCase {
             }
             dragChat(list, towardOlder: towardOlder)
         }
-        let found = target.exists && target.isHittable
+        let found = target.exists && onScreen(target, in: list) && target.isHittable
         XCTAssertTrue(found, "Couldn't scroll to \(target) in \(maxDrags) drags", file: file, line: line)
         return found
+    }
+
+    /// The element has a real frame whose centre is inside the visible list.
+    private func onScreen(_ element: XCUIElement, in list: XCUIElement) -> Bool {
+        let frame = element.frame
+        guard !frame.isEmpty, frame.width > 0, frame.height > 0 else { return false }
+        return list.frame.contains(CGPoint(x: frame.midX, y: frame.midY))
     }
 
     /// A third of the list per drag, slow so there's no fling past lazy rows. Pressed
@@ -1724,7 +1734,8 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
         let title = element("squad-title", in: app)
         XCTAssertTrue(title.waitForExistence(timeout: 5))
-        XCTAssertEqual(title.value as? String ?? "", "", "No banner before going offline")
+        // Armed mock chat simulates a connected link (no "Live chat is down") once it starts.
+        XCTAssertTrue(waitForLabel(title, "value == nil OR value == ''"), "No banner before going offline: \(title.value ?? "nil")")
         let network = app.buttons["debug-network-fault"]
         XCTAssertTrue(network.waitForExistence(timeout: 5), "The DEBUG network switch is missing")
         XCTAssertEqual(network.value as? String, "On")

@@ -1480,6 +1480,7 @@ final class LiveSessionModel {
     /// Any round-trip that worked: clears "Reconnecting…" wherever it is shown.
     func connectionProven() {
         reconnecting = false
+        if simulatesLink { link = SimulatedLink.afterProof(link) }
         status = ConnectionRecovery.status(afterProof: status)
         presenceNote = ConnectionRecovery.resumeNote(afterProof: presenceNote)
     }
@@ -1824,12 +1825,24 @@ final class LiveSessionModel {
         #endif
     }
 
+    /// Mock chat with the DEBUG switch armed: the link is simulated (SimulatedLink).
+    private var simulatesLink: Bool { !usesLiveSocket && networkFaultArmed }
+
+    private var networkFaultIsOffline: Bool {
+        #if DEBUG
+        return NetworkFault.shared.isOffline
+        #else
+        return false
+        #endif
+    }
+
     #if DEBUG
     var networkFaultOffline = NetworkFault.shared.isOffline
 
     func toggleNetworkFault() {
         networkFaultOffline.toggle()
         NetworkFault.shared.setOffline(networkFaultOffline)
+        if simulatesLink { link = SimulatedLink.faultChanged(offline: networkFaultOffline, current: link) }
     }
     #endif
     var showsLiveGaps: Bool { mockSpots == nil }
@@ -1842,7 +1855,7 @@ final class LiveSessionModel {
         poll?.cancel()
         guard let squad else { return }
         guard usesSocket else {
-            link = .down
+            link = simulatesLink ? SimulatedLink.start(offline: networkFaultIsOffline) : .down
             beginPoll(session)
             return
         }
@@ -3545,29 +3558,35 @@ struct LiveSessionView: View {
                 if let reply = bubble.reply {
                     ChatReplyQuoteView(quote: reply)
                 }
-                Button {
-                    model.selectedMessage = entry.id
-                } label: {
-                    Text(entry.body)
-                        .font(SQType.body)
-                        .foregroundStyle(bubbleInk(bubble))
-                        .multilineTextAlignment(.leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.horizontal, SQSpace.m)
-                        .padding(.vertical, SQSpace.s)
-                        .frame(minHeight: 44)
-                        .background(bubbleFill(bubble), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(ChatSpeech.bubble(bubble))
-                // Not spoken; lets UI tests read sender grouping without measuring gaps.
-                .accessibilityIdentifier(ChatSeed.bubbleIdentifier(for: entry.id, startsGroup: bubble.startsGroup))
-                .accessibilityActions {
-                    ForEach(actions, id: \.title) { action in
-                        Button(action.title) { run(action, on: entry.id) }
+                // The bubble shape itself is the accessibility element (a button), so
+                // its frame is the bubble, not the full-width row around it. A SwiftUI
+                // Button here reported the row's frame on device and simulator.
+                Text(entry.body)
+                    .font(SQType.body)
+                    .foregroundStyle(bubbleInk(bubble))
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, SQSpace.m)
+                    .padding(.vertical, SQSpace.s)
+                    .frame(minHeight: 44)
+                    .background(bubbleFill(bubble), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    // On the bubble, not the row: the long-press lifts just the bubble, and no
+                    // row-wide menu host wraps the bubble's accessibility element.
+                    .contextMenu { messageMenu(entry.id, actions: actions) }
+                    .onTapGesture { model.selectedMessage = entry.id }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityLabel(ChatSpeech.bubble(bubble))
+                    // Not spoken; lets UI tests read sender grouping without measuring gaps.
+                    .accessibilityIdentifier(ChatSeed.bubbleIdentifier(for: entry.id, startsGroup: bubble.startsGroup))
+                    .accessibilityAction { model.selectedMessage = entry.id }
+                    .accessibilityActions {
+                        ForEach(actions, id: \.title) { action in
+                            Button(action.title) { run(action, on: entry.id) }
+                        }
                     }
-                }
                 if !chipsForRow.isEmpty {
                     ChipFlow(spacing: SQSpace.xs, alignment: edge) {
                         ForEach(chipsForRow) { chip in
@@ -3644,22 +3663,24 @@ struct LiveSessionView: View {
         .onTapGesture {
             model.selectedMessage = entry.id
         }
-        .contextMenu {
-            if actions.contains(.react) {
-                Section {
-                    ForEach(Tapback.allCases) { reaction in
-                        Button(reaction.spoken) { Task { await model.tap(reaction, on: entry.id) } }
-                    }
+    }
+
+    @ViewBuilder
+    private func messageMenu(_ id: UUID, actions: [ChatAction]) -> some View {
+        if actions.contains(.react) {
+            Section {
+                ForEach(Tapback.allCases) { reaction in
+                    Button(reaction.spoken) { Task { await model.tap(reaction, on: id) } }
                 }
             }
-            Section {
-                if actions.contains(.reply) {
-                    Button { run(.reply, on: entry.id) } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
-                }
-                Button { run(.copy, on: entry.id) } label: { Label("Copy", systemImage: "doc.on.doc") }
-                if actions.contains(.retry) {
-                    Button { run(.retry, on: entry.id) } label: { Label("Retry sending", systemImage: "arrow.clockwise") }
-                }
+        }
+        Section {
+            if actions.contains(.reply) {
+                Button { run(.reply, on: id) } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
+            }
+            Button { run(.copy, on: id) } label: { Label("Copy", systemImage: "doc.on.doc") }
+            if actions.contains(.retry) {
+                Button { run(.retry, on: id) } label: { Label("Retry sending", systemImage: "arrow.clockwise") }
             }
         }
     }

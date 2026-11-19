@@ -514,3 +514,23 @@ enum InviteProblem: Error, Equatable {
         }
     }
 }
+
+/// DEBUG `-SQ8NetworkFault` on the mock backend. Mock chat has no socket, so its
+/// link used to sit at `.down` and the header said "Live chat is down" for good.
+/// With the switch armed the link is simulated like the live socket: connected
+/// while online, reconnecting once the fault is on, and connected again only after
+/// a proven round trip (a poll, send or retry that came back), as on the live path.
+enum SimulatedLink {
+    static func start(offline: Bool) -> RealtimeLink {
+        offline ? .reconnecting : .connected
+    }
+
+    /// Turning the fault on drops the link; turning it off waits for proof.
+    static func faultChanged(offline: Bool, current: RealtimeLink) -> RealtimeLink {
+        offline ? .reconnecting : current
+    }
+
+    static func afterProof(_ current: RealtimeLink) -> RealtimeLink {
+        current == .reconnecting ? .connected : current
+    }
+}

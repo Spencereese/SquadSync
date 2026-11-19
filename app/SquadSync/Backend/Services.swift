@@ -54,6 +54,9 @@ enum SessionFailurePolicy {
 struct BackendConfig: Equatable {
     var urlText: String
     var anonKey: String
+    /// Info.plist `SQ8SteamPresence`. Off until sq8-steam-presence is deployed
+    /// (that needs Spencer's yes); while off the app never calls it.
+    var steamPresence: Bool = false
 
     var url: URL? {
         let text = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -82,8 +85,16 @@ struct BackendConfig: Equatable {
     static func parse(_ info: [String: Any]) -> BackendConfig {
         BackendConfig(
             urlText: info["SupabaseURL"] as? String ?? "",
-            anonKey: info["SupabaseAnonKey"] as? String ?? ""
+            anonKey: info["SupabaseAnonKey"] as? String ?? "",
+            steamPresence: flag(info["SQ8SteamPresence"])
         )
+    }
+
+    /// A plist Boolean, or the strings YES / true / 1 an xcconfig substitution leaves.
+    static func flag(_ value: Any?) -> Bool {
+        if let bool = value as? Bool { return bool }
+        guard let text = (value as? String)?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() else { return false }
+        return ["yes", "true", "1"].contains(text)
     }
 
     static func fromBundle(_ bundle: Bundle = .main) -> BackendConfig {
@@ -319,10 +330,12 @@ protocol SquadService: AnyObject {
     func createSquad(ownerId: UUID, name: String) async throws -> SquadRecord
     /// Owner-only. The applied delete policy does not let a member remove their own row.
     func removeMember(squadId: UUID, userId: UUID) async throws
-    /// False until `sq8_leave_squad` exists. A missing function keeps the honest line.
+    /// No request: true unless a real call this session found `sq8_leave_squad`
+    /// missing (404 or PGRST202). A missing function keeps the honest line.
     func leaveAvailable() async -> Bool
     func leaveSquad(newOwner: UUID?) async throws
-    /// False until `sq8_rename_squad` exists. Only 404 and PGRST202 hide it.
+    /// No request: true unless a real call this session found `sq8_rename_squad`
+    /// missing. Only 404 and PGRST202 hide it.
     func renameAvailable() async -> Bool
     func renameSquad(squadId: UUID, name: String?) async throws
     /// False until `sq8_register_device_token` from 0012 exists.

@@ -263,14 +263,34 @@ final class SupabaseProfileService: ProfileService {
 
 final class SupabaseSquadService: SquadService {
     private let http: SupabaseHTTP
+    private let presence: FunctionPresence
 
     init(
         config: BackendConfig,
         accessToken: String,
         refresher: TokenRefreshing? = nil,
-        transport: HTTPTransport = URLSessionTransport.shared
+        transport: HTTPTransport = URLSessionTransport.shared,
+        presence: FunctionPresence = .shared
     ) {
         self.http = SupabaseHTTP(config: config, accessToken: accessToken, transport: transport, refresher: refresher)
+        self.presence = presence
+    }
+
+    /// One real POST to an RPC that may not be migrated yet. 404 / PGRST202
+    /// throws `.notSetUp(.squad)` and is remembered for the session.
+    private func callOptionalRPC(_ name: String, body: Data) async throws -> Data {
+        do {
+            return try await http.send(
+                path: "rest/v1/rpc/\(name)",
+                method: "POST",
+                body: body,
+                feature: .squad,
+                optional: true
+            )
+        } catch let failure as BackendFailure {
+            if case .notSetUp = failure { presence.markMissing(name) }
+            throw failure
+        }
     }
 
     func currentSquad(userId: UUID) async throws -> SquadRecord? {
@@ -332,42 +352,15 @@ final class SupabaseSquadService: SquadService {
     }
 
     func renameAvailable() async -> Bool {
-        do {
-            // GET names both arguments so PostgREST resolves sq8_rename_squad(uuid, text).
-            // It runs in a read-only transaction and fails on the lock. Only a missing
-            // function (404 or PGRST202) means rename is unavailable.
-            _ = try await http.send(
-                path: "rest/v1/rpc/sq8_rename_squad",
-                method: "GET",
-                query: [
-                    URLQueryItem(name: "squad", value: "00000000-0000-0000-0000-000000000000"),
-                    URLQueryItem(name: "new_name", value: "null")
-                ],
-                feature: .squad,
-                probe: true
-            )
-            return true
-        } catch let failure as BackendFailure {
-            if case .notSetUp = failure { return false }
-            if case .rejected(let message) = failure {
-                return LeaveProbe.available(status: 400, body: message)
-            }
-            return false
-        } catch {
-            return false
-        }
+        // No probe: sq8_rename_squad is volatile, so a GET only ever earned a 405.
+        !presence.isMissing(FunctionPresence.renameSquad)
     }
 
     func renameSquad(squadId: UUID, name: String?) async throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         let body = try encoder.encode(RenameBody(squad: squadId, newName: name))
-        let data = try await http.send(
-            path: "rest/v1/rpc/sq8_rename_squad",
-            method: "POST",
-            body: body,
-            feature: .squad
-        )
+        let data = try await callOptionalRPC(FunctionPresence.renameSquad, body: body)
         let payload = try JSONDecoder().decode(RenamePayload.self, from: data)
         guard payload.ok else {
             throw BackendFailure.rejected(RenameFailure.message(payload.error ?? "missing"))
@@ -419,38 +412,15 @@ final class SupabaseSquadService: SquadService {
     }
 
     func leaveAvailable() async -> Bool {
-        do {
-            // GET names new_owner so PostgREST resolves sq8_leave_squad(uuid).
-            // The function is volatile, so GET is refused and does not run it.
-            _ = try await http.send(
-                path: "rest/v1/rpc/sq8_leave_squad",
-                method: "GET",
-                query: [URLQueryItem(name: "new_owner", value: "null")],
-                feature: .squad,
-                probe: true
-            )
-            return true
-        } catch let failure as BackendFailure {
-            if case .notSetUp = failure { return false }
-            if case .rejected(let message) = failure {
-                return LeaveProbe.available(status: 400, body: message)
-            }
-            return false
-        } catch {
-            return false
-        }
+        // No probe: asking with a fake new_owner sent a "null" uuid and earned a 400.
+        !presence.isMissing(FunctionPresence.leaveSquad)
     }
 
     func leaveSquad(newOwner: UUID?) async throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         let body = try encoder.encode(LeaveBody(newOwner: newOwner))
-        let data = try await http.send(
-            path: "rest/v1/rpc/sq8_leave_squad",
-            method: "POST",
-            body: body,
-            feature: .squad
-        )
+        let data = try await callOptionalRPC(FunctionPresence.leaveSquad, body: body)
         let payload = try JSONDecoder().decode(LeavePayload.self, from: data)
         guard payload.ok else {
             throw InviteProblem.from(serverCode: payload.error ?? "already_left")

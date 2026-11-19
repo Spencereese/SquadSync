@@ -282,7 +282,7 @@ final class WhosInTests: XCTestCase {
         XCTAssertEqual(WhosIn.checkInSource(.unknown), "Check-ins: not set up on this server.")
         XCTAssertTrue(WhosIn.checkInSource(basic).contains("Honor system"))
         XCTAssertTrue(WhosIn.checkInSource(full).contains("game and console"))
-        XCTAssertEqual(WhosIn.steamSource(.notSetUp), "Steam: not set up on this server yet.")
+        XCTAssertEqual(WhosIn.steamSource(.notSetUp), "Steam presence not set up yet.")
         XCTAssertTrue(WhosIn.steamSource(.members([:])).contains("PC only"))
         XCTAssertTrue(WhosIn.xboxSource.contains("no presence"))
     }
@@ -466,14 +466,42 @@ final class WhosInTests: XCTestCase {
         }
     }
 
-    func testSteamReadIsNotSetUpWhenTheFunctionIsntDeployed() async {
-        let transport = ScriptedTransport(responses: [(404, Data(#"{"code":"NOT_FOUND","message":"Requested function was not found"}"#.utf8))])
-        let read = await SupabaseCheckInService(config: config, accessToken: "t", transport: transport).steam()
+    func testSteamIsNeverCalledWhileTheConfigFlagIsOff() async {
+        let transport = ScriptedTransport(responses: [(200, Data(#"{"status":"ok","members":[]}"#.utf8))])
+        XCTAssertFalse(config.steamPresence, "Off unless Info.plist turns it on")
+        let read = await SupabaseCheckInService(config: config, accessToken: "t", transport: transport, presence: FunctionPresence()).steam()
+        XCTAssertEqual(read, .notSetUp)
+        XCTAssertTrue(transport.requests.isEmpty, "sq8-steam-presence must not be called while it's off")
+        XCTAssertFalse(BackendConfig.parse([:]).steamPresence)
+        XCTAssertTrue(BackendConfig.parse(["SQ8SteamPresence": true]).steamPresence)
+        XCTAssertTrue(BackendConfig.parse(["SQ8SteamPresence": "YES"]).steamPresence)
+        XCTAssertFalse(BackendConfig.parse(["SQ8SteamPresence": "$(SQ8_STEAM)"]).steamPresence)
+    }
+
+    func testSteamReadIsNotSetUpWhenTheFunctionIsntDeployedAndAsksOnce() async {
+        var on = config
+        on.steamPresence = true
+        let notFound = Data(#"{"code":"NOT_FOUND","message":"Requested function was not found"}"#.utf8)
+        let presence = FunctionPresence()
+        let transport = ScriptedTransport(responses: [(404, notFound), (200, Data(#"{"status":"ok","members":[]}"#.utf8))])
+        let service = SupabaseCheckInService(config: on, accessToken: "t", transport: transport, presence: presence)
+        let read = await service.steam()
         XCTAssertEqual(read, .notSetUp)
         XCTAssertEqual(transport.requests.first?.url?.path, "/functions/v1/sq8-steam-presence")
-        let broken = ScriptedTransport(responses: [(500, Data(#"{"message":"boom"}"#.utf8))])
-        let failed = await SupabaseCheckInService(config: config, accessToken: "t", transport: broken).steam()
+        XCTAssertEqual(HTTPFailureLog.level(status: 404, body: notFound, probe: true), .info, "Not deployed is logged at info, not as an error")
+        let again = await service.steam()
+        XCTAssertEqual(again, .notSetUp)
+        XCTAssertEqual(transport.requests.count, 1, "The 404 is cached for the session")
+        let other = await SupabaseCheckInService(config: on, accessToken: "t", transport: transport, presence: presence).steam()
+        XCTAssertEqual(other, .notSetUp)
+        XCTAssertEqual(transport.requests.count, 1, "A new service in the same session doesn't ask again")
+
+        let broken = ScriptedTransport(responses: [(500, Data(#"{"message":"boom"}"#.utf8)), (500, Data())])
+        let flaky = SupabaseCheckInService(config: on, accessToken: "t", transport: broken, presence: FunctionPresence())
+        let failed = await flaky.steam()
         XCTAssertEqual(failed, .failed)
+        _ = await flaky.steam()
+        XCTAssertEqual(broken.requests.count, 2, "A 500 isn't 'not deployed', so it isn't latched off")
     }
 
     // MARK: Realtime deletes (Clear)

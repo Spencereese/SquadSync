@@ -200,7 +200,9 @@ enum HTTPFailureLog {
             || text.contains("could not find the function") || text.contains("could not find the table")
     }
 
-    static func record(method: String, path: String, status: Int, body: Data, probe: Bool = false) {
+    /// `optional` marks a real call to a function the server may not have yet
+    /// (FunctionPresence). Its absence answer is information, like a probe's.
+    static func record(method: String, path: String, status: Int, body: Data, probe: Bool = false, optional: Bool = false) {
         #if DEBUG
         let fields = (try? JSONSerialization.jsonObject(with: body) as? [String: Any]) ?? [:]
         let code = (fields["error_code"] as? String)
@@ -211,13 +213,48 @@ enum HTTPFailureLog {
             ?? (fields["error_description"] as? String)
             ?? (fields["message"] as? String)
             ?? "-"
-        let text = "\(probe ? "probe " : "")HTTP \(method) \(path) \(status) \(code) \(message)"
-        if level(status: status, body: body, probe: probe) == .info {
+        let tag = probe ? "probe " : optional ? "optional " : ""
+        let text = "\(tag)HTTP \(method) \(path) \(status) \(code) \(message)"
+        if level(status: status, body: body, probe: probe || optional) == .info {
             SquadLog.http.info("\(text, privacy: .public)")
         } else {
             SquadLog.http.error("\(text, privacy: .public)")
         }
         #endif
+    }
+}
+
+/// Session memory for server functions that may not be deployed or migrated
+/// yet. Nothing probes them: a function is assumed present, called only for a
+/// real action, and a 404 or PGRST202 answer marks it missing until relaunch,
+/// so it is asked (and logged, at info) once. No fake or null arguments are
+/// ever sent to find out.
+final class FunctionPresence: @unchecked Sendable {
+    static let shared = FunctionPresence()
+
+    static let leaveSquad = "sq8_leave_squad"
+    static let renameSquad = "sq8_rename_squad"
+    static let steamPresence = "sq8-steam-presence"
+
+    private let lock = NSLock()
+    private var missing: Set<String> = []
+
+    init() {}
+
+    func isMissing(_ name: String) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return missing.contains(name)
+    }
+
+    func markMissing(_ name: String) {
+        lock.lock(); defer { lock.unlock() }
+        missing.insert(name)
+    }
+
+    /// Sign-out: the next account may be on a server that has it.
+    func reset() {
+        lock.lock(); defer { lock.unlock() }
+        missing.removeAll()
     }
 }
 
@@ -249,7 +286,8 @@ struct SupabaseHTTP {
         prefer: String? = nil,
         feature: BackendFeature,
         allowRefresh: Bool = true,
-        probe: Bool = false
+        probe: Bool = false,
+        optional: Bool = false
     ) async throws -> Data {
         guard config.isConfigured, let base = config.url else { throw BackendFailure.notConfigured }
         var url = base
@@ -294,7 +332,8 @@ struct SupabaseHTTP {
             path: request.url?.path ?? path,
             status: http.statusCode,
             body: data,
-            probe: probe
+            probe: probe,
+            optional: optional
         )
         if allowRefresh, accessToken != nil, AuthFailure.matches(status: http.statusCode, body: data) {
             guard let refresher else {
@@ -312,7 +351,8 @@ struct SupabaseHTTP {
                     prefer: prefer,
                     feature: feature,
                     allowRefresh: false,
-                    probe: probe
+                    probe: probe,
+                    optional: optional
                 )
             case .rejected:
                 throw BackendFailure.sessionEnded

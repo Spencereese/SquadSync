@@ -582,7 +582,7 @@ enum WhosIn {
     static func steamSource(_ steam: SteamRead) -> String {
         switch steam {
         case .notChecked: return "Steam: not checked yet."
-        case .notSetUp: return "Steam: not set up on this server yet."
+        case .notSetUp: return "Steam presence not set up yet."
         case .failed: return "Steam: couldn't reach it just now."
         case .members: return "Steam: the game on linked public profiles. PC only."
         }

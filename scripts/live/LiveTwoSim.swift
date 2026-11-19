@@ -257,7 +257,7 @@ final class LiveTwoSim: XCTestCase {
     func snapshotFixture(_ app: XCUIApplication) {
         let before = readGames(app)
         note("fixture: before run \(before.map { "\($0)" } ?? "<unreadable>"); teardown forces \(baseline)")
-        if let before, let data = try? JSONEncoder().encode(before) { FileManager.default.createFile(atPath: fixturePath, contents: data) }
+        if let before, let data = try? JSONEncoder().encode(before) { _ = FileManager.default.createFile(atPath: fixturePath, contents: data) }
     }
 
     func clear(_ field: XCUIElement) {
@@ -407,12 +407,12 @@ final class LiveTwoSim: XCTestCase {
         // A reacted on B's own message: the chip is under that bubble.
         let mineB = bubble(app, containing: bBody)
         _ = mineB.waitForExistence(timeout: 10)
-        let chip = chip(app, under: mineB)
+        let chip = self.chip(app, under: mineB)
         XCTAssertTrue(chip.waitForExistence(timeout: 15), "B never saw A's thumbs-up under '\(bBody)'")
         note("B saw A's reaction=\(chip.exists) chip='\(chip.label)' selected=\(chip.isSelected) frame=\(chip.frame)")
         shot("b-03-saw-react")
         if chip.exists {
-            if !chip.isHittable { scrollChat(to: chip, in: app) }
+            if !chip.isHittable { _ = scrollChat(to: chip, in: app) }
             let before = chip.label
             chip.tap()
             sleep(2)
@@ -460,8 +460,8 @@ final class LiveTwoSim: XCTestCase {
         // Profile games: snapshot, add, set default, save, relaunch, confirm from server.
         // The teardown block restores the snapshot even when a later step fails.
         // Registered first, so the baseline is forced even if the panel never opens.
-        let target = baseline
-        addTeardownBlock { [weak self] in self?.restoreFixture(target) }
+        let restoreTo = baseline
+        addTeardownBlock { [weak self] in _ = self?.restoreFixture(restoreTo) }
         if openPanel(app) {
             snapshotFixture(app)
             shot("a-01-profile-open")
@@ -519,16 +519,16 @@ final class LiveTwoSim: XCTestCase {
         shot("a-08-seen-B")
         flag("a-seen-B")
 
-        let target = bubble(app, containing: bBody)
-        if scrollChat(to: target, in: app) {
-            if target.isHittable { target.tap() } else { target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+        let bOnA = bubble(app, containing: bBody)
+        if scrollChat(to: bOnA, in: app) {
+            if bOnA.isHittable { bOnA.tap() } else { bOnA.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
             let react = app.buttons["react"]
             if react.waitForExistence(timeout: 5) { react.tap() }
             var thumbs = app.buttons["tapback-hand.thumbsup.fill"]
             if !thumbs.waitForExistence(timeout: 5) { thumbs = app.buttons["Thumbs up"].firstMatch }
             if thumbs.waitForExistence(timeout: 3) { thumbs.tap() }
         }
-        let chip = chip(app, under: target)
+        let chip = self.chip(app, under: bOnA)
         let reacted = chip.waitForExistence(timeout: 8)
         XCTAssertTrue(reacted, "A's thumbs-up never showed under '\(bBody)'")
         note("A reacted on B's message: exists=\(reacted) chip='\(chip.label)' selected=\(chip.isSelected)")

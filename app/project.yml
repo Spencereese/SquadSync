@@ -10,12 +10,19 @@ settings:
   TARGETED_DEVICE_FAMILY: "1"
   CODE_SIGNING_ALLOWED: NO
   CODE_SIGNING_REQUIRED: NO
+packages:
+  StreamVideo:
+    url: https://github.com/GetStream/stream-video-swift
+    exactVersion: 1.57.0
 targets:
   SquadSync:
     type: application
     platform: iOS
     sources:
       - SquadSync
+    dependencies:
+      - package: StreamVideo
+        product: StreamVideo
     configFiles:
       Debug: Base.xcconfig
       Release: Base.xcconfig

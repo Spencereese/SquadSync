@@ -11,10 +11,21 @@ final class LiveTwoSim: XCTestCase {
         return env["LIVE_DIR"] ?? env["PR37_DIR"] ?? NSTemporaryDirectory() + "squadsync-live"
     }
     var tag = "x"
-    let gameName = "Apex PR37re"
-    let addedGame = "Zeta PR37re"
-    let aBody = "PR37re side A"
-    let bBody = "PR37re side B"
+    /// One id per run-live.sh pass (TEST_RUNNER_LIVE_RUN_ID, or the run-id file it
+    /// writes), shared by A and B, so every body and game name is unique to the run
+    /// and a bubble left by an earlier pass with the same text can't match.
+    var run: String {
+        let env = ProcessInfo.processInfo.environment
+        if let id = env["LIVE_RUN_ID"], !id.isEmpty { return id }
+        if let id = try? String(contentsOfFile: "\(dir)/run-id", encoding: .utf8)
+            .trimmingCharacters(in: .whitespacesAndNewlines), !id.isEmpty { return id }
+        return "norunid"
+    }
+    var gameName: String { "Apex \(run)" }
+    var addedGame: String { "Zeta \(run)" }
+    var aBody: String { "Side A \(run)" }
+    var bBody: String { "Side B \(run)" }
+    var offlineBody: String { "Offline \(run)" }
 
     override func setUp() {
         continueAfterFailure = true
@@ -78,17 +89,27 @@ final class LiveTwoSim: XCTestCase {
         return ""
     }
 
+    /// The bubble element itself (`chat.bubble.<token>.start|continues`) whose label
+    /// carries this run's text. Never a row, a quote, or a caption.
     func bubble(_ app: XCUIApplication, containing body: String) -> XCUIElement {
-        let matches = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", body))
-        for i in 0..<min(matches.count, 12) {
-            let e = matches.element(boundBy: i)
-            if e.identifier.hasPrefix("chat.bubble.") { return e }
-        }
-        for i in 0..<min(matches.count, 12) {
-            let e = matches.element(boundBy: i)
-            if e.identifier.hasPrefix("bubble-group") { return e }
-        }
-        return matches.firstMatch
+        app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'chat.bubble.' AND label CONTAINS %@", body)).firstMatch
+    }
+
+    /// "<token>" from "chat.bubble.<token>.start" (the same token the row and
+    /// reactions identifiers use; see ChatSeed).
+    func token(of bubble: XCUIElement) -> String? {
+        let id = bubble.identifier
+        guard id.hasPrefix("chat.bubble.") else { return nil }
+        let rest = id.dropFirst("chat.bubble.".count)
+        guard let dot = rest.lastIndex(of: ".") else { return nil }
+        return String(rest[..<dot])
+    }
+
+    /// A reaction chip under one message: inside `chat.reactions.<token>`, the
+    /// button `reaction-chip-<Tapback raw value>` (ChatRows.swift).
+    func chip(_ app: XCUIApplication, under bubble: XCUIElement, tapback: String = "hand.thumbsup.fill") -> XCUIElement {
+        let container = el(app, "chat.reactions.\(token(of: bubble) ?? "<no-token>")")
+        return container.buttons["reaction-chip-\(tapback)"]
     }
 
     func scrollChat(to e: XCUIElement, in app: XCUIApplication, swipes: Int = 12) -> Bool {
@@ -128,15 +149,22 @@ final class LiveTwoSim: XCTestCase {
         return visible
     }
 
+    /// Measures the bubble and fails the test when it's on the wrong side or row-wide.
     func sideReport(_ app: XCUIApplication, body: String, expectOwn: Bool) -> String {
         let window = app.windows.firstMatch.frame
         let b = bubble(app, containing: body)
-        guard b.exists else { return "\(body): missing" }
-        let mid = b.frame.midX
-        let ownOK = mid > window.midX + 1 && b.frame.width < window.width - 40
-        let otherOK = mid < window.midX - 1 && b.frame.width < window.width - 40
+        guard b.exists else {
+            XCTFail("\(tag): no bubble for '\(body)'")
+            return "\(body): missing"
+        }
+        let frame = b.frame
+        let mid = frame.midX
+        let ownOK = mid > window.midX + 1 && frame.width < window.width - 40
+        let otherOK = mid < window.midX - 1 && frame.width < window.width - 40
         let ok = expectOwn ? ownOK : otherOK
-        return "\(body): label='\(b.label)' id='\(b.identifier)' midX=\(Int(mid)) winMid=\(Int(window.midX)) minX=\(Int(b.frame.minX)) maxX=\(Int(b.frame.maxX)) w=\(Int(b.frame.width)) expectOwn=\(expectOwn) sideOK=\(ok)"
+        let report = "\(body): label='\(b.label)' id='\(b.identifier)' midX=\(Int(mid)) winMid=\(Int(window.midX)) minX=\(Int(frame.minX)) maxX=\(Int(frame.maxX)) w=\(Int(frame.width)) expectOwn=\(expectOwn) sideOK=\(ok)"
+        XCTAssertTrue(ok, "\(tag): bubble on the wrong side or row-wide: \(report)")
+        return report
     }
 
     func reveal(_ element: XCUIElement, in app: XCUIApplication) {
@@ -196,7 +224,9 @@ final class LiveTwoSim: XCTestCase {
 
     var fixturePath: String { "\(dir)/fixture-games-a.json" }
 
-    /// Used only when the account reads back empty (a run that never restored).
+    /// What Grok Test's games are put back to after every run, whatever they were
+    /// before: LIVE_BASELINE_GAMES (|-separated) and LIVE_BASELINE_DEFAULT, by
+    /// default Call of Duty only, default Call of Duty.
     var baseline: GamesFixture {
         let env = ProcessInfo.processInfo.environment
         let games = (env["LIVE_BASELINE_GAMES"] ?? "Call of Duty").split(separator: "|").map(String.init)
@@ -221,22 +251,13 @@ final class LiveTwoSim: XCTestCase {
         return GamesFixture(games: games, defaultGame: value)
     }
 
-    /// Before the test changes anything. A snapshot left by a run that didn't restore
-    /// is kept, because the account still holds that run's changes.
-    func snapshotFixture(_ app: XCUIApplication) -> GamesFixture {
-        if let data = FileManager.default.contents(atPath: fixturePath),
-           let kept = try? JSONDecoder().decode(GamesFixture.self, from: data) {
-            note("fixture: keeping earlier snapshot \(kept)")
-            return kept
-        }
-        var fixture = readGames(app) ?? baseline
-        if fixture.games.isEmpty || fixture.defaultGame.isEmpty {
-            note("fixture: account read back empty \(fixture); using baseline \(baseline)")
-            fixture = baseline
-        }
-        if let data = try? JSONEncoder().encode(fixture) { FileManager.default.createFile(atPath: fixturePath, contents: data) }
-        note("fixture: snapshot \(fixture)")
-        return fixture
+    /// Records what the account held before this run, for the notes only. The
+    /// teardown never restores this: it forces `baseline`. The file stays until a
+    /// verified restore, so run-live.sh can warn when one didn't happen.
+    func snapshotFixture(_ app: XCUIApplication) {
+        let before = readGames(app)
+        note("fixture: before run \(before.map { "\($0)" } ?? "<unreadable>"); teardown forces \(baseline)")
+        if let before, let data = try? JSONEncoder().encode(before) { FileManager.default.createFile(atPath: fixturePath, contents: data) }
     }
 
     func clear(_ field: XCUIElement) {
@@ -245,8 +266,9 @@ final class LiveTwoSim: XCTestCase {
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: current.count))
     }
 
-    /// Puts the list and default back through the panel and Save, then proves it
-    /// after a relaunch. Deletes the snapshot only once it reads back equal.
+    /// Sets exactly the baseline list and default through the panel and Save, as the
+    /// signed-in user, then proves it after a relaunch: the same set of games and the
+    /// same default. Deletes the before-run record only once it reads back equal.
     @discardableResult
     func restoreFixture(_ fixture: GamesFixture) -> Bool {
         let app = XCUIApplication()
@@ -254,13 +276,13 @@ final class LiveTwoSim: XCTestCase {
         app.launchArguments = ["-backend", "live"]
         app.launch()
         guard openPanel(app), let current = readGames(app) else { note("restore: panel or list missing"); shot("restore-failed"); return false }
-        for game in current.games {
+        for game in current.games where !fixture.games.contains(game) {
             let remove = app.buttons["profile-remove-\(game)"]
             reveal(remove, in: app)
             if remove.exists { remove.tap() }
         }
         let entry = app.textFields["profile-add-game"]
-        for game in fixture.games {
+        for game in fixture.games where !current.games.contains(game) {
             reveal(entry, in: app)
             if focus(entry, in: app) { entry.typeText(game + "\n") }
         }
@@ -300,24 +322,71 @@ final class LiveTwoSim: XCTestCase {
         }.joined(separator: " | ")
     }
 
+    /// + menu, Call spots, then the sheet: waits for the sheet's game field, types this
+    /// run's game, taps the sheet's own button (spot-sheet-call, not the menu item of
+    /// the same name), waits for the sheet to go and the call to show. Fails the test
+    /// with the reason when any step doesn't happen.
+    @discardableResult
     func callSpots(_ app: XCUIApplication) -> Bool {
-        let plus = app.buttons["composer-plus"]
-        if plus.waitForExistence(timeout: 5) { plus.tap() }
-        let item = app.buttons["composer-call-spots"]
-        if item.waitForExistence(timeout: 4) { item.tap() }
-        let call = app.buttons["Call spots"]
+        if panelOpen(app) { closePanel(app) }
+        if app.keyboards.firstMatch.exists { app.keyboards.buttons["Return"].firstMatch.tap() }
         let game = app.textFields["spot-sheet-game"]
-        if game.waitForExistence(timeout: 6) {
-            game.tap()
-            if let existing = game.value as? String, !existing.isEmpty, existing != "Game" {
-                game.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: existing.count))
+        for attempt in 1...3 where !game.exists {
+            let plus = app.buttons["composer-plus"]
+            guard plus.waitForExistence(timeout: 8) else { break }
+            plus.tap()
+            // The menu item by id; some systems drop ids on menu items, so then by label.
+            var item = app.buttons["composer-call-spots"]
+            if !item.waitForExistence(timeout: 3) {
+                item = app.collectionViews.buttons["Call spots"].firstMatch
             }
+            if item.waitForExistence(timeout: 3) { item.tap() }
+            if game.waitForExistence(timeout: 8) { break }
+            note("callSpots: sheet not open (attempt \(attempt)) note='\(lab(app, "spot-note"))'")
+            shot("a-callspots-no-sheet-\(attempt)")
+        }
+        guard game.exists else {
+            XCTFail("Call spots sheet never opened: spot-note='\(lab(app, "spot-note"))' \(spotState(app))")
+            return false
+        }
+        if focus(game, in: app) {
+            clear(game)
             game.typeText(gameName)
         }
-        if call.waitForExistence(timeout: 4) { call.tap() }
-        let opened = el(app, "spot-card").waitForExistence(timeout: 8) || el(app, "spot-title").waitForExistence(timeout: 2) || el(app, "active-call-bar").waitForExistence(timeout: 2)
-        note("callSpots opened=\(opened) \(spotState(app))")
-        return opened
+        let call = app.buttons["spot-sheet-call"]
+        guard call.waitForExistence(timeout: 5) else {
+            XCTFail("The sheet has no Call spots button")
+            return false
+        }
+        call.tap()
+        let closed = game.waitForNonExistence(timeout: 10)
+        let opened = el(app, "spot-card").waitForExistence(timeout: 10) || el(app, "active-call-bar").waitForExistence(timeout: 2)
+        note("callSpots sheetClosed=\(closed) opened=\(opened) error='\(lab(app, "spot-sheet-error"))' \(spotState(app))")
+        XCTAssertTrue(closed && opened, "Calling spots didn't open a call: error='\(lab(app, "spot-sheet-error"))' \(spotState(app))")
+        return closed && opened
+    }
+
+    func waitForLabel(_ e: XCUIElement, _ predicate: String, timeout: TimeInterval) -> Bool {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: predicate), object: e)
+        return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    func waitForValue(_ e: XCUIElement, _ value: String, timeout: TimeInterval = 5) -> Bool {
+        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: e)
+        return XCTWaiter().wait(for: [expectation], timeout: timeout) == .completed
+    }
+
+    /// Taps the DEBUG network switch until it reads `value` (a tap that lands on the
+    /// keyboard or a sheet changes nothing, which is how it stayed On before).
+    func setNetwork(_ network: XCUIElement, to value: String, in app: XCUIApplication) -> Bool {
+        for attempt in 1...3 {
+            if (network.value as? String) == value { return true }
+            if app.keyboards.firstMatch.exists { app.keyboards.buttons["Return"].firstMatch.tap() }
+            if network.isHittable { network.tap() } else { network.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+            if waitForValue(network, value) { return true }
+            note("network switch still '\(network.value as? String ?? "<none>")' after tap \(attempt)")
+        }
+        return false
     }
 
     func testLiveB() {
@@ -335,9 +404,11 @@ final class LiveTwoSim: XCTestCase {
         shot("b-02-sent-B")
         flag("b-sent")
         _ = flagTime("a-reacted", 60)
-        let chips = el(app, "chat.reactions") // may not match; look for thumb chip
-        let chip = app.buttons["reaction-chip-hand.thumbsup.fill"]
-        _ = chip.waitForExistence(timeout: 15)
+        // A reacted on B's own message: the chip is under that bubble.
+        let mineB = bubble(app, containing: bBody)
+        _ = mineB.waitForExistence(timeout: 10)
+        let chip = chip(app, under: mineB)
+        XCTAssertTrue(chip.waitForExistence(timeout: 15), "B never saw A's thumbs-up under '\(bBody)'")
         note("B saw A's reaction=\(chip.exists) chip='\(chip.label)' selected=\(chip.isSelected) frame=\(chip.frame)")
         shot("b-03-saw-react")
         if chip.exists {
@@ -365,6 +436,7 @@ final class LiveTwoSim: XCTestCase {
             }
             sleep(1)
         }
+        XCTAssertTrue(joined, "B never saw a call to join")
         note("B after join: joined=\(joined) ready=\(el(app, "spot-ready").exists) \(spotState(app))")
         shot("b-06-after-join")
         flag("b-joined")
@@ -387,9 +459,11 @@ final class LiveTwoSim: XCTestCase {
 
         // Profile games: snapshot, add, set default, save, relaunch, confirm from server.
         // The teardown block restores the snapshot even when a later step fails.
+        // Registered first, so the baseline is forced even if the panel never opens.
+        let target = baseline
+        addTeardownBlock { [weak self] in self?.restoreFixture(target) }
         if openPanel(app) {
-            let fixture = snapshotFixture(app)
-            addTeardownBlock { [weak self] in self?.restoreFixture(fixture) }
+            snapshotFixture(app)
             shot("a-01-profile-open")
             let entry = app.textFields["profile-add-game"]
             reveal(entry, in: app)
@@ -448,20 +522,24 @@ final class LiveTwoSim: XCTestCase {
         let target = bubble(app, containing: bBody)
         if scrollChat(to: target, in: app) {
             if target.isHittable { target.tap() } else { target.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
-            let react = app.buttons["React"]
+            let react = app.buttons["react"]
             if react.waitForExistence(timeout: 5) { react.tap() }
-            let thumbs = app.buttons["Thumbs up"]
-            if thumbs.waitForExistence(timeout: 5) { thumbs.tap() }
+            var thumbs = app.buttons["tapback-hand.thumbsup.fill"]
+            if !thumbs.waitForExistence(timeout: 5) { thumbs = app.buttons["Thumbs up"].firstMatch }
+            if thumbs.waitForExistence(timeout: 3) { thumbs.tap() }
         }
-        let chip = app.buttons["reaction-chip-hand.thumbsup.fill"]
-        note("A reacted on B's message: exists=\(chip.waitForExistence(timeout: 8)) chip='\(chip.label)' selected=\(chip.isSelected)")
+        let chip = chip(app, under: target)
+        let reacted = chip.waitForExistence(timeout: 8)
+        XCTAssertTrue(reacted, "A's thumbs-up never showed under '\(bBody)'")
+        note("A reacted on B's message: exists=\(reacted) chip='\(chip.label)' selected=\(chip.isSelected)")
         shot("a-09-reacted")
         flag("a-reacted")
         _ = flagTime("b-reacted", 30)
         note("A after B toggle: chip='\(chip.label)' selected=\(chip.isSelected)")
         shot("a-10-after-B-react")
 
-        _ = callSpots(app)
+        let called = callSpots(app)
+        note("A called=\(called)")
         shot("a-11-called")
         flag("a-called")
         _ = flagTime("b-joined", 60)
@@ -477,6 +555,7 @@ final class LiveTwoSim: XCTestCase {
             sleep(2)
         } else {
             note("A lock missing")
+            XCTFail("No Lock on A's call after B joined: \(spotState(app))")
         }
         note("A after lock: \(spotState(app))")
         shot("a-14-locked")
@@ -494,39 +573,50 @@ final class LiveTwoSim: XCTestCase {
         shot("a-15-ended")
         flag("a-ended")
 
-        // Banner: Debug network toggle + Retry
+        // Banner: the DEBUG network switch, an offline send, then Retry. The banner
+        // (squad-title's value) must first appear and then clear; a label that was
+        // empty all along is not "cleared".
         let network = app.buttons["debug-network-fault"]
-        note("network toggle exists=\(network.waitForExistence(timeout: 8)) value='\(network.value as? String ?? "<none>")' link='\(linkNote(app))'")
+        let title = el(app, "squad-title")
+        let hasSwitch = network.waitForExistence(timeout: 8)
+        note("network toggle exists=\(hasSwitch) value='\(network.value as? String ?? "<none>")' link='\(linkNote(app))'")
+        XCTAssertTrue(hasSwitch, "No DEBUG network switch (launched without -SQ8NetworkFault?)")
         shot("a-16-before-fault")
-        if network.exists {
-            network.tap()
-            sleep(1)
-            note("toggled off value='\(network.value as? String ?? "")' link='\(linkNote(app))'")
-        }
+        let off = hasSwitch && setNetwork(network, to: "Off", in: app)
+        XCTAssertTrue(off, "The network switch never went Off")
+        note("toggled off=\(off) value='\(network.value as? String ?? "")' link='\(linkNote(app))'")
         shot("a-17-fault-off")
         flag("a-banner-on")
-        _ = send(app, "PR37re offline")
-        sleep(2)
-        note("after offline send: link='\(linkNote(app))' retry=\(app.buttons["retry-send"].exists) not-delivered=\(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'Not delivered'")).count)")
-        shot("a-18-offline-send")
-        if network.exists {
-            network.tap()
-            sleep(2)
-            note("toggled on value='\(network.value as? String ?? "")' link='\(linkNote(app))'")
-        }
-        shot("a-19-fault-on")
-        if app.buttons["retry-send"].waitForExistence(timeout: 8) {
-            app.buttons["retry-send"].tap()
-            sleep(3)
-            note("after Retry: link='\(linkNote(app))' retry=\(app.buttons["retry-send"].exists)")
+        if off {
+            _ = send(app, offlineBody)
+            let offline = bubble(app, containing: offlineBody)
+            let notDelivered = app.descendants(matching: .any)
+                .matching(NSPredicate(format: "identifier == 'delivery-caption' AND label == 'Not delivered'")).firstMatch
+            let failed = notDelivered.waitForExistence(timeout: 15)
+            let shown = waitForLabel(title, "value != nil AND value != ''", timeout: 15)
+            let banner = linkNote(app)
+            note("after offline send: bubble=\(offline.exists) notDelivered=\(failed) banner='\(banner)' retry=\(app.buttons["retry-send"].exists)")
+            shot("a-18-offline-send")
+            XCTAssertTrue(failed, "The offline send didn't say Not delivered")
+            XCTAssertTrue(shown, "No banner while offline: '\(banner)'")
+
+            let on = setNetwork(network, to: "On", in: app)
+            XCTAssertTrue(on, "The network switch never came back On")
+            note("toggled on=\(on) link='\(linkNote(app))'")
+            shot("a-19-fault-on")
+            let retry = app.buttons["retry-send"]
+            let hasRetry = retry.waitForExistence(timeout: 10)
+            XCTAssertTrue(hasRetry, "No Retry on the failed send")
+            if hasRetry {
+                if retry.isHittable { retry.tap() } else { retry.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap() }
+            }
+            let delivered = notDelivered.waitForNonExistence(timeout: 15)
+            let cleared = shown && waitForLabel(title, "value == nil OR value == ''", timeout: 20)
+            note("after Retry: delivered=\(delivered) cleared=\(cleared) final link='\(linkNote(app))' retry=\(retry.exists)")
             shot("a-20-after-retry")
-        } else {
-            note("no retry-send after toggle on; link='\(linkNote(app))'")
-            shot("a-20-no-retry")
+            XCTAssertTrue(delivered, "The retried send still says Not delivered")
+            XCTAssertTrue(cleared, "The banner appeared but never cleared after Retry: '\(linkNote(app))'")
         }
-        let link = linkNote(app)
-        let cleared = !link.contains("Reconnecting") && !link.contains("Live chat is down")
-        note("banner cleared=\(cleared) final link='\(link)'")
         shot("a-21-banner-final")
         flag("a-banner-done")
         note("A done")

@@ -96,8 +96,17 @@ final class LiveSessionModel {
         LiveShellCopy.footer
     ]
     var busy = false
-    /// Voice is a mock on the home header. The pill drives the in-memory room only.
+    /// The home header's voice pill. Mock backend: the in-memory room only.
+    /// Live: `voicePill.live` mirrors the squad voice room (`squadVoice`).
     var voicePill = VoicePillState()
+    /// Live only: the squad voice sheet (join, leave, mute, who's in).
+    var voiceSheetOpen = false
+    /// Live only: the squad's Stream voice room. Created on first use.
+    @ObservationIgnored private var squadVoice: SquadVoiceSession?
+    /// The engine every live voice room gets. This build has no Stream SDK, so
+    /// it's `UnlinkedSquadVoiceEngine` and the room says "Voice isn't set up yet".
+    /// A build that links Stream's Swift SDK sets its engine here.
+    static var makeVoiceEngine: () -> SquadVoiceEngine = { UnlinkedSquadVoiceEngine() }
     /// The status line the last failed send wrote, so a later success can clear exactly that.
     var sendFailureStatus: String?
     // Who's in (S4): check-ins, what the server supports, and Steam when it's deployed.
@@ -353,6 +362,7 @@ final class LiveSessionModel {
                 Task { @MainActor in self?.sessionRefreshed(session) }
             }
         }
+        if backend == .live { voicePill.live = SquadVoiceState() }
     }
 
     /// Every token refresh hands the open socket the new JWT, so realtime doesn't
@@ -1361,8 +1371,13 @@ final class LiveSessionModel {
         }
     }
 
-    /// Joins or leaves the in-memory voice room. Nothing goes over the network.
+    /// The header's voice pill. Mock backend: joins or leaves the in-memory room
+    /// (nothing goes over the network). Live: opens the squad voice sheet.
     func toggleVoice() async {
+        if voicePill.live != nil {
+            voiceSheetOpen = true
+            return
+        }
         let user = (viewerId ?? profile?.id)?.uuidString ?? "viewer"
         if voicePill.joined {
             await voiceRoom.leave(userId: user)
@@ -1375,8 +1390,59 @@ final class LiveSessionModel {
         voicePill.connection = voiceRoom.connection
     }
 
+    // MARK: Squad voice (live)
+
+    /// What the voice sheet shows. Idle with the mock backend.
+    var squadVoiceState: SquadVoiceState { voicePill.live ?? SquadVoiceState() }
+
+    private func liveVoiceRoom() -> SquadVoiceSession {
+        if let squadVoice { return squadVoice }
+        let tokens = SupabaseSquadVoiceTokens(
+            config: config,
+            currentToken: { [weak self] in await self?.voiceAccessToken() },
+            refresher: tokenRefresher
+        )
+        let room = SquadVoiceSession(tokens: tokens, engine: Self.makeVoiceEngine())
+        room.onChange = { [weak self] state in
+            Task { @MainActor in self?.voicePill.live = state }
+        }
+        squadVoice = room
+        return room
+    }
+
+    /// The signed-in session's token, read on the main actor for each voice request.
+    private func voiceAccessToken() -> String? {
+        (try? requiredSession())?.accessToken
+    }
+
+    func joinSquadVoice() async {
+        guard voicePill.live != nil, let squad else { return }
+        let room = liveVoiceRoom()
+        await room.join(squadId: squad.id, name: profile?.displayName ?? "You")
+        voicePill.live = room.state
+    }
+
+    func leaveSquadVoice() async {
+        guard let room = squadVoice else { return }
+        await room.leave()
+        voicePill.live = room.state
+    }
+
+    func toggleSquadVoiceMute() async {
+        guard let room = squadVoice else { return }
+        await room.toggleMute()
+        voicePill.live = room.state
+    }
+
     func signOut() async {
-        if voicePill.joined { await toggleVoice() }
+        if voicePill.live != nil {
+            await leaveSquadVoice()
+            squadVoice = nil
+            voiceSheetOpen = false
+            voicePill.live = SquadVoiceState()
+        } else if voicePill.joined {
+            await toggleVoice()
+        }
         // Unsent messages belong to this account; the next person doesn't get them.
         if let user = viewerId ?? profile?.id { outbox.clear(userId: user) }
         olderPaging = ChatOlderPaging()
@@ -2122,6 +2188,10 @@ struct LiveSessionView: View {
         }
         .sheet(isPresented: $showMembers) {
             membershipSheet
+                .adoptingLaunchDynamicType()
+        }
+        .sheet(isPresented: Binding(get: { model.voiceSheetOpen }, set: { model.voiceSheetOpen = $0 })) {
+            SquadVoiceSheet(model: model)
                 .adoptingLaunchDynamicType()
         }
         .sheet(isPresented: Binding(get: { model.whosInOpen }, set: { model.whosInOpen = $0 })) {

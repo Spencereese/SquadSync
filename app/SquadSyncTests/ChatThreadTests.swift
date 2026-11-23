@@ -499,4 +499,70 @@ final class ChatServerTests: XCTestCase {
         let decoded = try BackendJSON.decoder.decode([RemoteMessage].self, from: Data("[\(row(1, seconds: 1))]".utf8))
         XCTAssertNil(decoded.first?.replyToId)
     }
+
+    // MARK: Chip flow (reaction chips and the emoji row)
+
+    /// Six AX5-sized emoji buttons, as in the emoji row on a 440 pt screen.
+    private func emojiRow(measured: inout Int) -> ChipFlowGeometry {
+        var calls = 0
+        let flow = ChipFlowGeometry(count: 6, spacing: 4) { _ in
+            calls += 1
+            return CGSize(width: 76, height: 76)
+        }
+        measured = calls
+        return flow
+    }
+
+    func testChipFlowMeasuresEachChipOnceHoweverOftenItIsAsked() {
+        var measured = 0
+        let flow = emojiRow(measured: &measured)
+        XCTAssertEqual(measured, 6)
+        // A stack probes zero, infinity, ideal and the real width, again and again.
+        for _ in 0..<100 {
+            for width: CGFloat? in [0, .infinity, nil, 300, 412] {
+                _ = flow.size(width: width)
+                _ = flow.rows(width: width)
+            }
+        }
+        XCTAssertEqual(measured, 6, "Sizes come from the one measurement, not from re-measuring")
+        var many = 0
+        _ = ChipFlowGeometry(count: 200, spacing: 4) { _ in many += 1; return CGSize(width: 44, height: 44) }
+        XCTAssertEqual(many, 200, "One measurement per chip: linear in the chip count")
+    }
+
+    func testChipFlowNeverClaimsMoreWidthThanItCanShrinkTo() {
+        var measured = 0
+        let flow = emojiRow(measured: &measured)
+        // "How narrow can you get?" is one emoji per row, never the whole single row
+        // (the first version said 476 pt here, wider than the screen).
+        XCTAssertEqual(flow.size(width: 0), CGSize(width: 76, height: 6 * 76 + 5 * 4))
+        XCTAssertEqual(flow.rows(width: 0), [[0], [1], [2], [3], [4], [5]])
+        // Ideal and unlimited: one row.
+        XCTAssertEqual(flow.size(width: nil), CGSize(width: 6 * 76 + 5 * 4, height: 76))
+        XCTAssertEqual(flow.size(width: .infinity), flow.size(width: nil))
+        // The real width wraps, and the answer fits inside it.
+        for width: CGFloat in [76, 100, 200, 300, 412, 476, 1000] {
+            let size = flow.size(width: width)
+            XCTAssertLessThanOrEqual(size.width, width, "Wider than \(width): \(size)")
+            // Placing at the width it reported gives the same rows.
+            XCTAssertEqual(flow.rows(width: size.width), flow.rows(width: width), "Rows moved when placed at \(size.width)")
+        }
+        XCTAssertEqual(flow.rows(width: 300), [[0, 1, 2], [3, 4, 5]])
+        XCTAssertEqual(flow.size(width: 300), CGSize(width: 3 * 76 + 2 * 4, height: 2 * 76 + 4))
+        // Narrower never gets shorter: a stack can rely on height growing as width shrinks.
+        var last: CGFloat = 0
+        for width in stride(from: CGFloat(1000), through: 0, by: -7) {
+            let height = flow.size(width: width).height
+            XCTAssertGreaterThanOrEqual(height, last, "Height dropped at \(width)")
+            last = height
+        }
+    }
+
+    func testChipFlowWithAChipWiderThanTheWidthGivesItARow() {
+        let flow = ChipFlowGeometry(count: 3, spacing: 4) { $0 == 1 ? CGSize(width: 120, height: 50) : CGSize(width: 44, height: 44) }
+        XCTAssertEqual(flow.rows(width: 100), [[0], [1], [2]])
+        XCTAssertEqual(flow.size(width: 100).width, 120, "It can't be narrower than its widest chip")
+        XCTAssertEqual(ChipFlowGeometry(count: 0, spacing: 4) { _ in .zero }.size(width: 300), .zero)
+    }
 }
+

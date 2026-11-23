@@ -3888,66 +3888,37 @@ private struct ChipFlow: Layout {
     /// Which side ragged rows hug. Trailing for reactions under your own bubble.
     var alignment: HorizontalAlignment = .leading
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    /// Each chip's ideal size, measured once per update (see ChipFlowGeometry).
+    func makeCache(subviews: Subviews) -> ChipFlowGeometry {
+        ChipFlowGeometry(count: subviews.count, spacing: spacing) { subviews[$0].sizeThatFits(.unspecified) }
+    }
+
+    func updateCache(_ cache: inout ChipFlowGeometry, subviews: Subviews) {
+        cache = makeCache(subviews: subviews)
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ChipFlowGeometry) -> CGSize {
         #if DEBUG
         HangProbe.mark(.chipFlowSize)
         #endif
-        let width = proposal.width ?? 0
-        guard width > 0 else {
-            let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
-            let height = sizes.map(\.height).max() ?? 0
-            let total = sizes.map(\.width).reduce(0, +) + spacing * CGFloat(max(sizes.count - 1, 0))
-            return CGSize(width: total, height: height)
-        }
-        let rows = rows(width: width, subviews: subviews)
-        let height = rows.map { $0.map(\.height).max() ?? 0 }.reduce(0, +)
-            + spacing * CGFloat(max(rows.count - 1, 0))
-        // As wide as the widest row, so a parent stack can put it on either side.
-        let widest = rows.map(rowWidth).max() ?? 0
-        return CGSize(width: min(width, widest), height: height)
+        return cache.size(width: proposal.width)
     }
 
-    private func rowWidth(_ row: [CGSize]) -> CGFloat {
-        row.map(\.width).reduce(0, +) + spacing * CGFloat(max(row.count - 1, 0))
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ChipFlowGeometry) {
         #if DEBUG
         HangProbe.mark(.chipFlowPlace)
         #endif
-        let rows = rows(width: bounds.width, subviews: subviews)
         var y = bounds.minY
-        var index = 0
-        for row in rows {
-            let rowHeight = row.map(\.height).max() ?? 0
-            var x = alignment == .trailing ? max(bounds.minX, bounds.maxX - rowWidth(row)) : bounds.minX
-            for size in row {
-                subviews[index].place(
-                    at: CGPoint(x: x, y: y),
-                    proposal: ProposedViewSize(width: size.width, height: size.height)
-                )
+        for row in cache.rows(width: bounds.width) {
+            let width = cache.rowWidth(row)
+            var x = alignment == .trailing ? max(bounds.minX, bounds.maxX - width) : bounds.minX
+            for index in row {
+                let size = cache.sizes[index]
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: size.width, height: size.height))
                 x += size.width + spacing
-                index += 1
             }
-            y += rowHeight + spacing
+            y += cache.rowHeight(row) + spacing
         }
-    }
-
-    private func rows(width: CGFloat, subviews: Subviews) -> [[CGSize]] {
-        var rows: [[CGSize]] = [[]]
-        var used: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            let next = used == 0 ? size.width : used + spacing + size.width
-            if used > 0, next > width {
-                rows.append([size])
-                used = size.width
-            } else {
-                rows[rows.count - 1].append(size)
-                used = next
-            }
-        }
-        return rows
     }
 }
 

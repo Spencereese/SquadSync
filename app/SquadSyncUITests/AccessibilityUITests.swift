@@ -1373,12 +1373,15 @@ final class AccessibilityUITests: XCTestCase {
     private func launchChat(_ scenario: String, largeText: Bool = false, extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", scenario] + (largeText ? ["-uitest-largeText"] : []) + extra
-        // Opt-in hang diagnosis: xcodebuild ... TEST_RUNNER_SQ_HANG_ABORT_SECONDS=20
-        // makes a DEBUG app abort after its main thread is blocked that long, so
-        // the crash report has the main thread's stack (see MainThreadStallWatch).
-        if let seconds = ProcessInfo.processInfo.environment["SQ_HANG_ABORT_SECONDS"] {
-            app.launchEnvironment["SQ_HANG_ABORT_SECONDS"] = seconds
-        }
+        // Hang diagnosis: a DEBUG app whose main thread stays blocked this long
+        // aborts, so the simulator writes a crash report with the main thread's
+        // stack (see MainThreadStallWatch). A hang fails the test either way; this
+        // only turns a 240 s query timeout into a crash with a stack. Defaults to
+        // 90 s; TEST_RUNNER_SQ_HANG_ABORT_SECONDS=20 on xcodebuild overrides it.
+        // 35b486f only forwarded the runner's value, which didn't arrive on the Mac.
+        let abortAfter = ProcessInfo.processInfo.environment["SQ_HANG_ABORT_SECONDS"] ?? "90"
+        app.launchEnvironment["SQ_HANG_ABORT_SECONDS"] = abortAfter
+        print("[ui-timing] launch \(scenario) hang-abort=\(abortAfter)s")
         app.launch()
         return app
     }

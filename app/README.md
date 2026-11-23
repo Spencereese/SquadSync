@@ -2,7 +2,7 @@
 
 SwiftUI iPhone app for Phase 1. The target is iPhone only. Mock data only. No networking, no Supabase client, and no third-party packages.
 
-The Xcode project vendors no Swift packages, CocoaPods, or Carthage checkouts. A build does not fetch dependencies from the network. Simulator builds do not need a signing certificate (`CODE_SIGNING_ALLOWED` is NO).
+The only dependency is the Stream Video Swift SDK, through Swift Package Manager, pinned to exactly 1.57.0 with `Package.resolved` committed. The first build resolves it from GitHub. There are no CocoaPods or Carthage checkouts. Simulator builds are arm64 only (`EXCLUDED_ARCHS[sdk=iphonesimulator*] = x86_64`) and unsigned (`CODE_SIGNING_ALLOWED[sdk=iphonesimulator*] = NO`), so they need no certificate. Device builds sign automatically with Apple Development for team `K4ZTXPQ8J9`, with no command-line overrides; the Mac needs that team's Apple Development certificate.
 
 Builds, simulator runs, and screenshots happen on the Mac mini. GitHub Actions on this branch runs the Linux SQL RLS and FCM payload jobs only.
 

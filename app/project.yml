@@ -8,8 +8,13 @@ settings:
   SWIFT_VERSION: "5.9"
   IPHONEOS_DEPLOYMENT_TARGET: "17.0"
   TARGETED_DEVICE_FAMILY: "1"
-  CODE_SIGNING_ALLOWED: NO
-  CODE_SIGNING_REQUIRED: NO
+  # Simulator and CI builds stay unsigned; device builds sign automatically
+  # with Apple Development for team K4ZTXPQ8J9 (no command-line overrides).
+  "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]": NO
+  "CODE_SIGNING_REQUIRED[sdk=iphonesimulator*]": NO
+  CODE_SIGN_STYLE: Automatic
+  "CODE_SIGN_IDENTITY[sdk=iphoneos*]": Apple Development
+  DEVELOPMENT_TEAM: K4ZTXPQ8J9
 packages:
   StreamVideo:
     url: https://github.com/GetStream/stream-video-swift
@@ -64,6 +69,4 @@ targets:
       "EXCLUDED_ARCHS[sdk=iphonesimulator*]": x86_64
       GENERATE_INFOPLIST_FILE: YES
       TEST_TARGET_NAME: SquadSync
-      CODE_SIGNING_ALLOWED: NO
-      CODE_SIGNING_REQUIRED: NO
       TARGETED_DEVICE_FAMILY: "1"

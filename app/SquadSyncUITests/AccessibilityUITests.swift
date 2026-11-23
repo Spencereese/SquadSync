@@ -1373,6 +1373,12 @@ final class AccessibilityUITests: XCTestCase {
     private func launchChat(_ scenario: String, largeText: Bool = false, extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", scenario] + (largeText ? ["-uitest-largeText"] : []) + extra
+        // Opt-in hang diagnosis: xcodebuild ... TEST_RUNNER_SQ_HANG_ABORT_SECONDS=20
+        // makes a DEBUG app abort after its main thread is blocked that long, so
+        // the crash report has the main thread's stack (see MainThreadStallWatch).
+        if let seconds = ProcessInfo.processInfo.environment["SQ_HANG_ABORT_SECONDS"] {
+            app.launchEnvironment["SQ_HANG_ABORT_SECONDS"] = seconds
+        }
         app.launch()
         return app
     }
@@ -1701,7 +1707,9 @@ final class AccessibilityUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(option.frame.minX, 0, "An emoji is clipped at AX5: \(option.frame)")
             XCTAssertLessThanOrEqual(option.frame.maxX, width + 1, "An emoji runs off screen at AX5: \(option.frame)")
         }
+        clock.mark("tap-take-back start")
         picker.buttons["tapback-hand.thumbsup.fill"].tap()
+        clock.lap("tap-take-back")
         XCTAssertTrue(chip.waitForNonExistence(timeout: 5), "Picking your own reaction again should take it back")
         clock.lap("take-back")
         clock.total()
@@ -2788,6 +2796,11 @@ struct StepClock {
         let now = Date()
         print(String(format: "[ui-timing] %@ %@ %.2fs", name, step, now.timeIntervalSince(last)))
         last = now
+    }
+
+    /// A step is about to start; if the run hangs, this is the last line printed.
+    func mark(_ step: String) {
+        print(String(format: "[ui-timing] %@ %@ at %.2fs", name, step, Date().timeIntervalSince(started)))
     }
 
     func total() {

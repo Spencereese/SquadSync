@@ -2468,6 +2468,9 @@ struct LiveSessionView: View {
 
     private var chatList: some View {
         let _ = ChatScrollTrace.counted(.listBody)
+        #if DEBUG
+        let _ = HangProbe.mark(.listBody)
+        #endif
         return ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 ScrollView {
@@ -3660,6 +3663,9 @@ struct LiveSessionView: View {
     /// per run. Long-press for reactions, Reply, Copy, and Retry; double-tap or
     /// React (or + under the chips) opens the emoji row.
     private func messageRow(_ bubble: ChatBubble) -> some View {
+        #if DEBUG
+        HangProbe.mark(.rowBuild)
+        #endif
         let entry = bubble.entry
         let chipsForRow = ChatReactions.chips(marks: model.board.marks, messageId: entry.id, viewerId: viewerForChat)
         let actions = ChatAction.available(for: entry, repliesAvailable: model.chatCaps.replies)
@@ -3883,6 +3889,9 @@ private struct ChipFlow: Layout {
     var alignment: HorizontalAlignment = .leading
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        #if DEBUG
+        HangProbe.mark(.chipFlowSize)
+        #endif
         let width = proposal.width ?? 0
         guard width > 0 else {
             let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
@@ -3903,6 +3912,9 @@ private struct ChipFlow: Layout {
     }
 
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        #if DEBUG
+        HangProbe.mark(.chipFlowPlace)
+        #endif
         let rows = rows(width: bounds.width, subviews: subviews)
         var y = bounds.minY
         var index = 0
@@ -4005,6 +4017,9 @@ private struct ChatRowGeometryProbe: View {
                     list: tracksFit ? ChatRowFrame(minY: inList.minY, height: inList.height) : nil
                 )
             } action: { sample in
+                #if DEBUG
+                HangProbe.mark(.rowGeometry)
+                #endif
                 if let frame = sample.content {
                     controller.rowMoved(id, frame: frame)
                 }

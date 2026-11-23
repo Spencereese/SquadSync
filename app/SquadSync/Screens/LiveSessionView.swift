@@ -6,6 +6,11 @@ import os
 /// Opening a pushed message: each step, so a launch that doesn't open it can be read
 /// back from the device log (subsystem com.spencereese.squadsync, category chat-open).
 private let chatOpenLog = Logger(subsystem: "com.spencereese.squadsync", category: "chat-open")
+#if DEBUG
+/// One line per poll: whether it changed the thread. Capture with
+/// `log stream --level debug --predicate 'subsystem == "com.spencereese.squadsync"'`.
+private let pollTrace = Logger(subsystem: "com.spencereese.squadsync", category: "poll")
+#endif
 
 @MainActor
 @Observable
@@ -80,7 +85,10 @@ final class LiveSessionModel {
     var transferTo: UUID?
     var spotNote = ""
     /// How many times the spot card was read. A failed call increments it.
-    var spotLoads = 0
+    /// No view reads it, so bumping it on every poll redraws nothing.
+    @ObservationIgnored private(set) var spotLoads = 0
+    /// Polls that finished. Read by tests; no view reads it.
+    @ObservationIgnored private(set) var polls = 0
     var spotServer = SpotServerCapabilities.unavailable
     /// Finished calls from the server, shown as compact cards in the thread.
     var spotHistory: [SpotCall] = []
@@ -862,6 +870,7 @@ final class LiveSessionModel {
                 poll = nil
                 self.squad = nil
                 self.spot = nil
+                self.spotLoad = .idle
                 self.log = ChatLog()
                 self.inviteCode = ""
                 self.transferTo = nil
@@ -924,9 +933,9 @@ final class LiveSessionModel {
         guard let squad else { return }
         spotLoads += 1
         defer { scheduleExpiryRead(session) }
-        spotLoad = SpotLoadState.beginning(spotLoad, hasCard: spot != nil)
+        quietly(\.spotLoad, SpotLoadState.beginning(spotLoad, hasCard: spot != nil))
         let service = spotService(session)
-        spotServer = await service.serverCapabilities()
+        quietly(\.spotServer, await service.serverCapabilities())
         await loadSpotHistory(service, squad: squad)
         do {
             let loaded = try await service.current(squadId: squad.id)
@@ -938,13 +947,13 @@ final class LiveSessionModel {
                     }
                     return copy
                 }
-                spot = loaded
+                quietly(\.spot, loaded)
             } else if mockSpots == nil {
-                spot = nil
+                quietly(\.spot, nil)
             }
-            spotLoad = SpotLoadState.finished(failure: nil)
+            quietly(\.spotLoad, SpotLoadState.finished(failure: nil))
         } catch {
-            spotLoad = SpotLoadState.finished(failure: SpotThread.loadFailed)
+            quietly(\.spotLoad, SpotLoadState.finished(failure: SpotThread.loadFailed))
             report(error)
         }
     }
@@ -953,10 +962,10 @@ final class LiveSessionModel {
     private func loadSpotHistory(_ service: SpotServing, squad: SquadRecord) async {
         do {
             let past = try await service.history(squadId: squad.id, limit: SpotThread.historyLimit)
-            spotHistory = past
-            spotHistoryNote = ""
+            quietly(\.spotHistory, past)
+            quietly(\.spotHistoryNote, "")
         } catch {
-            spotHistoryNote = SpotThread.historyUnavailable
+            quietly(\.spotHistoryNote, SpotThread.historyUnavailable)
         }
     }
 
@@ -1563,10 +1572,18 @@ final class LiveSessionModel {
 
     /// Any round-trip that worked: clears "Reconnecting…" wherever it is shown.
     func connectionProven() {
-        reconnecting = false
-        if simulatesLink { link = SimulatedLink.afterProof(link) }
-        status = ConnectionRecovery.status(afterProof: status)
-        presenceNote = ConnectionRecovery.resumeNote(afterProof: presenceNote)
+        quietly(\.reconnecting, false)
+        if simulatesLink { quietly(\.link, SimulatedLink.afterProof(link)) }
+        quietly(\.status, ConnectionRecovery.status(afterProof: status))
+        quietly(\.presenceNote, ConnectionRecovery.resumeNote(afterProof: presenceNote))
+    }
+
+    /// Writes only a changed value. The poll fallback (every 3 s, and always on the
+    /// mock backend) re-sets the same chat, spot and status values each time; an
+    /// @Observable write tells every view that read the property to redraw even
+    /// when the value is equal, so each poll used to redraw the whole thread.
+    private func quietly<Value: Equatable>(_ path: ReferenceWritableKeyPath<LiveSessionModel, Value>, _ value: Value) {
+        if self[keyPath: path] != value { self[keyPath: path] = value }
     }
 
     func becameActive() async {
@@ -2010,16 +2027,31 @@ final class LiveSessionModel {
         }
     }
 
+    /// One poll now, as the 3 s timer would. Tests drive it instead of waiting.
+    func pollNow() async {
+        guard let session = try? requiredSession() else { return }
+        await pollOnce(session)
+    }
+
     private func pollOnce(_ session: AuthSession) async {
         guard let squad, HistoryMerge.accepts(requestSquad: squad.id, loadedSquad: loadedSquad) else { return }
         let requested = squad.id
         do {
             let rows = try await chatService(session).history(squadId: requested)
             guard HistoryMerge.accepts(requestSquad: requested, loadedSquad: loadedSquad) else { return }
-            log.adopt(replacingSquad: false, history: rows.map { $0.entry() })
-            chatLoad = .loaded
+            var merged = log
+            merged.adopt(replacingSquad: false, history: rows.map { $0.entry() })
+            #if DEBUG
+            let changed = merged != log
+            #endif
+            quietly(\.log, merged)
+            quietly(\.chatLoad, .loaded)
             connectionProven()
             await loadSpot(session)
+            polls += 1
+            #if DEBUG
+            pollTrace.debug("poll \(self.polls, privacy: .public) rows=\(rows.count, privacy: .public) thread=\(changed ? "changed" : "same", privacy: .public)")
+            #endif
             // Without the socket, check-ins only refresh while someone is looking at them.
             if whosInOpen { await loadWhosIn() }
         } catch {
@@ -2088,6 +2120,7 @@ final class LiveSessionModel {
             poll = nil
             squad = nil
             spot = nil
+            spotLoad = .idle
             profile = nil
             phase = .email
             reconnecting = false

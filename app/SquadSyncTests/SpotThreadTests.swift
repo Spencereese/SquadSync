@@ -62,6 +62,8 @@ final class SpotThreadTests: XCTestCase {
     func testLoadStateOnlyShowsLoadingBeforeACardAndSaysWhenItFails() {
         XCTAssertEqual(SpotLoadState.beginning(.idle, hasCard: false), .loading)
         XCTAssertEqual(SpotLoadState.beginning(.loaded, hasCard: true), .loaded)
+        XCTAssertEqual(SpotLoadState.beginning(.loaded, hasCard: false), .loaded, "A refresh with no call open must not flash the loading row")
+        XCTAssertEqual(SpotLoadState.beginning(.failed(SpotThread.loadFailed), hasCard: false), .loading, "A retry after a failure shows it's trying")
         XCTAssertEqual(SpotLoadState.finished(failure: SpotThread.loadFailed).failure, SpotThread.loadFailed)
         XCTAssertEqual(SpotLoadState.finished(failure: nil), .loaded)
     }

@@ -1632,44 +1632,93 @@ final class AccessibilityUITests: XCTestCase {
 
     /// A reaction on your own message sits under it on the right, inside the
     /// screen at AX5, and the + button opens the emoji row there too.
-    func testReactionsSitUnderTheBubbleOnItsSideAtLargeText() {
+    ///
+    /// Every query here is scoped to the message list or to the row, and frames
+    /// are read from one snapshot per step instead of one round trip per
+    /// property. Each XCUI round trip waits for the app to idle and snapshots
+    /// on the main thread; at AX5 the whole tree is large, and this test used to
+    /// make dozens of whole-tree round trips (the picker loop alone made two per
+    /// emoji). The assertions are the same ones as before. Each step prints its
+    /// time as "[ui-timing] reactions-ax5 <step> <seconds>s" so a slow step shows
+    /// up in the log even when the test passes.
+    func testReactionsSitUnderTheBubbleOnItsSideAtLargeText() throws {
+        var clock = StepClock("reactions-ax5")
         let app = launchChat("chatPolish", largeText: true)
-        XCTAssertTrue(element(Polish.reply, in: app).waitForExistence(timeout: 15))
+        let list = app.scrollViews["message-list"]
+        XCTAssertTrue(list.descendants(matching: .any)[Polish.reply].waitForExistence(timeout: 15))
         let width = app.windows.firstMatch.frame.width
-        let mine = bubble(Polish.mineFirst, in: app)
+        clock.lap("launch")
+
+        let row = list.descendants(matching: .any)[Polish.mineFirst]
+        let mine = bubble(Polish.mineFirst, in: row)
         guard scrollChat(to: mine, in: app) else { return }
+        clock.lap("scroll-to-bubble")
         mine.press(forDuration: 1.2)
         let menuThumbs = app.buttons["Thumbs up"]
         XCTAssertTrue(menuThumbs.waitForExistence(timeout: 5), "Long-press had no reactions")
+        clock.lap("open-menu")
         menuThumbs.tap()
+        clock.lap("tap-thumbs-up")
 
-        let chips = reactions(Polish.mineFirst, in: app)
-        let chip = chips.buttons["reaction-chip-hand.thumbsup.fill"]
+        let chips = row.descendants(matching: .any)["chat.reactions.\(token(Polish.mineFirst))"]
+        let chip = chips.buttons[Polish.thumbs]
         guard scrollChat(to: chip, in: app) else { return }
-        XCTAssertEqual(chip.label, "👍 1, you reacted")
-        XCTAssertTrue(chip.isSelected)
-        let rowFrame = element(Polish.mineFirst, in: app).frame
-        XCTAssertLessThanOrEqual(abs(chips.frame.maxX - mine.frame.maxX), 2, "Your chips should sit under your bubble on the right: chips \(chips.frame), bubble \(mine.frame)")
-        XCTAssertGreaterThanOrEqual(mine.frame.maxX, rowFrame.maxX - 2, "Your bubble should hug the row's right edge at AX5: bubble \(mine.frame), row \(rowFrame)")
-        XCTAssertGreaterThanOrEqual(chip.frame.minX, 0, "The chip is clipped on the left at AX5: \(chip.frame)")
-        XCTAssertLessThanOrEqual(chip.frame.maxX, width + 1, "The chip runs off screen at AX5: \(chip.frame)")
-        XCTAssertGreaterThan(chip.frame.minY, mine.frame.maxY - 1, "The chip overlaps the bubble: chip \(chip.frame), bubble \(mine.frame)")
-        assertHitSize(chip.frame.height)
+        clock.lap("scroll-to-chip")
+        // One snapshot of the row answers every frame, label and trait below.
+        let rowShot = try row.snapshot()
+        clock.lap("row-snapshot")
+        let chipsShot = try XCTUnwrap(Self.find(rowShot) { $0.identifier == "chat.reactions.\(self.token(Polish.mineFirst))" }, "No chips under the bubble")
+        let chipShot = try XCTUnwrap(Self.find(chipsShot) { $0.elementType == .button && $0.identifier == Polish.thumbs }, "No thumbs-up chip")
+        let mineShot = try XCTUnwrap(Self.find(rowShot) { $0.elementType == .button && $0.identifier.hasPrefix("chat.bubble.\(self.token(Polish.mineFirst)).") }, "No bubble in the row")
+        let rowFrame = rowShot.frame
+        let mineFrame = mineShot.frame
+        let chipsFrame = chipsShot.frame
+        let chipFrame = chipShot.frame
+        XCTAssertEqual(chipShot.label, "👍 1, you reacted")
+        XCTAssertTrue(chipShot.isSelected)
+        XCTAssertLessThanOrEqual(abs(chipsFrame.maxX - mineFrame.maxX), 2, "Your chips should sit under your bubble on the right: chips \(chipsFrame), bubble \(mineFrame)")
+        XCTAssertGreaterThanOrEqual(mineFrame.maxX, rowFrame.maxX - 2, "Your bubble should hug the row's right edge at AX5: bubble \(mineFrame), row \(rowFrame)")
+        XCTAssertGreaterThanOrEqual(chipFrame.minX, 0, "The chip is clipped on the left at AX5: \(chipFrame)")
+        XCTAssertLessThanOrEqual(chipFrame.maxX, width + 1, "The chip runs off screen at AX5: \(chipFrame)")
+        XCTAssertGreaterThan(chipFrame.minY, mineFrame.maxY - 1, "The chip overlaps the bubble: chip \(chipFrame), bubble \(mineFrame)")
+        assertHitSize(chipFrame.height)
 
-        let add = chips.buttons["reaction-add"]
-        XCTAssertTrue(add.exists, "No + to open the emoji row")
-        XCTAssertEqual(add.label, "Add a reaction")
-        add.tap()
-        let picker = app.descendants(matching: .any)["reaction-picker"]
+        let addShot = Self.find(chipsShot) { $0.elementType == .button && $0.identifier == "reaction-add" }
+        XCTAssertNotNil(addShot, "No + to open the emoji row")
+        XCTAssertEqual(addShot?.label, "Add a reaction")
+        chips.buttons["reaction-add"].tap()
+        clock.lap("tap-add")
+        let picker = row.descendants(matching: .any)["reaction-picker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5), "+ did not open the emoji row")
-        let selected = picker.buttons["tapback-hand.thumbsup.fill"]
-        XCTAssertTrue(selected.isSelected, "The row should show your current reaction")
-        for option in picker.buttons.allElementsBoundByIndex {
+        clock.lap("open-picker")
+        // The whole emoji row in one snapshot; was two whole-tree resolutions per emoji.
+        let pickerShot = try picker.snapshot()
+        clock.lap("picker-snapshot")
+        let options = Self.findAll(pickerShot) { $0.elementType == .button }
+        let selectedShot = options.first { $0.identifier == "tapback-hand.thumbsup.fill" }
+        XCTAssertTrue(selectedShot?.isSelected == true, "The row should show your current reaction")
+        for option in options {
             XCTAssertGreaterThanOrEqual(option.frame.minX, 0, "An emoji is clipped at AX5: \(option.frame)")
             XCTAssertLessThanOrEqual(option.frame.maxX, width + 1, "An emoji runs off screen at AX5: \(option.frame)")
         }
-        selected.tap()
+        picker.buttons["tapback-hand.thumbsup.fill"].tap()
         XCTAssertTrue(chip.waitForNonExistence(timeout: 5), "Picking your own reaction again should take it back")
+        clock.lap("take-back")
+        clock.total()
+    }
+
+    /// First element in a snapshot (itself included, depth first) that matches.
+    private static func find(_ root: any XCUIElementSnapshot, where match: (any XCUIElementSnapshot) -> Bool) -> (any XCUIElementSnapshot)? {
+        if match(root) { return root }
+        for child in root.children {
+            if let found = find(child, where: match) { return found }
+        }
+        return nil
+    }
+
+    /// Every element in a snapshot that matches, in tree order.
+    private static func findAll(_ root: any XCUIElementSnapshot, where match: (any XCUIElementSnapshot) -> Bool) -> [any XCUIElementSnapshot] {
+        (match(root) ? [root] : []) + root.children.flatMap { findAll($0, where: match) }
     }
 
     func testLongPressOffersReactReplyAndCopy() {
@@ -2719,5 +2768,29 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(error.waitForExistence(timeout: 3), "An empty name moved on")
         XCTAssertEqual(error.label, "Add the name your squad will see.")
         assertErrorAboveKeyboard(error, focusing: name, in: app)
+    }
+}
+
+/// Prints how long each step of a UI test took, as
+/// "[ui-timing] <test> <step> <seconds>s", so a run log shows which XCUI round
+/// trip was slow (an app that never idles makes every step slow; one huge
+/// snapshot makes only that step slow).
+struct StepClock {
+    private let name: String
+    private let started = Date()
+    private var last = Date()
+
+    init(_ name: String) {
+        self.name = name
+    }
+
+    mutating func lap(_ step: String) {
+        let now = Date()
+        print(String(format: "[ui-timing] %@ %@ %.2fs", name, step, now.timeIntervalSince(last)))
+        last = now
+    }
+
+    func total() {
+        print(String(format: "[ui-timing] %@ total %.2fs", name, Date().timeIntervalSince(started)))
     }
 }

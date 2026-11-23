@@ -620,3 +620,38 @@ struct ChatScrollBridge: UIViewRepresentable {
         }
     }
 }
+
+#if DEBUG
+/// DEBUG only. A background thread pings the main thread twice a second and logs
+/// every ping that waited 250 ms or more, with how long. XCUI fails with "process
+/// main thread busy for 30.0s" or a snapshot timeout; these lines say whether the
+/// app's main thread really was blocked, and when, or whether it was answering and
+/// the slowness was elsewhere (a large accessibility snapshot, the runner). Capture:
+/// `log stream --level debug --predicate 'subsystem == "com.spencereese.squadsync"'`.
+enum MainThreadStallWatch {
+    private static let log = Logger(subsystem: "com.spencereese.squadsync", category: "main-stall")
+    @MainActor private static var started = false
+
+    @MainActor static func start() {
+        guard !started else { return }
+        started = true
+        log.debug("watching the main thread (report at 250 ms)")
+        let watcher = Thread {
+            while true {
+                let sent = DispatchTime.now()
+                let answered = DispatchSemaphore(value: 0)
+                DispatchQueue.main.async { answered.signal() }
+                if answered.wait(timeout: sent + .milliseconds(250)) == .timedOut {
+                    answered.wait()
+                    let waited = (DispatchTime.now().uptimeNanoseconds - sent.uptimeNanoseconds) / 1_000_000
+                    log.error("main thread stalled \(waited, privacy: .public) ms")
+                }
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+        }
+        watcher.name = "main-stall-watch"
+        watcher.qualityOfService = .utility
+        watcher.start()
+    }
+}
+#endif

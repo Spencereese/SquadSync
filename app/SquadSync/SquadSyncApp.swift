@@ -76,6 +76,9 @@ struct SquadSyncApp: App {
         self.launch = launch
         _store = State(initialValue: MockStore.seeded(scenario: launch.scenario))
         PushCoordinator.shared.consumeLaunchArguments()
+        #if DEBUG
+        MainThreadStallWatch.start()
+        #endif
     }
 
     var body: some Scene {

@@ -167,9 +167,11 @@ enum SpotLoadState: Equatable {
     case loaded
     case failed(String)
 
-    /// Only show "Loading…" before a card is on screen. A refresh keeps the card as it is.
+    /// Only show "Loading…" before the first answer. A refresh keeps what's on screen:
+    /// the card, or the settled "no call" state. Re-entering .loading on every poll
+    /// put a spinner row at the top of the thread every 3 s when no call was open.
     static func beginning(_ previous: SpotLoadState, hasCard: Bool) -> SpotLoadState {
-        hasCard ? previous : .loading
+        hasCard || previous == .loaded ? previous : .loading
     }
 
     /// A failed read says so. It never pretends there is no call.

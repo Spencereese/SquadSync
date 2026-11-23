@@ -1,5 +1,5 @@
--- UNAPPLIED. Proposed security fix for 0017 (side threads). Do not apply without Spencer's yes.
--- Not applied to the live project. Idempotent: running it again is safe.
+-- APPLIED live on Nov 19, 2026 (about 2:27 PM CT) with Spencer's yes. Security fix for 0017 (side threads).
+-- Idempotent: running it again is safe.
 --
 -- Written against the live 0017 objects as read (read-only) on Nov 18, 2026:
 -- tables public.sq8_threads / sq8_thread_members / sq8_thread_messages,

@@ -81,9 +81,15 @@ final class ChatScrollController: NSObject {
         view.panGestureRecognizer.addTarget(self, action: #selector(handlePan(_:)))
         observations = [
             view.observe(\.contentOffset, options: [.new]) { [weak self] view, _ in
+                #if DEBUG
+                HangProbe.mark(.offsetKVO)
+                #endif
                 MainActor.assumeIsolated { self?.geometryChanged(view) }
             },
             view.observe(\.contentSize, options: [.new]) { [weak self] view, _ in
+                #if DEBUG
+                HangProbe.mark(.sizeKVO)
+                #endif
                 MainActor.assumeIsolated { self?.contentSizeChanged(view) }
             },
             // contentMargins and the keyboard can change the insets with no offset
@@ -94,6 +100,9 @@ final class ChatScrollController: NSObject {
             },
             view.layer.observe(\.bounds, options: [.old, .new]) { [weak self, weak view] _, change in
                 guard let old = change.oldValue, let new = change.newValue, old.size.height != new.size.height else { return }
+                #if DEBUG
+                HangProbe.mark(.viewportKVO)
+                #endif
                 MainActor.assumeIsolated {
                     guard let view else { return }
                     self?.viewportChanged(view, oldHeight: Double(old.size.height))
@@ -462,6 +471,9 @@ final class ChatScrollController: NSObject {
 
     private func set(_ view: UIScrollView, offset: Double) {
         guard abs(Double(view.contentOffset.y) - offset) > 0.01 || view.isDecelerating else { return }
+        #if DEBUG
+        HangProbe.mark(.offsetSet)
+        #endif
         view.setContentOffset(CGPoint(x: view.contentOffset.x, y: offset), animated: false)
     }
 
@@ -620,3 +632,96 @@ struct ChatScrollBridge: UIViewRepresentable {
         }
     }
 }
+
+#if DEBUG
+/// DEBUG only. Counts of main-thread work that can feed a layout loop, readable
+/// from the stall watcher's thread while the main thread is stuck: if these
+/// climb during a hang it's a loop through them; if they stay flat the main
+/// thread is blocked somewhere else (a wait, a lock, a framework call).
+final class HangProbe: @unchecked Sendable {
+    enum Mark: Int, CaseIterable {
+        case offsetKVO, sizeKVO, viewportKVO, offsetSet, rowGeometry, rowBuild, listBody, chipFlowSize, chipFlowPlace
+    }
+
+    private static let shared = HangProbe()
+    private let lock = NSLock()
+    private var counts = [Int](repeating: 0, count: Mark.allCases.count)
+
+    static func mark(_ mark: Mark) {
+        shared.lock.lock()
+        shared.counts[mark.rawValue] += 1
+        shared.lock.unlock()
+    }
+
+    static func read() -> [Int] {
+        shared.lock.lock()
+        defer { shared.lock.unlock() }
+        return shared.counts
+    }
+
+    /// "offsetKVO=12 sizeKVO=3 ..." for the counts that moved, or "none".
+    static func delta(from before: [Int], to after: [Int]) -> String {
+        let moved = Mark.allCases.compactMap { mark -> String? in
+            let change = after[mark.rawValue] - before[mark.rawValue]
+            return change == 0 ? nil : "\(mark)=\(change)"
+        }
+        return moved.isEmpty ? "none" : moved.joined(separator: " ")
+    }
+}
+
+/// DEBUG only. A background thread (not the main thread, so a hard hang can't
+/// silence it) pings the main thread twice a second. A ping that waits 250 ms
+/// is reported when it ends, as "main thread stalled N ms" with the HangProbe
+/// counts that moved meanwhile. While the main thread stays blocked, it logs
+/// "main thread blocked N ms so far" once a second, from the background
+/// thread, with that second's counts. The first watcher (6b38612) waited for
+/// the main thread before logging anything, so a hard hang logged nothing at all.
+///
+/// With SQ_HANG_ABORT_SECONDS set in the app's environment (the UI tests'
+/// launchChat sets it, 90 s), a block that long aborts the
+/// app so the simulator writes a crash report with the main thread's stack
+/// (~/Library/Logs/DiagnosticReports/SquadSync-*.ips on the Mac).
+/// Capture: `log stream --level debug --predicate 'subsystem == "com.spencereese.squadsync"'`.
+enum MainThreadStallWatch {
+    private static let log = Logger(subsystem: "com.spencereese.squadsync", category: "main-stall")
+    @MainActor private static var started = false
+
+    @MainActor static func start() {
+        guard !started else { return }
+        started = true
+        let abortAfter = ProcessInfo.processInfo.environment["SQ_HANG_ABORT_SECONDS"].flatMap { Double($0) }
+        log.debug("watching the main thread off-main (report at 250 ms, abort after \(abortAfter.map { "\($0) s" } ?? "never", privacy: .public))")
+        let watcher = Thread {
+            while true {
+                let before = HangProbe.read()
+                let sent = DispatchTime.now()
+                let answered = DispatchSemaphore(value: 0)
+                DispatchQueue.main.async { answered.signal() }
+                if answered.wait(timeout: sent + .milliseconds(250)) == .timedOut {
+                    var lastSecond = HangProbe.read()
+                    while answered.wait(timeout: .now() + .seconds(1)) == .timedOut {
+                        let blocked = elapsedMilliseconds(since: sent)
+                        let now = HangProbe.read()
+                        log.error("main thread blocked \(blocked, privacy: .public) ms so far; last second: \(HangProbe.delta(from: lastSecond, to: now), privacy: .public)")
+                        lastSecond = now
+                        if let abortAfter, Double(blocked) >= abortAfter * 1000 {
+                            log.fault("main thread blocked \(blocked, privacy: .public) ms: aborting for a crash report with its stack")
+                            abort()
+                        }
+                    }
+                    let waited = elapsedMilliseconds(since: sent)
+                    log.error("main thread stalled \(waited, privacy: .public) ms; during it: \(HangProbe.delta(from: before, to: HangProbe.read()), privacy: .public)")
+                }
+                Thread.sleep(forTimeInterval: 0.5)
+            }
+        }
+        watcher.name = "main-stall-watch"
+        watcher.qualityOfService = .userInitiated
+        watcher.start()
+    }
+
+    private static func elapsedMilliseconds(since start: DispatchTime) -> UInt64 {
+        (DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000
+    }
+}
+#endif

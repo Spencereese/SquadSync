@@ -566,3 +566,65 @@ enum ChatJump {
         newCount == 0 ? "Latest" : "\(newCount) new"
     }
 }
+
+/// Where the reaction chips and the emoji row wrap (the ChipFlow layout). Pure,
+/// so the sizing rules are unit tested.
+///
+/// Built once per layout update from each chip's ideal size, so a parent that
+/// asks for sizes many times (stacks probe at zero, at infinity and at the real
+/// width) never re-measures a chip.
+///
+/// Every answer is an honest size for that proposal. The first version answered
+/// a zero-width probe (a stack asking "how narrow can you get?") with the whole
+/// single row: at AX5 the six-emoji row then claimed a minimum wider than the
+/// screen while its real size at the screen's width wrapped to two rows. On the
+/// Mac (35b486f) opening or closing that row hung the main thread inside one
+/// SwiftUI layout transaction (stack, flexible-frame and lazy-stack measuring,
+/// ChipFlow itself already cached) for minutes.
+struct ChipFlowGeometry: Equatable {
+    let sizes: [CGSize]
+    let spacing: CGFloat
+
+    /// Measures each chip exactly once.
+    init(count: Int, spacing: CGFloat, measure: (Int) -> CGSize) {
+        self.sizes = (0..<count).map(measure)
+        self.spacing = spacing
+    }
+
+    /// Chip indices per row, filled greedily. No width (an ideal-size probe) or an
+    /// infinite one is a single row; zero puts every chip on its own row. A chip
+    /// wider than the width still gets a row to itself.
+    func rows(width: CGFloat?) -> [[Int]] {
+        guard !sizes.isEmpty else { return [] }
+        guard let width, width.isFinite else { return [Array(sizes.indices)] }
+        var rows: [[Int]] = [[]]
+        var used: CGFloat = 0
+        for (index, size) in sizes.enumerated() {
+            let next = used == 0 ? size.width : used + spacing + size.width
+            if used > 0, next > width {
+                rows.append([index])
+                used = size.width
+            } else {
+                rows[rows.count - 1].append(index)
+                used = next
+            }
+        }
+        return rows
+    }
+
+    func rowWidth(_ row: [Int]) -> CGFloat {
+        row.map { sizes[$0].width }.reduce(0, +) + spacing * CGFloat(max(row.count - 1, 0))
+    }
+
+    func rowHeight(_ row: [Int]) -> CGFloat {
+        row.map { sizes[$0].height }.max() ?? 0
+    }
+
+    /// As wide as the widest row (so a parent stack can put it on either side) and
+    /// as tall as the rows. Never wider than the width unless one chip is.
+    func size(width: CGFloat?) -> CGSize {
+        let rows = rows(width: width)
+        let height = rows.map(rowHeight).reduce(0, +) + spacing * CGFloat(max(rows.count - 1, 0))
+        return CGSize(width: rows.map(rowWidth).max() ?? 0, height: height)
+    }
+}

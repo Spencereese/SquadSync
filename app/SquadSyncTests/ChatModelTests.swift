@@ -1,4 +1,5 @@
 import XCTest
+import Observation
 @testable import SquadSync
 
 /// Message polish (redesign S3) through the session model on the mock backend:
@@ -24,6 +25,40 @@ final class ChatModelTests: XCTestCase {
         model.draft = "on my way"
         await model.send()
         XCTAssertNil(model.unreadMarker.anchor, "Sending clears the divider")
+    }
+
+    /// The mock backend has no socket, so it polls every 3 s for the app's whole
+    /// life. A poll that brings nothing new must not write anything a view reads:
+    /// an @Observable write redraws its readers even when the value is equal, and
+    /// re-entering the spot's loading state put a spinner row at the top of the
+    /// thread. That redraw every 3 s kept the AX5 chat busy under XCUI snapshots.
+    func testAPollThatBringsNothingNewRedrawsNothing() async {
+        let model = model(.chatPolish)
+        await model.reloadChat()
+        await model.pollNow()
+        XCTAssertEqual(model.polls, 1, "The poll didn't run; is the chat loaded?")
+        XCTAssertEqual(model.spotLoad, .loaded)
+        let changed = Changed()
+        let reads: [(String, () -> Void)] = [
+            ("log", { _ = model.log }),
+            ("chatLoad", { _ = model.chatLoad }),
+            ("spot", { _ = model.spot }),
+            ("spotLoad", { _ = model.spotLoad }),
+            ("spotServer", { _ = model.spotServer }),
+            ("spotHistory", { _ = model.spotHistory }),
+            ("spotHistoryNote", { _ = model.spotHistoryNote }),
+            ("status", { _ = model.status }),
+            ("presenceNote", { _ = model.presenceNote }),
+            ("reconnecting", { _ = model.reconnecting }),
+            ("link", { _ = model.link })
+        ]
+        for (name, read) in reads {
+            withObservationTracking(read, onChange: { changed.add(name) })
+        }
+        await model.pollNow()
+        XCTAssertEqual(model.polls, 2)
+        XCTAssertEqual(changed.names, [], "A poll with nothing new redrew views that read these")
+        XCTAssertEqual(model.spotLoad, .loaded, "A refresh must not show the spot loading row again")
     }
 
     func testReplySendsWithTheOriginalsIdAndClearsTheBanner() async {
@@ -119,4 +154,11 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(fire?.count, 2)
         XCTAssertEqual(fire?.mine, true)
     }
+}
+
+/// Which observed properties were written. onChange runs synchronously on the
+/// writer's thread (the main actor here), so no lock.
+private final class Changed: @unchecked Sendable {
+    private(set) var names: [String] = []
+    func add(_ name: String) { names.append(name) }
 }

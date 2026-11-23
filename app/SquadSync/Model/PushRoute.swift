@@ -193,6 +193,16 @@ enum PushStoreFailure {
     }
 }
 
+/// The one status line under sign-in and the panel. It says only what's true
+/// for the backend the app launched with, and never claims a device test.
 enum LiveShellCopy {
-    static let footer = "Voice stays mock. Spots are live. Push is wired but not live until the server side ships."
+    static let liveFooter = "Spots are live. Push and voice are on the server but not yet tested on a phone."
+    static let mockFooter = "Sample data. Nothing here reaches the server."
+
+    static func footer(for backend: BackendMode) -> String {
+        switch backend {
+        case .live: return liveFooter
+        case .mock: return mockFooter
+        }
+    }
 }

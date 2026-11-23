@@ -6,6 +6,11 @@ import os
 /// Opening a pushed message: each step, so a launch that doesn't open it can be read
 /// back from the device log (subsystem com.spencereese.squadsync, category chat-open).
 private let chatOpenLog = Logger(subsystem: "com.spencereese.squadsync", category: "chat-open")
+#if DEBUG
+/// One line per poll: whether it changed the thread. Capture with
+/// `log stream --level debug --predicate 'subsystem == "com.spencereese.squadsync"'`.
+private let pollTrace = Logger(subsystem: "com.spencereese.squadsync", category: "poll")
+#endif
 
 @MainActor
 @Observable
@@ -80,7 +85,10 @@ final class LiveSessionModel {
     var transferTo: UUID?
     var spotNote = ""
     /// How many times the spot card was read. A failed call increments it.
-    var spotLoads = 0
+    /// No view reads it, so bumping it on every poll redraws nothing.
+    @ObservationIgnored private(set) var spotLoads = 0
+    /// Polls that finished. Read by tests; no view reads it.
+    @ObservationIgnored private(set) var polls = 0
     var spotServer = SpotServerCapabilities.unavailable
     /// Finished calls from the server, shown as compact cards in the thread.
     var spotHistory: [SpotCall] = []
@@ -92,12 +100,34 @@ final class LiveSessionModel {
     var spotSheet = SpotSheetState.editing
     var status = ""
     var reconnecting = false
-    var notes: [String] = [
-        LiveShellCopy.footer
-    ]
+    /// The status line for this backend first, then any "not set up yet" gaps.
+    var notes: [String] = []
     var busy = false
-    /// Voice is a mock on the home header. The pill drives the in-memory room only.
+    /// The home header's voice pill. Mock backend: the in-memory room only.
+    /// Live: `voicePill.live` mirrors the squad voice room (`squadVoice`).
     var voicePill = VoicePillState()
+    /// Live only: the squad voice sheet (join, leave, mute, who's in).
+    var voiceSheetOpen = false
+    /// Live only: the squad's Stream voice room. Created on first use.
+    @ObservationIgnored private var squadVoice: SquadVoiceSession?
+    /// Which backend this model runs. Voice only ever reaches Stream on `.live`.
+    private let backendMode: BackendMode
+    /// The engine every live voice room gets: Stream's SDK where it's linked (the
+    /// app), otherwise `UnlinkedSquadVoiceEngine` ("Voice isn't set up yet").
+    /// Tests swap it for a fake. It gets the token source so it can refresh.
+    /// Called only from `liveVoiceRoom()`: on the live backend, on the first
+    /// join. The mock backend never calls it, so it never builds a Stream engine.
+    static var makeVoiceEngine: (SquadVoiceTokenFetching) -> SquadVoiceEngine = defaultVoiceEngine
+    /// How many voice engines models have built (tests prove the mock builds none).
+    private(set) static var voiceEnginesBuilt = 0
+
+    static func defaultVoiceEngine(_ tokens: SquadVoiceTokenFetching) -> SquadVoiceEngine {
+        #if canImport(StreamVideo)
+        return StreamVoiceEngine(tokens: tokens)
+        #else
+        return UnlinkedSquadVoiceEngine()
+        #endif
+    }
     /// The status line the last failed send wrote, so a later success can clear exactly that.
     var sendFailureStatus: String?
     // Who's in (S4): check-ins, what the server supports, and Steam when it's deployed.
@@ -177,6 +207,7 @@ final class LiveSessionModel {
 
     init(config: BackendConfig, backend: BackendMode = .live, scenario: LaunchScenario = .seated, sessionStore: SessionStoring? = nil, outbox: ChatOutbox? = nil) {
         self.config = config
+        self.backendMode = backend
         if let outbox {
             self.outbox = outbox
         } else if backend == .mock {
@@ -353,6 +384,8 @@ final class LiveSessionModel {
                 Task { @MainActor in self?.sessionRefreshed(session) }
             }
         }
+        notes.insert(LiveShellCopy.footer(for: backend), at: 0)
+        if backend == .live { voicePill.live = SquadVoiceState() }
     }
 
     /// Every token refresh hands the open socket the new JWT, so realtime doesn't
@@ -837,6 +870,7 @@ final class LiveSessionModel {
                 poll = nil
                 self.squad = nil
                 self.spot = nil
+                self.spotLoad = .idle
                 self.log = ChatLog()
                 self.inviteCode = ""
                 self.transferTo = nil
@@ -899,9 +933,9 @@ final class LiveSessionModel {
         guard let squad else { return }
         spotLoads += 1
         defer { scheduleExpiryRead(session) }
-        spotLoad = SpotLoadState.beginning(spotLoad, hasCard: spot != nil)
+        quietly(\.spotLoad, SpotLoadState.beginning(spotLoad, hasCard: spot != nil))
         let service = spotService(session)
-        spotServer = await service.serverCapabilities()
+        quietly(\.spotServer, await service.serverCapabilities())
         await loadSpotHistory(service, squad: squad)
         do {
             let loaded = try await service.current(squadId: squad.id)
@@ -913,13 +947,13 @@ final class LiveSessionModel {
                     }
                     return copy
                 }
-                spot = loaded
+                quietly(\.spot, loaded)
             } else if mockSpots == nil {
-                spot = nil
+                quietly(\.spot, nil)
             }
-            spotLoad = SpotLoadState.finished(failure: nil)
+            quietly(\.spotLoad, SpotLoadState.finished(failure: nil))
         } catch {
-            spotLoad = SpotLoadState.finished(failure: SpotThread.loadFailed)
+            quietly(\.spotLoad, SpotLoadState.finished(failure: SpotThread.loadFailed))
             report(error)
         }
     }
@@ -928,10 +962,10 @@ final class LiveSessionModel {
     private func loadSpotHistory(_ service: SpotServing, squad: SquadRecord) async {
         do {
             let past = try await service.history(squadId: squad.id, limit: SpotThread.historyLimit)
-            spotHistory = past
-            spotHistoryNote = ""
+            quietly(\.spotHistory, past)
+            quietly(\.spotHistoryNote, "")
         } catch {
-            spotHistoryNote = SpotThread.historyUnavailable
+            quietly(\.spotHistoryNote, SpotThread.historyUnavailable)
         }
     }
 
@@ -1361,8 +1395,13 @@ final class LiveSessionModel {
         }
     }
 
-    /// Joins or leaves the in-memory voice room. Nothing goes over the network.
+    /// The header's voice pill. Mock backend: joins or leaves the in-memory room
+    /// (nothing goes over the network). Live: opens the squad voice sheet.
     func toggleVoice() async {
+        if voicePill.live != nil {
+            voiceSheetOpen = true
+            return
+        }
         let user = (viewerId ?? profile?.id)?.uuidString ?? "viewer"
         if voicePill.joined {
             await voiceRoom.leave(userId: user)
@@ -1375,8 +1414,62 @@ final class LiveSessionModel {
         voicePill.connection = voiceRoom.connection
     }
 
+    // MARK: Squad voice (live)
+
+    /// What the voice sheet shows. Idle with the mock backend.
+    var squadVoiceState: SquadVoiceState { voicePill.live ?? SquadVoiceState() }
+
+    /// The squad's room, built on the first live join. Nil on the mock backend:
+    /// nothing there may construct the Stream engine.
+    private func liveVoiceRoom() -> SquadVoiceSession? {
+        guard backendMode == .live else { return nil }
+        if let squadVoice { return squadVoice }
+        let tokens = SupabaseSquadVoiceTokens(
+            config: config,
+            currentToken: { [weak self] in await self?.voiceAccessToken() },
+            refresher: tokenRefresher
+        )
+        Self.voiceEnginesBuilt += 1
+        let room = SquadVoiceSession(tokens: tokens, engine: Self.makeVoiceEngine(tokens))
+        room.onChange = { [weak self] state in
+            Task { @MainActor in self?.voicePill.live = state }
+        }
+        squadVoice = room
+        return room
+    }
+
+    /// The signed-in session's token, read on the main actor for each voice request.
+    private func voiceAccessToken() -> String? {
+        (try? requiredSession())?.accessToken
+    }
+
+    func joinSquadVoice() async {
+        guard voicePill.live != nil, let squad, let room = liveVoiceRoom() else { return }
+        await room.join(squadId: squad.id, name: profile?.displayName ?? "You")
+        voicePill.live = room.state
+    }
+
+    func leaveSquadVoice() async {
+        guard let room = squadVoice else { return }
+        await room.leave()
+        voicePill.live = room.state
+    }
+
+    func toggleSquadVoiceMute() async {
+        guard let room = squadVoice else { return }
+        await room.toggleMute()
+        voicePill.live = room.state
+    }
+
     func signOut() async {
-        if voicePill.joined { await toggleVoice() }
+        if voicePill.live != nil {
+            await leaveSquadVoice()
+            squadVoice = nil
+            voiceSheetOpen = false
+            voicePill.live = SquadVoiceState()
+        } else if voicePill.joined {
+            await toggleVoice()
+        }
         // Unsent messages belong to this account; the next person doesn't get them.
         if let user = viewerId ?? profile?.id { outbox.clear(userId: user) }
         olderPaging = ChatOlderPaging()
@@ -1479,10 +1572,18 @@ final class LiveSessionModel {
 
     /// Any round-trip that worked: clears "Reconnecting…" wherever it is shown.
     func connectionProven() {
-        reconnecting = false
-        if simulatesLink { link = SimulatedLink.afterProof(link) }
-        status = ConnectionRecovery.status(afterProof: status)
-        presenceNote = ConnectionRecovery.resumeNote(afterProof: presenceNote)
+        quietly(\.reconnecting, false)
+        if simulatesLink { quietly(\.link, SimulatedLink.afterProof(link)) }
+        quietly(\.status, ConnectionRecovery.status(afterProof: status))
+        quietly(\.presenceNote, ConnectionRecovery.resumeNote(afterProof: presenceNote))
+    }
+
+    /// Writes only a changed value. The poll fallback (every 3 s, and always on the
+    /// mock backend) re-sets the same chat, spot and status values each time; an
+    /// @Observable write tells every view that read the property to redraw even
+    /// when the value is equal, so each poll used to redraw the whole thread.
+    private func quietly<Value: Equatable>(_ path: ReferenceWritableKeyPath<LiveSessionModel, Value>, _ value: Value) {
+        if self[keyPath: path] != value { self[keyPath: path] = value }
     }
 
     func becameActive() async {
@@ -1926,16 +2027,31 @@ final class LiveSessionModel {
         }
     }
 
+    /// One poll now, as the 3 s timer would. Tests drive it instead of waiting.
+    func pollNow() async {
+        guard let session = try? requiredSession() else { return }
+        await pollOnce(session)
+    }
+
     private func pollOnce(_ session: AuthSession) async {
         guard let squad, HistoryMerge.accepts(requestSquad: squad.id, loadedSquad: loadedSquad) else { return }
         let requested = squad.id
         do {
             let rows = try await chatService(session).history(squadId: requested)
             guard HistoryMerge.accepts(requestSquad: requested, loadedSquad: loadedSquad) else { return }
-            log.adopt(replacingSquad: false, history: rows.map { $0.entry() })
-            chatLoad = .loaded
+            var merged = log
+            merged.adopt(replacingSquad: false, history: rows.map { $0.entry() })
+            #if DEBUG
+            let changed = merged != log
+            #endif
+            quietly(\.log, merged)
+            quietly(\.chatLoad, .loaded)
             connectionProven()
             await loadSpot(session)
+            polls += 1
+            #if DEBUG
+            pollTrace.debug("poll \(self.polls, privacy: .public) rows=\(rows.count, privacy: .public) thread=\(changed ? "changed" : "same", privacy: .public)")
+            #endif
             // Without the socket, check-ins only refresh while someone is looking at them.
             if whosInOpen { await loadWhosIn() }
         } catch {
@@ -2004,6 +2120,7 @@ final class LiveSessionModel {
             poll = nil
             squad = nil
             spot = nil
+            spotLoad = .idle
             profile = nil
             phase = .email
             reconnecting = false
@@ -2122,6 +2239,10 @@ struct LiveSessionView: View {
         }
         .sheet(isPresented: $showMembers) {
             membershipSheet
+                .adoptingLaunchDynamicType()
+        }
+        .sheet(isPresented: Binding(get: { model.voiceSheetOpen }, set: { model.voiceSheetOpen = $0 })) {
+            SquadVoiceSheet(model: model)
                 .adoptingLaunchDynamicType()
         }
         .sheet(isPresented: Binding(get: { model.whosInOpen }, set: { model.whosInOpen = $0 })) {
@@ -2347,6 +2468,9 @@ struct LiveSessionView: View {
 
     private var chatList: some View {
         let _ = ChatScrollTrace.counted(.listBody)
+        #if DEBUG
+        let _ = HangProbe.mark(.listBody)
+        #endif
         return ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 ScrollView {
@@ -3539,6 +3663,9 @@ struct LiveSessionView: View {
     /// per run. Long-press for reactions, Reply, Copy, and Retry; double-tap or
     /// React (or + under the chips) opens the emoji row.
     private func messageRow(_ bubble: ChatBubble) -> some View {
+        #if DEBUG
+        HangProbe.mark(.rowBuild)
+        #endif
         let entry = bubble.entry
         let chipsForRow = ChatReactions.chips(marks: model.board.marks, messageId: entry.id, viewerId: viewerForChat)
         let actions = ChatAction.available(for: entry, repliesAvailable: model.chatCaps.replies)
@@ -3761,60 +3888,37 @@ private struct ChipFlow: Layout {
     /// Which side ragged rows hug. Trailing for reactions under your own bubble.
     var alignment: HorizontalAlignment = .leading
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let width = proposal.width ?? 0
-        guard width > 0 else {
-            let sizes = subviews.map { $0.sizeThatFits(.unspecified) }
-            let height = sizes.map(\.height).max() ?? 0
-            let total = sizes.map(\.width).reduce(0, +) + spacing * CGFloat(max(sizes.count - 1, 0))
-            return CGSize(width: total, height: height)
-        }
-        let rows = rows(width: width, subviews: subviews)
-        let height = rows.map { $0.map(\.height).max() ?? 0 }.reduce(0, +)
-            + spacing * CGFloat(max(rows.count - 1, 0))
-        // As wide as the widest row, so a parent stack can put it on either side.
-        let widest = rows.map(rowWidth).max() ?? 0
-        return CGSize(width: min(width, widest), height: height)
+    /// Each chip's ideal size, measured once per update (see ChipFlowGeometry).
+    func makeCache(subviews: Subviews) -> ChipFlowGeometry {
+        ChipFlowGeometry(count: subviews.count, spacing: spacing) { subviews[$0].sizeThatFits(.unspecified) }
     }
 
-    private func rowWidth(_ row: [CGSize]) -> CGFloat {
-        row.map(\.width).reduce(0, +) + spacing * CGFloat(max(row.count - 1, 0))
+    func updateCache(_ cache: inout ChipFlowGeometry, subviews: Subviews) {
+        cache = makeCache(subviews: subviews)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let rows = rows(width: bounds.width, subviews: subviews)
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ChipFlowGeometry) -> CGSize {
+        #if DEBUG
+        HangProbe.mark(.chipFlowSize)
+        #endif
+        return cache.size(width: proposal.width)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ChipFlowGeometry) {
+        #if DEBUG
+        HangProbe.mark(.chipFlowPlace)
+        #endif
         var y = bounds.minY
-        var index = 0
-        for row in rows {
-            let rowHeight = row.map(\.height).max() ?? 0
-            var x = alignment == .trailing ? max(bounds.minX, bounds.maxX - rowWidth(row)) : bounds.minX
-            for size in row {
-                subviews[index].place(
-                    at: CGPoint(x: x, y: y),
-                    proposal: ProposedViewSize(width: size.width, height: size.height)
-                )
+        for row in cache.rows(width: bounds.width) {
+            let width = cache.rowWidth(row)
+            var x = alignment == .trailing ? max(bounds.minX, bounds.maxX - width) : bounds.minX
+            for index in row {
+                let size = cache.sizes[index]
+                subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(width: size.width, height: size.height))
                 x += size.width + spacing
-                index += 1
             }
-            y += rowHeight + spacing
+            y += cache.rowHeight(row) + spacing
         }
-    }
-
-    private func rows(width: CGFloat, subviews: Subviews) -> [[CGSize]] {
-        var rows: [[CGSize]] = [[]]
-        var used: CGFloat = 0
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
-            let next = used == 0 ? size.width : used + spacing + size.width
-            if used > 0, next > width {
-                rows.append([size])
-                used = size.width
-            } else {
-                rows[rows.count - 1].append(size)
-                used = next
-            }
-        }
-        return rows
     }
 }
 
@@ -3884,6 +3988,9 @@ private struct ChatRowGeometryProbe: View {
                     list: tracksFit ? ChatRowFrame(minY: inList.minY, height: inList.height) : nil
                 )
             } action: { sample in
+                #if DEBUG
+                HangProbe.mark(.rowGeometry)
+                #endif
                 if let frame = sample.content {
                     controller.rowMoved(id, frame: frame)
                 }

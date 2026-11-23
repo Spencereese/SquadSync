@@ -600,6 +600,29 @@ enum ChatPolishSeed {
         var reactions: [ReactionMark]
     }
 
+    /// Where today's run (30 "minutes" of messages and reads) goes: inside the
+    /// last half hour, after midnight, and before now, always in order.
+    ///
+    /// The first version kept a fixed 30 s from both midnight and now. In the
+    /// first minute after midnight that left no room: the scale went to zero (every
+    /// message and read at one instant) or start passed now (the seed was in the
+    /// future). The Mac's unit run at about 00:00 CT on Nov 23 failed three
+    /// ChatModelTests that way: the read cursor equalled every message (no unread
+    /// divider) and the seeded "Me" sorted after a fresh send. Now the margins
+    /// shrink with the time since midnight, so the run stays strictly ordered,
+    /// after midnight and before now. Exactly at midnight it goes just before.
+    static func todaysRun(now: Date, today: Date) -> (start: Date, scale: Double) {
+        let window: TimeInterval = 30 * 60
+        let sinceMidnight = now.timeIntervalSince(today)
+        guard sinceMidnight > 0.001 else {
+            return (now.addingTimeInterval(-window - 30), 1)
+        }
+        let margin = min(30, sinceMidnight / 10)
+        let start = max(now.addingTimeInterval(-window), today.addingTimeInterval(margin))
+        let end = now.addingTimeInterval(-margin)
+        return (start, end.timeIntervalSince(start) / window)
+    }
+
     static func thread(viewerId: UUID, squadId: UUID, now: Date, calendar: Calendar = .current, replies: Bool = true) -> Thread {
         let today = calendar.startOfDay(for: now)
         let yesterday = calendar.date(byAdding: .day, value: -1, to: today) ?? today.addingTimeInterval(-86_400)
@@ -616,9 +639,7 @@ enum ChatPolishSeed {
         add(0x12, SpotSeed.jordan, "Same time tomorrow?", evening.addingTimeInterval(91 * 60))
         add(0x13, viewerId, "I'm in", evening.addingTimeInterval(100 * 60))
 
-        // Today's run fits between midnight and now, even just after midnight.
-        let start = max(now.addingTimeInterval(-30 * 60), today.addingTimeInterval(30))
-        let scale = max(now.addingTimeInterval(-30).timeIntervalSince(start), 0) / (30 * 60)
+        let (start, scale) = todaysRun(now: now, today: today)
         func at(_ minutes: Double) -> Date { start.addingTimeInterval(minutes * 60 * scale) }
         add(0x21, SpotSeed.alex, "Who's on tonight?", at(0))
         add(0x22, SpotSeed.alex, "I can do 9", at(1))

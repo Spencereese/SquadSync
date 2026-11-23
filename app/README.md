@@ -41,6 +41,8 @@ xcodebuild -project app/SquadSync.xcodeproj -scheme SquadSync -destination "$DES
 
 ## Test
 
+Known issues, including the AX5 reactions layout hang: [docs/known-issues.md](docs/known-issues.md).
+
 ```bash
 xcodebuild -project app/SquadSync.xcodeproj -scheme SquadSync -destination "$DEST" test
 ```

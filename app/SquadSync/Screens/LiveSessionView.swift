@@ -102,10 +102,16 @@ final class LiveSessionModel {
     var voiceSheetOpen = false
     /// Live only: the squad's Stream voice room. Created on first use.
     @ObservationIgnored private var squadVoice: SquadVoiceSession?
+    /// Which backend this model runs. Voice only ever reaches Stream on `.live`.
+    private let backendMode: BackendMode
     /// The engine every live voice room gets: Stream's SDK where it's linked (the
     /// app), otherwise `UnlinkedSquadVoiceEngine` ("Voice isn't set up yet").
     /// Tests swap it for a fake. It gets the token source so it can refresh.
+    /// Called only from `liveVoiceRoom()`: on the live backend, on the first
+    /// join. The mock backend never calls it, so it never builds a Stream engine.
     static var makeVoiceEngine: (SquadVoiceTokenFetching) -> SquadVoiceEngine = defaultVoiceEngine
+    /// How many voice engines models have built (tests prove the mock builds none).
+    private(set) static var voiceEnginesBuilt = 0
 
     static func defaultVoiceEngine(_ tokens: SquadVoiceTokenFetching) -> SquadVoiceEngine {
         #if canImport(StreamVideo)
@@ -193,6 +199,7 @@ final class LiveSessionModel {
 
     init(config: BackendConfig, backend: BackendMode = .live, scenario: LaunchScenario = .seated, sessionStore: SessionStoring? = nil, outbox: ChatOutbox? = nil) {
         self.config = config
+        self.backendMode = backend
         if let outbox {
             self.outbox = outbox
         } else if backend == .mock {
@@ -1403,13 +1410,17 @@ final class LiveSessionModel {
     /// What the voice sheet shows. Idle with the mock backend.
     var squadVoiceState: SquadVoiceState { voicePill.live ?? SquadVoiceState() }
 
-    private func liveVoiceRoom() -> SquadVoiceSession {
+    /// The squad's room, built on the first live join. Nil on the mock backend:
+    /// nothing there may construct the Stream engine.
+    private func liveVoiceRoom() -> SquadVoiceSession? {
+        guard backendMode == .live else { return nil }
         if let squadVoice { return squadVoice }
         let tokens = SupabaseSquadVoiceTokens(
             config: config,
             currentToken: { [weak self] in await self?.voiceAccessToken() },
             refresher: tokenRefresher
         )
+        Self.voiceEnginesBuilt += 1
         let room = SquadVoiceSession(tokens: tokens, engine: Self.makeVoiceEngine(tokens))
         room.onChange = { [weak self] state in
             Task { @MainActor in self?.voicePill.live = state }
@@ -1424,8 +1435,7 @@ final class LiveSessionModel {
     }
 
     func joinSquadVoice() async {
-        guard voicePill.live != nil, let squad else { return }
-        let room = liveVoiceRoom()
+        guard voicePill.live != nil, let squad, let room = liveVoiceRoom() else { return }
         await room.join(squadId: squad.id, name: profile?.displayName ?? "You")
         voicePill.live = room.state
     }

@@ -28,8 +28,13 @@ final class StreamVoiceEngine: SquadVoiceEngine {
     private var call: Call?
     private var watchers = Set<AnyCancellable>()
 
+    /// How many have been made in this process (tests prove the mock makes none).
+    private(set) static var made = 0
+
+    /// Touches nothing in the SDK: the Stream client is only built in `connect`.
     init(tokens: SquadVoiceTokenFetching) {
         self.tokens = tokens
+        Self.made += 1
     }
 
     func connect(_ grant: SquadVoiceGrant, name: String, muted: Bool) async throws -> [SquadVoiceMember] {

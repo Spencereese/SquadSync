@@ -420,6 +420,54 @@ final class SquadVoiceModelTests: XCTestCase {
         XCTAssertTrue(engine.isLinked, "The app target links StreamVideo, so live voice uses StreamVoiceEngine")
     }
 
+    func testTheMockBackendNeverBuildsAVoiceEngine() async {
+        let saved = LiveSessionModel.makeVoiceEngine
+        defer { LiveSessionModel.makeVoiceEngine = saved }
+        var factoryCalls = 0
+        LiveSessionModel.makeVoiceEngine = { tokens in
+            factoryCalls += 1
+            return LiveSessionModel.defaultVoiceEngine(tokens)
+        }
+        let built = LiveSessionModel.voiceEnginesBuilt
+        #if canImport(StreamVideo)
+        let streamMade = StreamVoiceEngine.made
+        #endif
+        let model = LiveSessionModel(
+            config: BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test"),
+            backend: .mock,
+            scenario: .seated
+        )
+        await model.toggleVoice()
+        await model.joinSquadVoice()
+        await model.toggleSquadVoiceMute()
+        await model.leaveSquadVoice()
+        await model.toggleVoice()
+        await model.signOut()
+        XCTAssertEqual(factoryCalls, 0, "The mock backend asked for a voice engine")
+        XCTAssertEqual(LiveSessionModel.voiceEnginesBuilt, built)
+        XCTAssertNil(model.voicePill.live)
+        #if canImport(StreamVideo)
+        XCTAssertEqual(StreamVoiceEngine.made, streamMade, "The mock backend built a Stream engine")
+        #endif
+    }
+
+    func testTheLiveBackendBuildsNoEngineUntilAJoin() {
+        let saved = LiveSessionModel.makeVoiceEngine
+        defer { LiveSessionModel.makeVoiceEngine = saved }
+        var factoryCalls = 0
+        LiveSessionModel.makeVoiceEngine = { _ in
+            factoryCalls += 1
+            return UnlinkedSquadVoiceEngine()
+        }
+        let model = LiveSessionModel(
+            config: BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test"),
+            backend: .live,
+            sessionStore: MemorySessionStore()
+        )
+        XCTAssertNotNil(model.voicePill.live)
+        XCTAssertEqual(factoryCalls, 0, "Launching live must not build the engine before anyone joins")
+    }
+
     func testTheMockBackendKeepsTheInMemoryPill() async {
         let model = LiveSessionModel(
             config: BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test"),

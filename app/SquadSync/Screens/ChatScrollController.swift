@@ -677,8 +677,8 @@ final class HangProbe: @unchecked Sendable {
 /// thread, with that second's counts. The first watcher (6b38612) waited for
 /// the main thread before logging anything, so a hard hang logged nothing at all.
 ///
-/// With SQ_HANG_ABORT_SECONDS set in the app's environment (the UI tests'
-/// launchChat sets it, 90 s), a block that long aborts the
+/// With SQ_HANG_ABORT_SECONDS set in the app's environment (UI tests forward
+/// it from TEST_RUNNER_SQ_HANG_ABORT_SECONDS), a block that long aborts the
 /// app so the simulator writes a crash report with the main thread's stack
 /// (~/Library/Logs/DiagnosticReports/SquadSync-*.ips on the Mac).
 /// Capture: `log stream --level debug --predicate 'subsystem == "com.spencereese.squadsync"'`.

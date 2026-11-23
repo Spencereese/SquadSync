@@ -92,9 +92,8 @@ final class LiveSessionModel {
     var spotSheet = SpotSheetState.editing
     var status = ""
     var reconnecting = false
-    var notes: [String] = [
-        LiveShellCopy.footer
-    ]
+    /// The status line for this backend first, then any "not set up yet" gaps.
+    var notes: [String] = []
     var busy = false
     /// The home header's voice pill. Mock backend: the in-memory room only.
     /// Live: `voicePill.live` mirrors the squad voice room (`squadVoice`).
@@ -370,6 +369,7 @@ final class LiveSessionModel {
                 Task { @MainActor in self?.sessionRefreshed(session) }
             }
         }
+        notes.insert(LiveShellCopy.footer(for: backend), at: 0)
         if backend == .live { voicePill.live = SquadVoiceState() }
     }
 

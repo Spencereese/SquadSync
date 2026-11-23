@@ -269,16 +269,29 @@ final class PushRouteTests: XCTestCase {
         coordinator.resetForTests()
     }
 
-    func testLiveFooterNamesSpotsAndPushHonestly() {
+    func testTheMockFooterSaysItIsSampleData() {
         let model = LiveSessionModel(
             config: BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test"),
             backend: .mock,
             scenario: .noSquad
         )
-        XCTAssertEqual(model.notes.first, LiveShellCopy.footer)
-        XCTAssertEqual(
-            LiveShellCopy.footer,
-            "Voice stays mock. Spots are live. Push is wired but not live until the server side ships."
+        XCTAssertEqual(model.notes, [LiveShellCopy.mockFooter])
+        XCTAssertEqual(LiveShellCopy.mockFooter, "Sample data. Nothing here reaches the server.")
+    }
+
+    func testTheLiveFooterNamesSpotsPushAndVoiceWithoutClaimingADeviceTest() {
+        let model = LiveSessionModel(
+            config: BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test"),
+            backend: .live,
+            sessionStore: MemorySessionStore()
         )
+        XCTAssertEqual(model.notes, [LiveShellCopy.liveFooter])
+        XCTAssertEqual(
+            LiveShellCopy.liveFooter,
+            "Spots are live. Push and voice are on the server but not yet tested on a phone."
+        )
+        XCTAssertFalse(LiveShellCopy.liveFooter.lowercased().contains("mock"))
+        XCTAssertEqual(LiveShellCopy.footer(for: .live), LiveShellCopy.liveFooter)
+        XCTAssertEqual(LiveShellCopy.footer(for: .mock), LiveShellCopy.mockFooter)
     }
 }

@@ -349,9 +349,11 @@ final class ChatThreadTests: XCTestCase {
     }
 
     func testPolishSeedHasDaysGroupsAnUnreadRunAReplyAndSeenBy() {
-        let offsets: [TimeInterval] = [0, -15 * 3600 - 4 * 60 + 5 * 60]
+        let midnight: TimeInterval = -15 * 3600 - 4 * 60
+        let offsets: [TimeInterval] = [0, midnight + 5 * 60, midnight + 5, midnight + 45, midnight + 59]
         for offset in offsets {
-            // 3:04 PM, and 12:05 AM just after midnight.
+            // 3:04 PM; 12:05 AM; and 5, 45 and 59 seconds after midnight, where the
+            // first seed put every message at one instant (the Mac's 00:00 unit run).
             let at = now.addingTimeInterval(offset)
             let thread = ChatPolishSeed.thread(viewerId: me, squadId: UUID(), now: at, calendar: clock.calendar)
             XCTAssertTrue(thread.messages.allSatisfy { $0.sentAt <= at }, "Seeded messages must not be in the future")
@@ -373,6 +375,27 @@ final class ChatThreadTests: XCTestCase {
         }
         let plain = ChatPolishSeed.thread(viewerId: me, squadId: UUID(), now: now, replies: false)
         XCTAssertTrue(plain.messages.allSatisfy { $0.replyToId == nil })
+    }
+
+    func testPolishSeedTodayRunIsOrderedAfterMidnightAndBeforeNowAtEveryTime() {
+        let today = clock.calendar.startOfDay(for: now)
+        for since: TimeInterval in [0.01, 0.5, 1, 5, 30, 45, 59, 60, 61, 300, 1799, 1800, 1801, 15 * 3600] {
+            let at = today.addingTimeInterval(since)
+            let (start, scale) = ChatPolishSeed.todaysRun(now: at, today: today)
+            let first = start
+            let last = start.addingTimeInterval(30 * 60 * scale)
+            XCTAssertGreaterThan(scale, 0, "\(since)s after midnight: every message at one instant")
+            XCTAssertGreaterThan(first, today, "\(since)s after midnight: the run starts yesterday")
+            XCTAssertLessThan(last, at, "\(since)s after midnight: the run ends in the future")
+            let thread = ChatPolishSeed.thread(viewerId: me, squadId: UUID(), now: at, calendar: clock.calendar)
+            let todays = thread.messages.filter { $0.sentAt >= today }.map(\.sentAt)
+            XCTAssertEqual(todays, todays.sorted(), "\(since)s after midnight: out of order")
+            XCTAssertEqual(Set(todays).count, todays.count, "\(since)s after midnight: two messages at one instant")
+            XCTAssertTrue(thread.messages.allSatisfy { $0.sentAt < at }, "\(since)s after midnight: a message in the future")
+        }
+        // Exactly midnight has no "today" to fit in: the run goes just before, still in the past.
+        let (start, scale) = ChatPolishSeed.todaysRun(now: today, today: today)
+        XCTAssertLessThan(start.addingTimeInterval(30 * 60 * scale), today)
     }
     func testRowsAreBuiltOncePerChangeNotPerRender() {
         let memo = ChatRowMemo()

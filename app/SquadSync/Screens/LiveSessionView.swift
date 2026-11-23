@@ -2568,8 +2568,13 @@ struct LiveSessionView: View {
                         presenceRoster
                     }
                 }
+                .overlay(alignment: .bottom) {
+                    if model.reacting, let id = model.selectedMessage {
+                        reactionTray(id)
+                    }
+                }
                 .overlay(alignment: .bottomTrailing) {
-                    if ChatJump.shows(pinned: pinnedToBottom, hasMessages: !model.log.entries.isEmpty), !showsRoster {
+                    if ChatJump.shows(pinned: pinnedToBottom, hasMessages: !model.log.entries.isEmpty), !showsRoster, !model.reacting {
                         ChatJumpButton(newCount: unreadForViewer) {
                             pinnedToBottom = true
                             scrollChatToBottom(proxy)
@@ -3754,9 +3759,8 @@ struct LiveSessionView: View {
                     }
                     .accessibilityIdentifier("react")
                 }
-                if model.reacting, model.selectedMessage == entry.id {
-                    reactionChoices(entry.id, alignment: edge)
-                }
+                // The emoji row is not here: it floats over the list (reactionTray), so
+                // opening or closing it never changes this row's height. See reactionTray.
                 if entry.delivery == .failed {
                     // The frame sits on the label, not the Button, so the hit target and
                     // the accessibility frame are both at least 44 pt tall.
@@ -3847,8 +3851,33 @@ struct LiveSessionView: View {
         }
     }
 
-    /// The emoji row: one 44 pt button per reaction, on the bubble's side, wrapping
-    /// at large text. Your current one is selected; picking it again takes it back.
+    /// The emoji row over the bottom of the message list, on the message's side,
+    /// with Close beside it. It used to open inside the message row, under the
+    /// chips. At AX5 the six emoji wrap to two rows, so opening or closing it
+    /// changed that row's height by about 170 pt, and on the iOS 26.2 simulator the
+    /// LazyVStack sometimes never finished placing the thread after that: five
+    /// crash reports from the hang watchdog (64b2b97) all have the main thread in
+    /// LazyStack.place > ForEachList.applyNodes inside one transaction, with no app
+    /// code running (HangProbe flat). Floating here, it changes no row's height.
+    private func reactionTray(_ id: UUID) -> some View {
+        let mine = model.log.entries.first { $0.id == id }?.senderId == viewerForChat
+        let edge: HorizontalAlignment = mine ? .trailing : .leading
+        return VStack(alignment: edge, spacing: SQSpace.xs) {
+            reactionChoices(id, alignment: edge)
+            Button { model.reacting = false } label: {
+                Text("Close")
+                    .font(SQType.label)
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityLabel("Close emoji row")
+            .accessibilityIdentifier("reaction-picker-close")
+        }
+        .frame(maxWidth: .infinity, alignment: Alignment(horizontal: edge, vertical: .center))
+        .padding(SQSpace.s)
+    }
+
+    /// The emoji row: one 44 pt button per reaction, wrapping at large text. Your current one is selected; picking it again takes it back.
     /// Picking closes the row.
     private func reactionChoices(_ id: UUID, alignment: HorizontalAlignment) -> some View {
         let options = ChatReactions.options(marks: model.board.marks, messageId: id, viewerId: viewerForChat)
@@ -3877,6 +3906,10 @@ struct LiveSessionView: View {
         }
         .padding(SQSpace.xs)
         .background(SQColor.surface1, in: RoundedRectangle(cornerRadius: SQRadius.l, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: SQRadius.l, style: .continuous).stroke(SQColor.hairline, lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("reaction-picker")
     }

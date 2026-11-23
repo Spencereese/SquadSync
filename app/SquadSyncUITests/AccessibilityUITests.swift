@@ -1370,16 +1370,18 @@ final class AccessibilityUITests: XCTestCase {
         static let thumbs = "reaction-chip-hand.thumbsup.fill"
     }
 
+    /// Edit to shorten a hang investigation run; see launchChat.
+    private static let hangAbortSeconds = "90"
+
     private func launchChat(_ scenario: String, largeText: Bool = false, extra: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", scenario] + (largeText ? ["-uitest-largeText"] : []) + extra
         // Hang diagnosis: a DEBUG app whose main thread stays blocked this long
         // aborts, so the simulator writes a crash report with the main thread's
         // stack (see MainThreadStallWatch). A hang fails the test either way; this
-        // only turns a 240 s query timeout into a crash with a stack. Defaults to
-        // 90 s; TEST_RUNNER_SQ_HANG_ABORT_SECONDS=20 on xcodebuild overrides it.
-        // 35b486f only forwarded the runner's value, which didn't arrive on the Mac.
-        let abortAfter = ProcessInfo.processInfo.environment["SQ_HANG_ABORT_SECONDS"] ?? "90"
+        // only turns a 240 s query timeout into a crash with a stack. Fixed here:
+        // a TEST_RUNNER_ override never reached the test process on the Mac.
+        let abortAfter = Self.hangAbortSeconds
         app.launchEnvironment["SQ_HANG_ABORT_SECONDS"] = abortAfter
         print("[ui-timing] launch \(scenario) hang-abort=\(abortAfter)s")
         app.launch()
@@ -1699,6 +1701,7 @@ final class AccessibilityUITests: XCTestCase {
         clock.lap("tap-add")
         let picker = row.descendants(matching: .any)["reaction-picker"]
         XCTAssertTrue(picker.waitForExistence(timeout: 5), "+ did not open the emoji row")
+        assertStillRunning(app, "after + opened the emoji row")
         clock.lap("open-picker")
         // The whole emoji row in one snapshot; was two whole-tree resolutions per emoji.
         let pickerShot = try picker.snapshot()
@@ -1714,8 +1717,17 @@ final class AccessibilityUITests: XCTestCase {
         picker.buttons["tapback-hand.thumbsup.fill"].tap()
         clock.lap("tap-take-back")
         XCTAssertTrue(chip.waitForNonExistence(timeout: 5), "Picking your own reaction again should take it back")
+        // A query on a dead app also "doesn't exist": 64b2b97 run 3 passed after the
+        // app had aborted mid take-back. The app must still be the one we launched.
+        assertStillRunning(app, "after taking the reaction back")
         clock.lap("take-back")
         clock.total()
+    }
+
+    /// Fails if the app has crashed, aborted or been terminated. Known issue:
+    /// app/docs/known-issues.md (AX5 reactions layout hang).
+    private func assertStillRunning(_ app: XCUIApplication, _ when: String, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(app.state, .runningForeground, "The app is not running \(when) (state \(app.state.rawValue)); see the hang watchdog's crash report", file: file, line: line)
     }
 
     /// First element in a snapshot (itself included, depth first) that matches.

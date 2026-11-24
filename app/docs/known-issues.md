@@ -2,8 +2,9 @@
 
 ## AX5 reactions: main thread hangs in LazyVStack placement
 
-**Status:** open. Deferred out of PR #38 to its own slice. Recorded flake: see
-the latest Mac pass for `testReactionsSitUnderTheBubbleOnItsSideAtLargeText`.
+**Status:** fix candidate, awaiting Mac proof (branch `ios/ax5-reactions-hang`).
+Not fixed until `testReactionsSitUnderTheBubbleOnItsSideAtLargeText` passes
+repeatedly standalone on the Mac. Deferred out of PR #38 to its own slice.
 
 **Symptom.** At the largest accessibility text size (AX5, `-uitest-largeText`),
 on the iOS 26.2 simulator (iPhone 17 Pro Max), opening or closing the emoji row
@@ -45,6 +46,22 @@ has no Stream code.
    height doesn't change. Did not stop the hang (it still hung at tap-add and
    take-back) and looked wrong; reverted in the next commit.
 
+**Fix candidate (ios/ax5-reactions-hang, not yet proven on the Mac).**
+At accessibility sizes the thread's rows sit in a plain `VStack` instead of the
+`LazyVStack` (`ChatListStack.isLazy(accessibilitySize:)`, unit tested; the rows
+themselves are one shared `chatRows` builder, so both stacks show the same
+content). Every hang sample and crash report is inside `LazyStack.place` /
+`measureEstimates` with no app code running, and the two app-side causes
+already tried (ChipFlow sizing, the row's height change) didn't stop it, so the
+remaining suspect is the lazy placement itself: at AX5 a row is often taller
+than the screen, the stack's height estimates are far off, and one row growing
+by the emoji row leaves it re-placing without settling. A non-lazy stack has
+no estimates to reconcile. Cost: at AX sizes every loaded row is laid out (one
+page is 50 messages, more as older pages load); only a row or two fits on
+screen there, so laziness bought little. Default and non-accessibility sizes
+keep the `LazyVStack`, unchanged. If the Mac still hangs with this, the next
+step is the minimal LazyVStack repro below, and this change can be reverted.
+
 **Diagnostics that stay (DEBUG only).**
 - `MainThreadStallWatch` (category `main-stall`): off-main watchdog; logs every
   second while the main thread is blocked, with `HangProbe` counts.
@@ -58,8 +75,9 @@ has no Stream code.
   'subsystem == "com.spencereese.squadsync"'`.
 
 **Candidate next steps.**
-- At accessibility sizes, render the thread in a non-lazy `VStack` (bounded by
-  the loaded page) or a `List`, so there is no lazy placement to loop.
+- (Being tried, see above.) At accessibility sizes, render the thread in a
+  non-lazy `VStack` (bounded by the loaded pages), so there is no lazy placement
+  to loop. A `List` is the other option if the VStack is too slow.
 - Disable animation on the reaction height change (`transaction.disablesAnimations`
   / `.animation(nil, value:)` on the chips and emoji row) so the lazy stack
   doesn't place through an animated height.

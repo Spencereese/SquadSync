@@ -2466,6 +2466,62 @@ struct LiveSessionView: View {
         return ConnectionRecovery.header(resumeNote: model.presenceNote, link: model.link, reconnecting: model.reconnecting)
     }
 
+    /// The thread's rows, inside the list's stack (lazy or not, see chatList).
+    @ViewBuilder
+    private var chatRows: some View {
+        // Ticks only while there's a call whose countdown it shows: with
+        // no call the slot is the call form, which doesn't change with
+        // time, and a once-a-second update inside the lazy stack is work
+        // on a settled thread for nothing.
+        TimelineView(ChatSlotSchedule(ticks: model.spot != nil)) { context in
+            let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
+            spotSlot(now: now)
+        }
+        .id(ChatAnchor.spot)
+        if !model.spotHistoryNote.isEmpty {
+            SpotStatusRow(text: model.spotHistoryNote, identifier: "spot-history-note")
+        }
+        if let display = model.chatLoad.display(hasMessages: !model.log.entries.isEmpty) {
+            ChatHistoryRow(display: display) {
+                Task { await model.retryChatLoad() }
+            }
+        }
+        if model.chatLoad == .loaded, !model.log.entries.isEmpty {
+            // Shows the paging state only. Whether to load is decided
+            // from scroll geometry (olderCheck), not this row appearing.
+            ChatOlderRow(state: model.olderPaging.state) {
+                Task { await model.retryOlder() }
+            }
+        }
+        let tracked = scrollTrackedIds
+        let failed = failedEndRow
+        ForEach(chatRowItems) { item in
+            let _ = ChatScrollTrace.counted(.rowBody)
+            switch item.row {
+            case .day(_, let label):
+                ChatDaySeparator(label: label)
+            case .unread(let count):
+                ChatUnreadDivider(count: count)
+            case .message(let bubble):
+                messageRow(bubble)
+                    .id(bubble.entry.id)
+                    // Only tracked rows get a geometry observer, in the
+                    // row's background, so tracking never changes the
+                    // row's own identity (see ChatRowGeometry).
+                    .modifier(ChatRowGeometry(
+                        id: bubble.entry.id,
+                        tracksPosition: tracked.contains(bubble.entry.id),
+                        tracksFit: failed == bubble.entry.id,
+                        controller: model.scrollHold
+                    ))
+            case .spot(let call):
+                if let outcome = SpotThread.outcome(call, viewerId: spotViewer, now: Date()) {
+                    SpotHistoryCard(call: call, outcome: outcome)
+                }
+            }
+        }
+    }
+
     private var chatList: some View {
         let _ = ChatScrollTrace.counted(.listBody)
         #if DEBUG
@@ -2474,57 +2530,13 @@ struct LiveSessionView: View {
         return ScrollViewReader { proxy in
             VStack(spacing: 0) {
                 ScrollView {
-                    LazyVStack(alignment: .leading, spacing: 2) {
-                        // Ticks only while there's a call whose countdown it shows: with
-                        // no call the slot is the call form, which doesn't change with
-                        // time, and a once-a-second update inside the lazy stack is work
-                        // on a settled thread for nothing.
-                        TimelineView(ChatSlotSchedule(ticks: model.spot != nil)) { context in
-                            let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
-                            spotSlot(now: now)
-                        }
-                        .id(ChatAnchor.spot)
-                        if !model.spotHistoryNote.isEmpty {
-                            SpotStatusRow(text: model.spotHistoryNote, identifier: "spot-history-note")
-                        }
-                        if let display = model.chatLoad.display(hasMessages: !model.log.entries.isEmpty) {
-                            ChatHistoryRow(display: display) {
-                                Task { await model.retryChatLoad() }
-                            }
-                        }
-                        if model.chatLoad == .loaded, !model.log.entries.isEmpty {
-                            // Shows the paging state only. Whether to load is decided
-                            // from scroll geometry (olderCheck), not this row appearing.
-                            ChatOlderRow(state: model.olderPaging.state) {
-                                Task { await model.retryOlder() }
-                            }
-                        }
-                        let tracked = scrollTrackedIds
-                        let failed = failedEndRow
-                        ForEach(chatRowItems) { item in
-                            let _ = ChatScrollTrace.counted(.rowBody)
-                            switch item.row {
-                            case .day(_, let label):
-                                ChatDaySeparator(label: label)
-                            case .unread(let count):
-                                ChatUnreadDivider(count: count)
-                            case .message(let bubble):
-                                messageRow(bubble)
-                                    .id(bubble.entry.id)
-                                    // Only tracked rows get a geometry observer, in the
-                                    // row's background, so tracking never changes the
-                                    // row's own identity (see ChatRowGeometry).
-                                    .modifier(ChatRowGeometry(
-                                        id: bubble.entry.id,
-                                        tracksPosition: tracked.contains(bubble.entry.id),
-                                        tracksFit: failed == bubble.entry.id,
-                                        controller: model.scrollHold
-                                    ))
-                            case .spot(let call):
-                                if let outcome = SpotThread.outcome(call, viewerId: spotViewer, now: Date()) {
-                                    SpotHistoryCard(call: call, outcome: outcome)
-                                }
-                            }
+                    // At accessibility sizes the thread is a plain VStack, not a lazy one
+                    // (ChatListStack; app/docs/known-issues.md, AX5 reactions hang).
+                    Group {
+                        if ChatListStack.isLazy(accessibilitySize: typeSize.isAccessibilitySize) {
+                            LazyVStack(alignment: .leading, spacing: 2) { chatRows }
+                        } else {
+                            VStack(alignment: .leading, spacing: 2) { chatRows }
                         }
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)

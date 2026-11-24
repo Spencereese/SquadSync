@@ -34,8 +34,16 @@ jobs:
         with:
           deno-version: v2.x
 
+      # Scoped permissions. auth_test.ts reads index.ts and drives the real handler,
+      # which reads (and the test sets) only the variables listed here; none are
+      # set on the runner, so the handler takes its "notifications off" path. No
+      # network permission: nothing here calls out (module downloads don't need it).
       - name: Payload and claim tests
-        run: deno test supabase/functions/sq8-notify-message supabase/functions/sq8-steam-presence
+        run: >-
+          deno test
+          --allow-read=supabase/functions/sq8-notify-message
+          --allow-env=SQ8_PUSH_WEBHOOK_SECRET,SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY,FCM_SERVICE_ACCOUNT_JSON,APNS_KEY_P8,APNS_KEY_ID,APNS_TEAM_ID,APNS_BUNDLE_ID,APNS_SANDBOX
+          supabase/functions/sq8-notify-message supabase/functions/sq8-steam-presence
 
   sql:
     name: SQL RLS tests

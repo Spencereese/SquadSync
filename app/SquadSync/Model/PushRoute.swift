@@ -74,6 +74,53 @@ enum PushLanding {
     }
 }
 
+extension PushLanding.Step {
+    /// A tap that lands (opened or "not in that squad") closes every sheet and
+    /// confirmation over the chat, so the message and the line about it are on
+    /// screen. A held tap changes nothing yet.
+    var closesCovers: Bool {
+        switch self {
+        case .holdUntilSignedIn: false
+        case .open, .notAMember: true
+        }
+    }
+}
+
+/// Everything that can sit over the squad chat when a push tap lands.
+/// Closing the voice sheet does not leave the room; the pill stays.
+enum PushCover: CaseIterable, Equatable {
+    case signOutConfirm
+    case endSpotConfirm
+    case leaveConfirm
+    case members
+    case callSpotSheet
+    case voiceSheet
+    case whosInSheet
+    case largeTextRoster
+}
+
+/// DEBUG launch flags that stand in for a notification tap. `-debug-push-open <json>`
+/// alone is a cold-launch tap. Adding `-debug-push-open-after <seconds>` delivers
+/// the same payload that many seconds after launch instead, like a tap while the
+/// app is already open (a warm tap).
+enum PushDebugTap {
+    enum Plan: Equatable {
+        case none
+        case atLaunch(PushPayload)
+        case later(PushPayload, seconds: TimeInterval)
+    }
+
+    static let maxDelay: TimeInterval = 120
+
+    static func plan(json: String?, delayText: String?) -> Plan {
+        guard let json, let payload = PushPayloadParser.parse(jsonText: json) else { return .none }
+        guard let delayText,
+              let seconds = TimeInterval(delayText.trimmingCharacters(in: .whitespaces)),
+              seconds > 0, seconds <= maxDelay else { return .atLaunch(payload) }
+        return .later(payload, seconds: seconds)
+    }
+}
+
 enum PushPermissionMoment {
     static func shouldAsk(signedIn: Bool, hasSquad: Bool, alreadyAsked: Bool, automated: Bool) -> Bool {
         signedIn && hasSquad && !alreadyAsked && !automated

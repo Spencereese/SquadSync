@@ -1806,8 +1806,9 @@ final class LiveSessionModel {
         }
     }
 
-    /// Opens a message: scrolls to it when it's loaded, pages back for it (up to
-    /// `ChatReveal.maxPages`) when it isn't, and says so when it can't.
+    /// Opens a message: scrolls to it when it's loaded, catches up when it's newer
+    /// than the loaded chat (a warm tap usually beats the socket), pages back for
+    /// it (up to `ChatReveal.maxPages`) when it's older, and says so when it can't.
     private func openMessage(_ id: UUID) async {
         guard let squad, let session = try? requiredSession() else {
             chatOpenLog.error("open \(id.uuidString, privacy: .public): no squad or session")
@@ -1816,12 +1817,30 @@ final class LiveSessionModel {
         let chat = chatService(session)
         let squadId = squad.id
         var pages = 0
+        let located = RevealedRow()
         let outcome = await ChatReveal.run(
             loaded: { [self] in log.entries.contains { $0.id == id } },
-            exists: {
-                let found = try await chat.message(squadId: squadId, id: id) != nil
-                chatOpenLog.info("lookup \(id.uuidString, privacy: .public): \(found ? "on server" : "not on server", privacy: .public)")
-                return found
+            locate: { [self] in
+                located.row = try await chat.message(squadId: squadId, id: id)
+                let onServer = log.ordered.filter { $0.delivery == .sent }
+                let place = ChatReveal.placement(
+                    sentAt: located.row?.sentAt,
+                    oldestLoaded: onServer.first?.sentAt,
+                    newestLoaded: onServer.last?.sentAt
+                )
+                chatOpenLog.info("lookup \(id.uuidString, privacy: .public): \(String(describing: place), privacy: .public)")
+                return place
+            },
+            catchUpNewer: { [self] in
+                let newest = log.ordered.last { $0.delivery == .sent }?.sentAt ?? .distantPast
+                let rows = try await chat.newer(squadId: squadId, after: newest)
+                guard HistoryMerge.accepts(requestSquad: squadId, loadedSquad: loadedSquad) else { return }
+                chatOpenLog.info("caught up \(rows.count, privacy: .public) newer for \(id.uuidString, privacy: .public)")
+                log.ingest(rows.map { $0.entry() })
+            },
+            insert: { [self] in
+                guard let row = located.row, HistoryMerge.accepts(requestSquad: squadId, loadedSquad: loadedSquad) else { return }
+                log.ingest([row.entry()])
             },
             loadOlderPage: { [self] in
                 pages += 1
@@ -1838,8 +1857,15 @@ final class LiveSessionModel {
             followSend = id
         case .notInChat, .tooFarBack, .failed:
             chatOpenLog.info("not found \(id.uuidString, privacy: .public): \(String(describing: outcome), privacy: .public)")
+            // "Opened this chat." would contradict the line that says why it didn't.
+            PushCoordinator.shared.dismissOpenedToast()
             if let text = ChatReveal.text(outcome) { showToast(text) }
         }
+    }
+
+    /// The row `ChatReveal.run` located, shared by its `locate` and `insert` steps.
+    private final class RevealedRow {
+        var row: RemoteMessage?
     }
 
     /// Tests: open a message directly, as if the chat were ready.
@@ -2258,6 +2284,9 @@ struct LiveSessionView: View {
         .onReceive(NotificationCenter.default.publisher(for: .sq8PushRoute)) { _ in
             Task { await model.settleIncomingPush() }
         }
+        .onChange(of: PushCoordinator.shared.coverSerial) { _, _ in
+            for cover in PushCover.allCases { close(cover) }
+        }
         .task(id: pushToastText) {
             guard let message = pushToastText else { return }
             UIAccessibility.post(notification: .announcement, argument: message)
@@ -2282,6 +2311,20 @@ struct LiveSessionView: View {
                 await model.becameActive()
                 await model.catchUp(pinned: pinnedToBottom)
             }
+        }
+    }
+
+    /// A push tap landed: nothing stays over the chat. The voice room keeps running.
+    private func close(_ cover: PushCover) {
+        switch cover {
+        case .signOutConfirm: confirmSignOut = false
+        case .endSpotConfirm: confirmEndSpot = false
+        case .leaveConfirm: confirmLeave = false
+        case .members: showMembers = false
+        case .callSpotSheet: model.spotSheetOpen = false
+        case .voiceSheet: model.voiceSheetOpen = false
+        case .whosInSheet: model.whosInOpen = false
+        case .largeTextRoster: rosterOpen = false
         }
     }
 

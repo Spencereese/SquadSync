@@ -13,6 +13,8 @@ final class PushCoordinator {
     var openedSquad = false
     var focusMessage: UUID?
     private(set) var pending: PushPayload?
+    /// Goes up each time a tap lands; the session screen closes its sheets when it changes.
+    private(set) var coverSerial = 0
     var viewingSquad: UUID?
     /// Latest device token, including one whose store has not succeeded yet.
     private(set) var seenToken: String?
@@ -33,9 +35,19 @@ final class PushCoordinator {
     }
 
     func consumeLaunchArguments(_ arguments: [String] = ProcessInfo.processInfo.arguments) {
-        if let json = LaunchOptions.flag("-debug-push-open", in: arguments),
-           let payload = PushPayloadParser.parse(jsonText: json) {
+        switch PushDebugTap.plan(
+            json: LaunchOptions.flag("-debug-push-open", in: arguments),
+            delayText: LaunchOptions.flag("-debug-push-open-after", in: arguments)
+        ) {
+        case .none:
+            break
+        case .atLaunch(let payload):
             pending = payload
+        case .later(let payload, let seconds):
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                self?.receive(payload)
+            }
         }
         if let token = LaunchOptions.flag("-debug-push-token", in: arguments) {
             noteSeen(token)
@@ -44,6 +56,11 @@ final class PushCoordinator {
 
     func receive(_ userInfo: [AnyHashable: Any]) {
         guard let payload = PushPayloadParser.parse(userInfo) else { return }
+        receive(payload)
+    }
+
+    /// A tap while the app is running: hold it and ask the session screen to settle it.
+    func receive(_ payload: PushPayload) {
         pending = payload
         NotificationCenter.default.post(name: .sq8PushRoute, object: nil)
     }
@@ -57,12 +74,14 @@ final class PushCoordinator {
         viewingSquad = signedIn ? squadId : nil
         guard let pending else { return }
         let member = squadId == pending.squadId
-        switch PushLanding.step(
+        let step = PushLanding.step(
             payload: pending,
             signedIn: signedIn,
             membershipKnown: membershipKnown,
             memberOfTarget: member
-        ) {
+        )
+        if step.closesCovers { coverSerial += 1 }
+        switch step {
         case .holdUntilSignedIn:
             return
         case .notAMember:
@@ -84,6 +103,11 @@ final class PushCoordinator {
         notice = ""
         openedChat = false
         openedSquad = false
+    }
+
+    /// The pushed message couldn't be opened: drop "Opened this chat." so only the reason shows.
+    func dismissOpenedToast() {
+        openedChat = false
     }
 
     /// Calls `register` when this launch should ask APNs for the current device token.

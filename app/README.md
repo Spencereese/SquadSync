@@ -93,6 +93,8 @@ xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario sp
 
 `-backend mock -scenario almostFull` opens the same screen with 7 members. One join fills it to 8. The next join says the squad is full. The owner can remove someone. A member cannot leave on their own until `supabase/migrations/20261115_0019_self_leave.sql` is applied. That file is not applied. The Members sheet probes for `sq8_leave_squad` and keeps an honest line while the function is missing.
 
+`-debug-push-open '<json>'` stands in for tapping a notification with that payload at launch (a cold tap), for example `{"type":"squad_message","squad_id":"00000000-0000-0000-0000-000000000010","message_id":"00000000-0000-0000-0000-00000000A001"}`. Add `-debug-push-open-after <seconds>` (up to 120) to deliver the same tap that many seconds after launch instead, as if the app were already open (a warm tap). A tap that lands closes any sheet or confirmation over the chat (the voice room keeps running) and scrolls to the message. A message newer than what's loaded is fetched first, so a tap that beats the realtime socket still opens it. The real-device APNs checklist is in [docs/push-device-test.md](docs/push-device-test.md).
+
 `-debug-fail-sends N` is a DEBUG launch flag. The next N message sends fail, and the ones after that succeed. Use it with Retry on the simulator.
 
 `-backend mock -scenario spotCall` opens the same screen with a half-filled Warzone spot card (4 of 8 in). You are not in it yet, so Join and then Ready are on the card. Ready stays on this phone. Nothing is written to Supabase.

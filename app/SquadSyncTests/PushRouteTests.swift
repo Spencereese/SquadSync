@@ -106,6 +106,46 @@ final class PushRouteTests: XCTestCase {
         coordinator.resetForTests()
     }
 
+    func testOnlyALandedTapClosesTheSheets() {
+        let coordinator = PushCoordinator.shared
+        coordinator.resetForTests()
+        let start = coordinator.coverSerial
+        coordinator.receive(PushPayload(kind: .chat, squadId: squad, messageId: message))
+        coordinator.settle(signedIn: false, squadId: nil, membershipKnown: false)
+        XCTAssertEqual(coordinator.coverSerial, start, "A held tap leaves the screen alone")
+        coordinator.settle(signedIn: true, squadId: squad, membershipKnown: true)
+        XCTAssertEqual(coordinator.coverSerial, start + 1, "Opening the chat closes what's over it")
+        coordinator.settle(signedIn: true, squadId: squad, membershipKnown: true)
+        XCTAssertEqual(coordinator.coverSerial, start + 1, "A settle with nothing pending changes nothing")
+        coordinator.receive(PushPayload(kind: .chat, squadId: other, messageId: message))
+        coordinator.settle(signedIn: true, squadId: squad, membershipKnown: true)
+        XCTAssertEqual(coordinator.notice, PushNotice.notAMember)
+        XCTAssertEqual(coordinator.coverSerial, start + 2, "The not-in-that-squad line has to be visible too")
+        coordinator.resetForTests()
+    }
+
+    func testAMessageThatCannotOpenDropsTheOpenedLine() {
+        let coordinator = PushCoordinator.shared
+        coordinator.resetForTests()
+        coordinator.receive(PushPayload(kind: .chat, squadId: squad, messageId: message))
+        coordinator.settle(signedIn: true, squadId: squad, membershipKnown: true)
+        XCTAssertEqual(PushToast.text(notice: coordinator.notice, openedChat: coordinator.openedChat, openedSquad: coordinator.openedSquad), PushNotice.openedChat)
+        coordinator.dismissOpenedToast()
+        XCTAssertNil(PushToast.text(notice: coordinator.notice, openedChat: coordinator.openedChat, openedSquad: coordinator.openedSquad))
+        coordinator.resetForTests()
+    }
+
+    func testAWarmDebugTapArrivesAfterItsDelay() async throws {
+        let coordinator = PushCoordinator.shared
+        coordinator.resetForTests()
+        let json = "{\"type\":\"squad_message\",\"squad_id\":\"\(squad.uuidString)\",\"message_id\":\"\(message.uuidString)\"}"
+        coordinator.consumeLaunchArguments(["-debug-push-open", json, "-debug-push-open-after", "0.2"])
+        XCTAssertNil(coordinator.pending, "Not a cold-launch tap")
+        try await Task.sleep(nanoseconds: 600_000_000)
+        XCTAssertEqual(coordinator.pending, PushPayload(kind: .chat, squadId: squad, messageId: message))
+        coordinator.resetForTests()
+    }
+
     func testASignedOutLaunchWaitsAndThenOpens() {
         let coordinator = PushCoordinator.shared
         coordinator.resetForTests()
@@ -293,5 +333,62 @@ final class PushRouteTests: XCTestCase {
         XCTAssertFalse(LiveShellCopy.liveFooter.lowercased().contains("mock"))
         XCTAssertEqual(LiveShellCopy.footer(for: .live), LiveShellCopy.liveFooter)
         XCTAssertEqual(LiveShellCopy.footer(for: .mock), LiveShellCopy.mockFooter)
+    }
+}
+
+/// Tap routing that runs without UIKit (also in the Linux harness).
+final class PushTapRoutingTests: XCTestCase {
+    private let squad = UUID(uuidString: "00000000-0000-0000-0000-000000000010")!
+    private let message = UUID(uuidString: "00000000-0000-0000-0000-00000000A001")!
+
+    func testALandedTapClosesWhatCoversTheChatAndAHeldOneWaits() {
+        let chat = PushPayload(kind: .chat, squadId: squad, messageId: message)
+        let card = PushPayload(kind: .squad, squadId: squad, messageId: nil)
+        XCTAssertTrue(PushLanding.Step.open(chat).closesCovers, "The pushed message has to be on screen")
+        XCTAssertTrue(PushLanding.Step.open(card).closesCovers, "So does the squad card")
+        XCTAssertTrue(PushLanding.Step.notAMember(chat).closesCovers, "The line saying why sits on the chat screen")
+        XCTAssertFalse(PushLanding.Step.holdUntilSignedIn(chat).closesCovers, "Nothing closes before the tap can be settled")
+        let held = PushLanding.step(payload: chat, signedIn: false, membershipKnown: false, memberOfTarget: false)
+        XCTAssertFalse(held.closesCovers)
+        let warm = PushLanding.step(payload: chat, signedIn: true, membershipKnown: true, memberOfTarget: true)
+        XCTAssertTrue(warm.closesCovers)
+    }
+
+    func testEverySheetOverTheChatIsACover() {
+        XCTAssertEqual(Set(PushCover.allCases.map { "\($0)" }), [
+            "signOutConfirm", "endSpotConfirm", "leaveConfirm", "members",
+            "callSpotSheet", "voiceSheet", "whosInSheet", "largeTextRoster"
+        ])
+    }
+
+    func testDebugTapIsColdUnlessGivenADelay() {
+        let json = "{\"type\":\"squad_message\",\"squad_id\":\"\(squad.uuidString)\",\"message_id\":\"\(message.uuidString)\"}"
+        let payload = PushPayload(kind: .chat, squadId: squad, messageId: message)
+        XCTAssertEqual(PushDebugTap.plan(json: nil, delayText: "5"), .none)
+        XCTAssertEqual(PushDebugTap.plan(json: "{\"type\":\"squad_message\"}", delayText: nil), .none, "No squad id is no tap")
+        XCTAssertEqual(PushDebugTap.plan(json: json, delayText: nil), .atLaunch(payload))
+        XCTAssertEqual(PushDebugTap.plan(json: json, delayText: "6"), .later(payload, seconds: 6))
+        XCTAssertEqual(PushDebugTap.plan(json: json, delayText: " 2.5 "), .later(payload, seconds: 2.5))
+        XCTAssertEqual(PushDebugTap.plan(json: json, delayText: "0"), .atLaunch(payload))
+        XCTAssertEqual(PushDebugTap.plan(json: json, delayText: "-3"), .atLaunch(payload))
+        XCTAssertEqual(PushDebugTap.plan(json: json, delayText: "soon"), .atLaunch(payload))
+        XCTAssertEqual(PushDebugTap.plan(json: json, delayText: "121"), .atLaunch(payload), "Capped so a typo can't stall a run")
+    }
+
+    func testTheLiveFunctionPayloadOpensTheExactMessage() {
+        // The shape sq8-notify-message (apns.ts) sends: type, squad_id, message_id next to aps.
+        let userInfo: [AnyHashable: Any] = [
+            "aps": ["alert": ["title": "SquadSync", "body": "New message"], "thread-id": "squad:\(squad.uuidString)"],
+            "type": "squad_message",
+            "squad_id": squad.uuidString.lowercased(),
+            "message_id": message.uuidString.lowercased()
+        ]
+        let payload = PushPayloadParser.parse(userInfo)
+        XCTAssertEqual(payload, PushPayload(kind: .chat, squadId: squad, messageId: message))
+        guard let payload else { return }
+        XCTAssertEqual(
+            PushLanding.step(payload: payload, signedIn: true, membershipKnown: true, memberOfTarget: true),
+            .open(payload)
+        )
     }
 }

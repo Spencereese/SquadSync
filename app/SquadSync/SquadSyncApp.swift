@@ -22,12 +22,17 @@ enum LaunchScreen: String {
 enum MockRoot: Equatable {
     case groupChat(LaunchScenario)
     case prototype
+    /// The app is only hosting unit tests: mount nothing. A live chat here would
+    /// poll, settle pushes and consume PushCoordinator.shared state the tests own.
+    case unitTestHost
 }
 
 struct LaunchOptions {
     var screen: LaunchScreen = .inbox
     /// True only when the launch passed `-screen`, i.e. asked for the old tab prototype.
     var prototypeScreen = false
+    /// True when this process is the unit-test host (see `BuildFlavor.hostingUnitTests`).
+    var hostingUnitTests = false
     var scenario: LaunchScenario = .seated
     var largeText = false
     /// Live unless the launch asks for mock (see `LaunchBackend.choose`).
@@ -59,6 +64,7 @@ struct LaunchOptions {
             options.scenario = scenario
         }
         options.largeText = arguments.contains("-uitest-largeText")
+        options.hostingUnitTests = hostingUnitTests
         options.backend = LaunchBackend.choose(
             arguments: arguments,
             config: config,
@@ -69,6 +75,7 @@ struct LaunchOptions {
     }
 
     var mockRoot: MockRoot {
+        if hostingUnitTests { return .unitTestHost }
         if prototypeScreen { return .prototype }
         switch scenario {
         // The party prototype's scenarios mean nothing to the group chat; a plain
@@ -129,6 +136,8 @@ struct SquadSyncApp: App {
                 .modifier(LargeTextLaunch(enabled: launch.largeText))
         case .prototype:
             RootView(store: store, launch: launch)
+        case .unitTestHost:
+            Color.clear
         }
     }
 }

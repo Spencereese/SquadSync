@@ -123,12 +123,22 @@ final class StoreTests: XCTestCase {
     /// Chat-first: home is the group chat, so every mock launch opens on it. Only
     /// an explicit `-screen` opens the old Inbox/Space prototype.
     func testEveryMockLaunchOpensOnTheGroupChat() {
-        for scenario in ["gameOn", "gameOnTwo", "welcome", "smallGroup", "plannedStarting", "invite", "chatPolish", "spotHistory", "noSquad"] {
-            let options = LaunchOptions.current(["-backend", "mock", "-scenario", scenario])
-            XCTAssertEqual(options.mockRoot, .groupChat(options.scenario), scenario)
+        // `hostingUnitTests: false`: this process is the unit-test host, which mounts nothing.
+        func root(_ arguments: [String]) -> MockRoot {
+            LaunchOptions.current(arguments, hostingUnitTests: false).mockRoot
         }
-        XCTAssertEqual(LaunchOptions.current(["-backend", "mock"]).mockRoot, .groupChat(.invite))
-        XCTAssertEqual(LaunchOptions.current(["-backend", "mock", "-scenario", "ready4"]).mockRoot, .groupChat(.invite))
-        XCTAssertEqual(LaunchOptions.current(["-backend", "mock", "-screen", "inbox", "-scenario", "seated"]).mockRoot, .prototype)
+        for scenario in ["gameOn", "gameOnTwo", "welcome", "smallGroup", "plannedStarting", "invite", "chatPolish", "spotHistory", "noSquad"] {
+            XCTAssertEqual(root(["-backend", "mock", "-scenario", scenario]), .groupChat(LaunchScenario(rawValue: scenario)!), scenario)
+        }
+        XCTAssertEqual(root(["-backend", "mock"]), .groupChat(.invite))
+        XCTAssertEqual(root(["-backend", "mock", "-scenario", "ready4"]), .groupChat(.invite))
+        XCTAssertEqual(root(["-backend", "mock", "-screen", "inbox", "-scenario", "seated"]), .prototype)
+    }
+
+    /// The unit-test host mounts no screen, so nothing in the app consumes
+    /// PushCoordinator.shared (or polls) while the tests drive it.
+    func testTheUnitTestHostMountsNothing() {
+        XCTAssertEqual(LaunchOptions.current(["SquadSync"], hostingUnitTests: true).mockRoot, .unitTestHost)
+        XCTAssertEqual(LaunchOptions.current(["-backend", "mock", "-scenario", "gameOn"], hostingUnitTests: true).mockRoot, .unitTestHost)
     }
 }

@@ -119,4 +119,16 @@ final class StoreTests: XCTestCase {
         XCTAssertEqual(LaunchOptions.current(["-screen", "thread-warzone"]).path, ["warzone"])
         XCTAssertEqual(LaunchOptions.current(["-screen", "party"]).path, ["general"])
     }
+
+    /// Chat-first: home is the group chat, so every mock launch opens on it. Only
+    /// an explicit `-screen` opens the old Inbox/Space prototype.
+    func testEveryMockLaunchOpensOnTheGroupChat() {
+        for scenario in ["gameOn", "gameOnTwo", "welcome", "smallGroup", "plannedStarting", "invite", "chatPolish", "spotHistory", "noSquad"] {
+            let options = LaunchOptions.current(["-backend", "mock", "-scenario", scenario])
+            XCTAssertEqual(options.mockRoot, .groupChat(options.scenario), scenario)
+        }
+        XCTAssertEqual(LaunchOptions.current(["-backend", "mock"]).mockRoot, .groupChat(.invite))
+        XCTAssertEqual(LaunchOptions.current(["-backend", "mock", "-scenario", "ready4"]).mockRoot, .groupChat(.invite))
+        XCTAssertEqual(LaunchOptions.current(["-backend", "mock", "-screen", "inbox", "-scenario", "seated"]).mockRoot, .prototype)
+    }
 }

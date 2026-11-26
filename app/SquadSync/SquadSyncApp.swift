@@ -16,8 +16,18 @@ enum LaunchScreen: String {
     case handoff
 }
 
+/// What a mock launch opens on. Chat-first: home is the group chat, so every
+/// mock launch opens there. The old Inbox/Space tab prototype (sample squads on
+/// MockStore) only opens when a launch asks for one of its screens by `-screen`.
+enum MockRoot: Equatable {
+    case groupChat(LaunchScenario)
+    case prototype
+}
+
 struct LaunchOptions {
     var screen: LaunchScreen = .inbox
+    /// True only when the launch passed `-screen`, i.e. asked for the old tab prototype.
+    var prototypeScreen = false
     var scenario: LaunchScenario = .seated
     var largeText = false
     /// Live unless the launch asks for mock (see `LaunchBackend.choose`).
@@ -43,6 +53,7 @@ struct LaunchOptions {
         var options = LaunchOptions()
         if let value = flag("-screen", in: arguments), let screen = LaunchScreen(rawValue: value) {
             options.screen = screen
+            options.prototypeScreen = true
         }
         if let value = flag("-scenario", in: arguments), let scenario = LaunchScenario(rawValue: value) {
             options.scenario = scenario
@@ -55,6 +66,18 @@ struct LaunchOptions {
             hostingUnitTests: hostingUnitTests
         )
         return options
+    }
+
+    var mockRoot: MockRoot {
+        if prototypeScreen { return .prototype }
+        switch scenario {
+        // The party prototype's scenarios mean nothing to the group chat; a plain
+        // mock launch gets the standard mock group with a few messages.
+        case .seated, .unseated, .ready4:
+            return .groupChat(.invite)
+        default:
+            return .groupChat(scenario)
+        }
     }
 
     static func flag(_ name: String, in arguments: [String]) -> String? {
@@ -96,22 +119,15 @@ struct SquadSyncApp: App {
         }
     }
 
-    /// Mock only: `-backend mock`, or a Debug UI-test `-scenario` launch.
+    /// Mock only: `-backend mock`, or a Debug UI-test `-scenario` launch. Every
+    /// scenario opens on the group chat (see `MockRoot`); no Inbox tab in front of it.
     @ViewBuilder
     private var mockRoot: some View {
-        if launch.scenario == .spotCall || launch.scenario == .spotCallMine || launch.scenario == .spotCallNearlyFull || launch.scenario == .spotCallExpired {
-            LiveSessionView(backend: .mock, scenario: launch.scenario)
+        switch launch.mockRoot {
+        case .groupChat(let scenario):
+            LiveSessionView(backend: .mock, scenario: scenario)
                 .modifier(LargeTextLaunch(enabled: launch.largeText))
-        } else if launch.scenario == .invite || launch.scenario == .almostFull || launch.scenario == .spotHistory || launch.scenario == .spotServerMissing || launch.scenario.isChatScenario || launch.scenario.isWhosInScenario || launch.scenario.isOnboardingScenario {
-            LiveSessionView(backend: .mock, scenario: launch.scenario)
-                .modifier(LargeTextLaunch(enabled: launch.largeText))
-        } else if launch.scenario.isPlaySessionScenario {
-            LiveSessionView(backend: .mock, scenario: launch.scenario)
-                .modifier(LargeTextLaunch(enabled: launch.largeText))
-        } else if launch.scenario == .noSquad {
-            LiveSessionView(backend: .mock)
-                .modifier(LargeTextLaunch(enabled: launch.largeText))
-        } else {
+        case .prototype:
             RootView(store: store, launch: launch)
         }
     }

@@ -1,6 +1,12 @@
-// Not deployed. Sends nothing until Spencer sets the secrets named in README.md.
+// Deployed on sfckxrnoiwetmzdycqaa (Nov 26, 2026) for sq8_messages. The side-thread
+// path below is not deployed, and needs 0026 plus its own webhook (README.md).
+// The Game on path (a sq8_spot_calls INSERT with kind = 'game_on') is not
+// deployed either, and needs 0028 plus its own webhook (README.md).
 // A new sq8_messages row notifies the other current members of that squad.
 // Recipients come from sq8.message_push_targets, which drops the sender.
+// A new sq8_thread_messages row (a side-thread reply, its own webhook) notifies
+// that thread's members who are still in the squad, from
+// sq8.thread_push_targets (0026), which also drops the sender.
 // This function uses the service role, so it must not trust a client-supplied
 // recipient list. FCM is HTTP v1 with a service-account JWT, not the legacy
 // server key.
@@ -15,6 +21,25 @@ import {
   pemToPkcs8,
   tokenShouldBeDropped,
 } from "./fcm.ts";
+import {
+  type ThreadContext,
+  buildThreadApnsPayload,
+  buildThreadFcmMessage,
+  isThreadWebhook,
+  readThreadRecord,
+  threadApnsHeaders,
+  threadBanner,
+} from "./thread.ts";
+import {
+  type GameOnContext,
+  buildGameOnApnsPayload,
+  buildGameOnFcmMessage,
+  gameOnApnsHeaders,
+  gameOnBanner,
+  isGameOnInsert,
+  isGameOnWebhook,
+  readGameOnRecord,
+} from "./gameon.ts";
 
 const cors = { "content-type": "application/json" };
 const cache = new AccessTokenCache();
@@ -24,6 +49,27 @@ type MessageRecord = {
   squad_id?: string;
   sender_id?: string;
 };
+
+/// What one notification carries, per platform. The squad path and the thread
+/// path differ only here; the send loop is shared.
+type Delivery = {
+  apns: () => Record<string, unknown>;
+  apnsHeaders: Record<string, string>;
+  fcm: (token: string) => { message: Record<string, unknown> };
+};
+
+/// A service-role call to a public RPC.
+function rpc(url: string, key: string, name: string, args: Record<string, unknown>): Promise<Response> {
+  return fetch(`${url}/rest/v1/rpc/${name}`, {
+    method: "POST",
+    headers: {
+      apikey: key,
+      authorization: `Bearer ${key}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(args),
+  });
+}
 
 function missingSecrets(): string[] {
   const names = [
@@ -145,32 +191,130 @@ Deno.serve(async (request) => {
     );
   }
 
-  const record = readRecord(await request.json().catch(() => null));
-  if (!record) {
-    return new Response(JSON.stringify({ ok: false, reason: "bad payload" }), {
-      status: 400,
-      headers: cors,
-    });
-  }
-
+  const payload = await request.json().catch(() => null);
   const url = Deno.env.get("SUPABASE_URL")!;
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const targets = await fetch(`${url}/rest/v1/rpc/sq8_message_push_targets`, {
-    method: "POST",
-    headers: {
-      apikey: key,
-      authorization: `Bearer ${key}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ squad: record.squad_id, sender: record.sender_id }),
-  });
-  if (!targets.ok) {
-    return new Response(
-      JSON.stringify({ ok: false, reason: "target lookup failed" }),
-      { status: 502, headers: cors },
-    );
+
+  let rows: Array<{ token: string; platform: string }>;
+  let content: Delivery;
+  if (isGameOnWebhook(payload)) {
+    // A Game on: the group's other members, like a chat message, with its own banner.
+    const call = readGameOnRecord(payload);
+    if (!call) {
+      return new Response(JSON.stringify({ ok: false, reason: "bad payload" }), {
+        status: 400,
+        headers: cors,
+      });
+    }
+    if (!isGameOnInsert(payload, call)) {
+      // An old build's spot call, or an update: nothing to send.
+      return new Response(JSON.stringify({ ok: true, sent: 0, reason: "not a new game on" }), {
+        status: 200,
+        headers: cors,
+      });
+    }
+    const targets = await rpc(url, key, "sq8_message_push_targets", {
+      squad: call.squad_id,
+      sender: call.caller_id,
+    });
+    if (!targets.ok) {
+      return new Response(
+        JSON.stringify({ ok: false, reason: "target lookup failed" }),
+        { status: 502, headers: cors },
+      );
+    }
+    rows = await targets.json() as Array<{ token: string; platform: string }>;
+    let context: GameOnContext | null = null;
+    if (rows.length > 0) {
+      // The banner still goes out (with plain wording) if this read fails.
+      const lookup = await rpc(url, key, "sq8_game_on_push_context", { call_id: call.id });
+      if (lookup.ok) {
+        const found = await lookup.json().catch(() => []) as GameOnContext[];
+        context = found[0] ?? null;
+      } else {
+        await lookup.body?.cancel();
+      }
+    }
+    const banner = gameOnBanner(context, call);
+    content = {
+      apns: () => buildGameOnApnsPayload(call, banner),
+      apnsHeaders: gameOnApnsHeaders(call),
+      fcm: (token) => buildGameOnFcmMessage({ token, record: call, banner }),
+    };
+  } else if (isThreadWebhook(payload)) {
+    // A side-thread reply: its thread's members (not the whole squad), by thread.
+    const reply = readThreadRecord(payload);
+    if (!reply) {
+      return new Response(JSON.stringify({ ok: false, reason: "bad payload" }), {
+        status: 400,
+        headers: cors,
+      });
+    }
+    const targets = await rpc(url, key, "sq8_thread_push_targets", {
+      thread: reply.thread_id,
+      sender: reply.sender_id,
+    });
+    if (!targets.ok) {
+      return new Response(
+        JSON.stringify({ ok: false, reason: "target lookup failed" }),
+        { status: 502, headers: cors },
+      );
+    }
+    rows = await targets.json() as Array<{ token: string; platform: string }>;
+    let context: ThreadContext | null = null;
+    if (rows.length > 0) {
+      // The banner still goes out (with plain wording) if this read fails.
+      const lookup = await rpc(url, key, "sq8_thread_push_context", {
+        thread: reply.thread_id,
+        sender: reply.sender_id,
+      });
+      if (lookup.ok) {
+        const found = await lookup.json().catch(() => []) as ThreadContext[];
+        context = found[0] ?? null;
+      } else {
+        await lookup.body?.cancel();
+      }
+    }
+    const banner = threadBanner(context, reply.body);
+    content = {
+      apns: () => buildThreadApnsPayload(reply, banner),
+      apnsHeaders: threadApnsHeaders(reply),
+      fcm: (token) => buildThreadFcmMessage({ token, record: reply, banner }),
+    };
+  } else {
+    const record = readRecord(payload);
+    if (!record) {
+      return new Response(JSON.stringify({ ok: false, reason: "bad payload" }), {
+        status: 400,
+        headers: cors,
+      });
+    }
+
+    const targets = await rpc(url, key, "sq8_message_push_targets", {
+      squad: record.squad_id,
+      sender: record.sender_id,
+    });
+    if (!targets.ok) {
+      return new Response(
+        JSON.stringify({ ok: false, reason: "target lookup failed" }),
+        { status: 502, headers: cors },
+      );
+    }
+    rows = await targets.json() as Array<{ token: string; platform: string }>;
+    content = {
+      apns: () => buildApnsPayload({
+        squadId: record.squad_id!,
+        messageId: record.id!,
+      }),
+      apnsHeaders: {},
+      fcm: (token) => buildSquadMessage({
+        token,
+        squadId: record.squad_id!,
+        messageId: record.id!,
+      }),
+    };
   }
-  const rows = await targets.json() as Array<{ token: string; platform: string }>;
+
   const bearer = account ? await accessToken(account) : null;
   let apnsBearer: string | null = null;
   if (apnsMissing.length === 0) {
@@ -204,25 +348,15 @@ Deno.serve(async (request) => {
             "apns-topic": apnsEnv.APNS_BUNDLE_ID,
             "apns-push-type": "alert",
             "apns-priority": "10",
+            ...content.apnsHeaders,
             "content-type": "application/json",
           },
-          body: JSON.stringify(buildApnsPayload({
-            squadId: record.squad_id!,
-            messageId: record.id!,
-          })),
+          body: JSON.stringify(content.apns()),
         },
       );
       if (response.ok) sent += 1;
       else if (response.status === 410) {
-        const removed = await fetch(`${url}/rest/v1/rpc/sq8_drop_device_token`, {
-          method: "POST",
-          headers: {
-            apikey: key,
-            authorization: `Bearer ${key}`,
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ device_token: row.token }),
-        });
+        const removed = await rpc(url, key, "sq8_drop_device_token", { device_token: row.token });
         if (removed.ok) dropped += 1;
       }
       continue;
@@ -239,11 +373,7 @@ Deno.serve(async (request) => {
           authorization: `Bearer ${bearer}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify(buildSquadMessage({
-          token: row.token,
-          squadId: record.squad_id!,
-          messageId: record.id!,
-        })),
+        body: JSON.stringify(content.fcm(row.token)),
       },
     );
     if (response.ok) {
@@ -252,15 +382,7 @@ Deno.serve(async (request) => {
     }
     const failure = await response.json().catch(() => null);
     if (!tokenShouldBeDropped(failure)) continue;
-    const removed = await fetch(`${url}/rest/v1/rpc/sq8_drop_device_token`, {
-      method: "POST",
-      headers: {
-        apikey: key,
-        authorization: `Bearer ${key}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ device_token: row.token }),
-    });
+    const removed = await rpc(url, key, "sq8_drop_device_token", { device_token: row.token });
     if (removed.ok) dropped += 1;
   }
 

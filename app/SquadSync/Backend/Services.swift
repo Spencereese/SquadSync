@@ -7,10 +7,13 @@ enum BackendMode: String {
 
 enum BackendFeature: String, Equatable {
     case profile = "Profiles"
-    case squad = "Squads"
+    case squad = "Groups"
     case messages = "Chat"
     case readState = "Read markers"
     case checkIns = "Check-ins"
+    case sessions = "Play sessions"
+    case gameOn = "Game on"
+    case avatars = "Profile photos"
 }
 
 enum BackendFailure: Error, Equatable {
@@ -173,7 +176,7 @@ enum SignInCode {
 enum SquadTitle {
     static func line(name: String, memberCount: Int, cap: Int = 8) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let title = trimmed.isEmpty ? "Your squad" : trimmed
+        let title = trimmed.isEmpty ? "Your group" : trimmed
         return "\(title) · \(memberCount) of \(cap)"
     }
 }
@@ -187,7 +190,7 @@ enum SquadName {
 
     static func validationError(_ raw: String) -> String? {
         let name = normalized(raw)
-        if name.isEmpty { return "Enter a squad name." }
+        if name.isEmpty { return "Enter a group name." }
         if name.count > maxLength { return "Use 40 characters or fewer." }
         return nil
     }
@@ -353,6 +356,7 @@ struct MemberRead: Equatable {
 struct InviteTicket: Equatable {
     var code: String
     var squadId: UUID
+    var expiresAt: Date? = nil
 }
 
 protocol SpotServing: AnyObject {
@@ -371,6 +375,9 @@ protocol SpotServing: AnyObject {
 
 protocol InviteServing: AnyObject {
     func createInvite() async throws -> InviteTicket
+    /// The share link any member can make (0029). Falls back to the owner-only
+    /// `createInvite` on a server without 0029, and says so if you're not the owner.
+    func memberInvite() async throws -> InviteTicket
     func join(code: String) async throws -> UUID
 }
 

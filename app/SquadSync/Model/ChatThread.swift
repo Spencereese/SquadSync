@@ -72,6 +72,8 @@ enum ChatRow: Equatable {
     case unread(count: Int)
     case message(ChatBubble)
     case spot(SpotCall)
+    case session(PlaySession)
+    case gameOn(GameOn)
 
     var identity: String {
         switch self {
@@ -79,6 +81,8 @@ enum ChatRow: Equatable {
         case .unread: "unread-divider"
         case .message(let bubble): "message-\(bubble.entry.id.uuidString)"
         case .spot(let call): "spot-\(call.id.uuidString)"
+        case .session(let session): "session-\(session.id.uuidString)"
+        case .gameOn(let call): "gameon-\(call.id.uuidString)"
         }
     }
 }
@@ -267,6 +271,10 @@ enum ChatThread {
             switch item {
             case .spot(let call):
                 rows.append(.spot(call))
+            case .session(let session):
+                rows.append(.session(session))
+            case .gameOn(let call):
+                rows.append(.gameOn(call))
             case .message(let entry):
                 if entry.id == context.unreadAnchor, unreadCount > 0 {
                     rows.append(.unread(count: unreadCount))
@@ -362,6 +370,8 @@ enum ChatThread {
         switch item {
         case .message(let entry): entry.sentAt
         case .spot(let call): SpotThread.endedAt(call)
+        case .session(let session): session.createdAt
+        case .gameOn(let call): call.calledAt
         }
     }
 }
@@ -514,7 +524,7 @@ enum ChatHistoryState: Equatable {
     case failed(String)
 
     static let loadingText = "Loading messages…"
-    static let emptyText = "No messages yet. Say hi to the squad."
+    static let emptyText = "No messages yet. Say hi to the group."
     static let failedText = "Messages couldn't load."
     static let staleText = "Couldn't refresh messages. Showing what's here."
     static let notSetUpText = "Chat isn't set up on this server yet."

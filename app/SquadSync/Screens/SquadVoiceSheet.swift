@@ -25,7 +25,7 @@ struct SquadVoiceSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .background(SQColor.surface0)
-            .navigationTitle("Squad voice")
+            .navigationTitle("Group voice")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

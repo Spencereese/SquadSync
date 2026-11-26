@@ -322,7 +322,7 @@ final class SupabaseSquadService: SquadService {
             feature: .squad
         )
         let created = try BackendJSON.decoder.decode([SquadDetails].self, from: data)
-        guard let row = created.first else { throw BackendFailure.rejected("Squad was not returned.") }
+        guard let row = created.first else { throw BackendFailure.rejected("Group was not returned.") }
         return try await load(squadId: row.id)
     }
 
@@ -341,7 +341,7 @@ final class SupabaseSquadService: SquadService {
             )
         } catch let failure as BackendFailure {
             if case .rejected(let message) = failure, message.lowercased().contains("sq8_owner_protected") {
-                throw InviteProblem.other("The owner stays in the squad.")
+                throw InviteProblem.other("The owner stays in the group.")
             }
             throw failure
         }
@@ -455,7 +455,7 @@ final class SupabaseSquadService: SquadService {
             feature: .squad
         )
         let squads = try BackendJSON.decoder.decode([SquadDetails].self, from: squadData)
-        guard let squad = squads.first else { throw BackendFailure.rejected("Squad was not found.") }
+        guard let squad = squads.first else { throw BackendFailure.rejected("Group was not found.") }
         return squad
     }
 
@@ -527,9 +527,9 @@ enum RenameFailure {
     static func message(_ code: String) -> String {
         switch code {
         case "signed_out": "Sign in again before renaming."
-        case "not_owner": "Only the owner can rename the squad."
+        case "not_owner": "Only the owner can rename the group."
         case "name_length": "Use 40 characters or fewer."
-        case "missing": "That squad is gone."
+        case "missing": "That group is gone."
         default: code
         }
     }
@@ -880,6 +880,30 @@ final class SupabaseInviteService: InviteServing {
         return InviteTicket(code: code, squadId: squadId)
     }
 
+    func memberInvite() async throws -> InviteTicket {
+        let data: Data
+        do {
+            data = try await http.send(
+                path: "rest/v1/rpc/sq8_member_invite",
+                method: "POST",
+                body: Data("{}".utf8),
+                feature: .squad
+            )
+        } catch BackendFailure.notSetUp {
+            // 0029 isn't applied: the owner can still make one the old way.
+            do {
+                return try await createInvite()
+            } catch InviteProblem.notOwner {
+                throw InviteProblem.memberInvitesNotSetUp
+            }
+        }
+        let payload = try JSONDecoder().decode(InvitePayload.self, from: data)
+        guard payload.ok, let code = payload.code, let squadId = payload.squadId else {
+            throw InviteProblem.from(serverCode: payload.error ?? "not_member")
+        }
+        return InviteTicket(code: code, squadId: squadId, expiresAt: payload.expiresAt.flatMap(BackendJSON.parse))
+    }
+
     func join(code: String) async throws -> UUID {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
@@ -906,9 +930,11 @@ final class SupabaseInviteService: InviteServing {
         let error: String?
         let code: String?
         let squadId: UUID?
+        let expiresAt: String?
         enum CodingKeys: String, CodingKey {
             case ok, error, code
             case squadId = "squad_id"
+            case expiresAt = "expires_at"
         }
     }
 }

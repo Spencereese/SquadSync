@@ -153,7 +153,7 @@ final class SquadNameTests: XCTestCase {
     func testTrimsToOneThroughFortyCharacters() {
         XCTAssertNil(SquadName.validationError(" A "))
         XCTAssertNil(SquadName.validationError(String(repeating: "a", count: 40)))
-        XCTAssertEqual(SquadName.validationError("   "), "Enter a squad name.")
+        XCTAssertEqual(SquadName.validationError("   "), "Enter a group name.")
         XCTAssertEqual(
             SquadName.validationError(String(repeating: "a", count: 41)),
             "Use 40 characters or fewer."
@@ -170,7 +170,7 @@ final class SquadNameTests: XCTestCase {
             _ = try await again.createSquad(ownerId: UUID(), name: " ")
             XCTFail("A blank name should be rejected.")
         } catch let failure as BackendFailure {
-            XCTAssertEqual(failure, .rejected("Enter a squad name."))
+            XCTAssertEqual(failure, .rejected("Enter a group name."))
         }
     }
 
@@ -209,9 +209,9 @@ final class SquadNameTests: XCTestCase {
         XCTAssertEqual(InviteProblem.from(serverCode: "full"), .full)
         XCTAssertEqual(InviteProblem.from(serverCode: "already_in_squad"), .alreadyInASquad)
         XCTAssertEqual(InviteProblem.expired.message, "This invite has expired.")
-        XCTAssertEqual(InviteProblem.full.message, "That squad is full (8).")
+        XCTAssertEqual(InviteProblem.full.message, "That group is full (8).")
         XCTAssertTrue(InviteProblem.revokedOrUnknown.message.contains("revoked"))
-        XCTAssertEqual(InviteProblem.alreadyInASquad.message, "You're already in a squad.")
+        XCTAssertEqual(InviteProblem.alreadyInASquad.message, "You're already in a group.")
     }
 
     func testReactionToggleReplacesAndRemoves() {
@@ -413,8 +413,8 @@ final class SquadNameTests: XCTestCase {
     }
 
     func testEmptySquadNameUsesYourSquad() {
-        XCTAssertEqual(SquadTitle.line(name: "", memberCount: 1), "Your squad · 1 of 8")
-        XCTAssertEqual(SquadTitle.line(name: "   ", memberCount: 1), "Your squad · 1 of 8")
+        XCTAssertEqual(SquadTitle.line(name: "", memberCount: 1), "Your group · 1 of 8")
+        XCTAssertEqual(SquadTitle.line(name: "   ", memberCount: 1), "Your group · 1 of 8")
         XCTAssertEqual(SquadTitle.line(name: "Friday", memberCount: 3), "Friday · 3 of 8")
     }
 
@@ -427,7 +427,7 @@ final class SquadNameTests: XCTestCase {
         XCTAssertEqual(reloaded.ownerId.uuidString, "00000000-0000-0000-0000-000000000001")
         XCTAssertEqual(SquadSelect.columns, "id,owner_id,name")
         XCTAssertTrue(SquadSelect.columns.split(separator: ",").contains("name"))
-        XCTAssertEqual(SquadTitle.line(name: reloaded.name, memberCount: 1), "Your squad · 1 of 8")
+        XCTAssertEqual(SquadTitle.line(name: reloaded.name, memberCount: 1), "Your group · 1 of 8")
     }
 
     func testLiveSquadSelectReadsTheNameColumn() async throws {
@@ -443,7 +443,7 @@ final class SquadNameTests: XCTestCase {
         let service = SupabaseSquadService(config: config, accessToken: "access", transport: transport)
         let loaded = try await service.currentSquad(userId: owner)
         XCTAssertEqual(loaded?.name, "")
-        XCTAssertEqual(SquadTitle.line(name: loaded?.name ?? "", memberCount: loaded?.members.count ?? 0), "Your squad · 1 of 8")
+        XCTAssertEqual(SquadTitle.line(name: loaded?.name ?? "", memberCount: loaded?.members.count ?? 0), "Your group · 1 of 8")
         let squadGet = try XCTUnwrap(transport.requests.first { $0.url?.path.hasSuffix("sq8_squads") == true })
         let select = URLComponents(url: squadGet.url!, resolvingAgainstBaseURL: false)?
             .queryItems?
@@ -484,7 +484,7 @@ final class SquadNameTests: XCTestCase {
         let second = SupabaseSquadService(config: config, accessToken: "access", transport: again)
         let storedNull = try await second.createSquad(ownerId: owner, name: "Friday")
         XCTAssertEqual(storedNull.name, "")
-        XCTAssertEqual(SquadTitle.line(name: storedNull.name, memberCount: storedNull.members.count), "Your squad · 1 of 8")
+        XCTAssertEqual(SquadTitle.line(name: storedNull.name, memberCount: storedNull.members.count), "Your group · 1 of 8")
     }
 
     func testNewSquadInsertBodyKeepsATrimmedNameOrNull() throws {
@@ -521,7 +521,7 @@ final class SquadNameTests: XCTestCase {
             try await service.renameSquad(squadId: squad, name: "Night")
             XCTFail("A member should not rename")
         } catch let failure as BackendFailure {
-            XCTAssertEqual(failure, .rejected("Only the owner can rename the squad."))
+            XCTAssertEqual(failure, .rejected("Only the owner can rename the group."))
         }
         try await service.renameSquad(squadId: squad, name: nil)
         let post = try XCTUnwrap(present.requests.last)
@@ -1107,7 +1107,7 @@ final class InviteFlowTests: XCTestCase {
         try await expectInvite(create: false, body: "{\"ok\":false,\"error\":\"owns_squad_with_members\"}", equals: .ownsSquadWithMembers)
         XCTAssertEqual(
             MembershipChange.note(beforeId: squad, beforeCount: 2, afterId: squad, afterCount: 2),
-            "You're already in this squad."
+            "You're already in this group."
         )
         XCTAssertEqual(
             MembershipChange.note(beforeId: squad, beforeCount: 2, afterId: squad, afterCount: 3),
@@ -1142,7 +1142,7 @@ final class InviteFlowTests: XCTestCase {
             try await owners.removeMember(squadId: squad, userId: owner)
             XCTFail("The owner row should stay")
         } catch let problem as InviteProblem {
-            XCTAssertEqual(problem, .other("The owner stays in the squad."))
+            XCTAssertEqual(problem, .other("The owner stays in the group."))
         }
     }
 
@@ -1186,7 +1186,7 @@ final class InviteFlowTests: XCTestCase {
             try await squads.removeMember(squadId: seeded.id, userId: owner)
             XCTFail("The owner row should stay")
         } catch let problem as InviteProblem {
-            XCTAssertEqual(problem, .other("The owner stays in the squad."))
+            XCTAssertEqual(problem, .other("The owner stays in the group."))
         }
     }
 
@@ -1312,7 +1312,7 @@ final class InviteFlowTests: XCTestCase {
         try await expectLeave("{\"ok\":false,\"error\":\"owner_must_transfer\"}", equals: .ownerMustTransfer)
         try await expectLeave("{\"ok\":true,\"squad_id\":null}", equals: nil)
         try await expectLeave("{\"ok\":true,\"squad_id\":\"\(squad.uuidString)\"}", equals: nil)
-        XCTAssertEqual(InviteProblem.alreadyLeft.message, "You already left this squad.")
+        XCTAssertEqual(InviteProblem.alreadyLeft.message, "You already left this group.")
         XCTAssertEqual(InviteProblem.signedOut.message, "Sign in again before leaving.")
     }
 

@@ -340,7 +340,9 @@ struct SupabaseHTTP {
         feature: BackendFeature,
         allowRefresh: Bool = true,
         probe: Bool = false,
-        optional: Bool = false
+        optional: Bool = false,
+        contentType: String = "application/json",
+        headers: [String: String] = [:]
     ) async throws -> Data {
         guard config.isConfigured, let base = config.url else { throw BackendFailure.notConfigured }
         var url = base
@@ -363,9 +365,10 @@ struct SupabaseHTTP {
         let bearer = accessToken ?? config.anonKey
         request.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
         if let prefer { request.setValue(prefer, forHTTPHeaderField: "Prefer") }
+        for (name, value) in headers { request.setValue(value, forHTTPHeaderField: name) }
         if let body {
             request.httpBody = body
-            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         }
         let data: Data
         let response: URLResponse
@@ -405,7 +408,9 @@ struct SupabaseHTTP {
                     feature: feature,
                     allowRefresh: false,
                     probe: probe,
-                    optional: optional
+                    optional: optional,
+                    contentType: contentType,
+                    headers: headers
                 )
             case .rejected:
                 throw BackendFailure.sessionEnded

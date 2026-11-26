@@ -4,7 +4,7 @@ SwiftUI iPhone app for Phase 1. The target is iPhone only. Mock data only. No ne
 
 The only dependency is the Stream Video Swift SDK, through Swift Package Manager, pinned to exactly 1.57.0 with `Package.resolved` committed. The first build resolves it from GitHub. There are no CocoaPods or Carthage checkouts. Simulator builds are arm64 only (`EXCLUDED_ARCHS[sdk=iphonesimulator*] = x86_64`) and unsigned (`CODE_SIGNING_ALLOWED[sdk=iphonesimulator*] = NO`), so they need no certificate. Device builds sign automatically with Apple Development for team `K4ZTXPQ8J9`, with no command-line overrides; the Mac needs that team's Apple Development certificate.
 
-Builds, simulator runs, and screenshots happen on the Mac mini. GitHub Actions on this branch runs the Linux SQL RLS and FCM payload jobs only.
+Builds, simulator runs, and screenshots happen on the Mac mini. GitHub Actions on this branch runs the Linux SQL RLS, FCM payload and copy-check jobs only.
 
 - Bundle id: `com.spencereese.squadsync`
 - Deployment: iOS 17
@@ -93,7 +93,7 @@ xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario sp
 
 `-backend mock -scenario almostFull` opens the same screen with 7 members. One join fills it to 8. The next join says the squad is full. The owner can remove someone. A member cannot leave on their own until `supabase/migrations/20261115_0019_self_leave.sql` is applied. That file is not applied. The Members sheet probes for `sq8_leave_squad` and keeps an honest line while the function is missing.
 
-`-debug-push-open '<json>'` stands in for tapping a notification with that payload at launch (a cold tap), for example `{"type":"squad_message","squad_id":"00000000-0000-0000-0000-000000000010","message_id":"00000000-0000-0000-0000-00000000A001"}`. Add `-debug-push-open-after <seconds>` (up to 120) to deliver the same tap that many seconds after launch instead, as if the app were already open (a warm tap). A tap that lands closes any sheet or confirmation over the chat (the voice room keeps running) and scrolls to the message. A message newer than what's loaded is fetched first, so a tap that beats the realtime socket still opens it. The real-device APNs checklist is in [docs/push-device-test.md](docs/push-device-test.md).
+`-debug-push-open '<json>'` stands in for tapping a notification with that payload at launch (a cold tap), for example `{"type":"squad_message","squad_id":"00000000-0000-0000-0000-000000000010","message_id":"00000000-0000-0000-0000-00000000A001"}`. Add `-debug-push-open-after <seconds>` (up to 120) to deliver the same tap that many seconds after launch instead, as if the app were already open (a warm tap). A tap that lands closes any sheet or confirmation over the chat (the voice room keeps running) and scrolls to the message. A message newer than what's loaded is fetched first, so a tap that beats the realtime socket still opens it. A side-thread reply's payload (`{"type":"thread_message","squad_id":"…","thread_id":"…","message_id":"…"}`) opens that side thread over the chat instead, with the reply on screen; the mock backend has one side group, "Ranked" (`thread_id` `00000000-0000-0000-0000-00000000B001`, newest reply `00000000-0000-0000-0000-00000000B103`). Side threads: "Side threads" in the composer's + menu (or in the Members panel) lists your side groups and DMs with the last reply and time, newest first, with loading, empty and error states. New picks one or more people in the group: one makes a DM, two or more make a group with an optional name. Creation is two requests under the live 0017/0024 policies (the thread, then one bulk insert of the seats), so it needs no new SQL. There is no unread dot because the only read state is per squad. `-mock-side-threads empty` starts the mock with no threads and `-mock-side-threads down` makes its reads fail (UI tests). The real-device APNs checklist is in [docs/push-device-test.md](docs/push-device-test.md).
 
 `-debug-fail-sends N` is a DEBUG launch flag. The next N message sends fail, and the ones after that succeed. Use it with Retry on the simulator.
 
@@ -101,13 +101,42 @@ xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario sp
 
 `-backend mock -scenario spotCallMine` opens that card with you as the caller, so Cancel and Lock are on it.
 
+`-backend mock -scenario playSessions` opens the chat with play sessions: Alex's Warzone session tonight (Alex and Jordan in, Sam out, you haven't answered), your Halo Infinite session in two days, a cancelled one, and one that's over. Upcoming sessions stay in the chat as cards (the top of the screen only has Game on); when one's start time comes it's pinned as a Game on card with I'm in (`plannedStarting`). Schedule a session is in the composer's + menu. `playSessionsEmpty` starts with none, `playSessionsMissing` acts like a server without the `sq8_sessions` tables (the sheet says so and Schedule is off), and `playSessionsFailed` fails every read until you tap Try again. Play sessions use the live `sq8_sessions` and `sq8_session_rsvps` tables from migration 0016; 0025 adds server-side guards and is not applied live yet.
+
 The voice lounge is mock-only. `VoiceRoomService` is the seam for a later hosted room: join, leave, mute, participants, speaking levels, and a connection state of idle, connecting, connected, reconnecting, or failed. `InMemoryVoiceRoomService` is the fake. The live squad room is separate and uses Stream; see [Voice](#voice).
 
 The prototype starts in the inbox. The States menu shows loading, empty, and error. Tap a thread for bubbles, tapbacks, swipe-to-reply, the party card, voice, and handoff.
 
+## Chat-first home (round 1)
+
+Home is the group chat. The header is the group's name (tap it for Members) and a Members button; nothing else. Who's in, the presence strip, the spot card and the play-session bar are gone from the top. Voice, side threads and Sign out moved into the Members panel; side threads are also in the composer's + menu.
+
+**Game on** replaces spot calls and the check-in board. When nobody's playing, the top shows one small Game on button. Any member picks a game (their default first, then their games, or Other) and how many more they need (1 to 7). That pins a card (two at most) with Join and an optional Ready, adds a line to the chat ("Alex's on Warzone, need 1") and, once the server side is live, sends everyone that push. Join stays open until the seats fill; there's no Lock and no 5-minute window. A card ends when the starter taps End, when everyone leaves, or after about 3 hours with no activity. `/spots` and `/spots <game>` open the Game on sheet. Game on reuses `sq8_spot_calls` with `kind = 'game_on'` (migration 0028, not applied live). Without 0028 the top says "Game on needs a server update before it works here." and no button is offered; the chat keeps working.
+
+**Invite link:** any member can make one in Members ("Make an invite link"). It's `squadsync://join/CODE` (custom scheme in `Info.plist`; no universal link yet), and the share text includes the code for apps that don't linkify it. Opening the link joins while signed in, or waits for sign-in. Owners are still the only ones who remove people. The 8-person cap stands. Member invites use `sq8_member_invite` (0029, not applied live); until then a non-owner gets "Only the owner can make an invite until the server is updated." and owners fall back to the old invite.
+
+**Prompts:** right after you join, "I'm on" (sends that as a chat message) or Game on; in a group under 4, an invite nudge and Invite on the card; early on, a profile photo nudge (uses the live public `avatars` bucket, `<uid>/sq8-avatar.jpg`). The notification permission prompt now comes at your first Game on start or join, not at sign-in, and never on the mock backend.
+
+**Copy:** user-facing text says "group" or the group's name, never "squad" (code names stay). `python3 scripts/check-copy.py` fails on any user-facing "squad" and runs in CI; `testNoScreenSaysSquad` checks the screens.
+
+Scenarios (all `-backend mock`, the Friday group of five unless noted):
+
+- `gameOn`: Alex is on Warzone and needs 1. Join fills it.
+- `gameOnFull`: Alex and Jordan, full, Jordan ready.
+- `gameOnMine`: you're on Call of Duty with Sam, need 2; End is on the card.
+- `gameOnTwo`: two open (the cap), so no Game on button; the + menu says why.
+- `gameOnExpired`: Alex's card sat idle past 3 hours, so it's gone.
+- `gameOnServerMissing`: a server without 0028.
+- `gameOnFailed`: reads fail until Retry.
+- `welcome`: just joined; "I'm on" and Game on prompts, plus the photo prompt.
+- `smallGroup`: Friday with Riley only; invite and photo prompts.
+- `plannedStarting`: Alex's planned Warzone session started 2 minutes ago, pinned with I'm in.
+
+Not in round 1 (see the PR): universal links, cleanup of the now-unused spot and Who's in code, and the old check-in tables.
+
 ## Live backend
 
-Mock data is the default. `-backend live` uses the existing Supabase project for email sign-in, your profile, your squad, and squad chat. Voice uses Stream (see [Voice](#voice)) and shows "Voice isn't set up yet" until `sq8-voice-token` is deployed. Spots and presence use the live project when those migrations are applied. Push registration and tap routing are in the app; delivery still needs the human gates in `supabase/functions/sq8-notify-message/README.md` (`20261110_0012_device_tokens.sql` was applied live on Nov 18, 2026; the APNs `.p8` and the Push capability on the App ID are still needed). `SquadSync.entitlements` (`aps-environment` = development) is set as `CODE_SIGN_ENTITLEMENTS` for Debug and Release. Unsigned simulator builds ignore it; a signed device build signs it in (check with `codesign -d --entitlements :- <path to SquadSync.app>`).
+Mock data is the default. `-backend live` uses the existing Supabase project for email sign-in, your profile, your group, and the group chat. Voice uses Stream (see [Voice](#voice)) and shows "Voice isn't set up yet" until `sq8-voice-token` is deployed. Spots and presence use the live project when those migrations are applied. Push registration and tap routing are in the app; delivery still needs the human gates in `supabase/functions/sq8-notify-message/README.md` (`20261110_0012_device_tokens.sql` was applied live on Nov 18, 2026; the APNs `.p8` and the Push capability on the App ID are still needed). `SquadSync.entitlements` (`aps-environment` = development) is set as `CODE_SIGN_ENTITLEMENTS` for Debug and Release. Unsigned simulator builds ignore it; a signed device build signs it in (check with `codesign -d --entitlements :- <path to SquadSync.app>`).
 
 Before building, create the local config. The anon key is not in git.
 

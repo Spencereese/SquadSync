@@ -78,3 +78,30 @@ jobs:
           PGPASSWORD: postgres
           PGDATABASE: sq8
         run: bash supabase/tests/run.sh
+
+  copy:
+    name: User-facing copy check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Fails if "squad" shows up in any string a person can see or hear
+      # (Swift literals, accessibility labels, plist usage strings). Code names are fine.
+      - name: No "squad" in user-facing strings
+        run: python3 scripts/check-copy.py
+
+  swift-surface:
+    name: Swift surface check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # The Linux unit harness does not compile SwiftUI files (MockStore,
+      # GameOnViews, …). This catches non-exhaustive switches and typo'd
+      # Type.member references in those files before a Mac build.
+      - name: Exhaustive switches and type members
+        run: python3 scripts/check-swift-surface.py

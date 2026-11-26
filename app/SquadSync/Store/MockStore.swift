@@ -344,6 +344,35 @@ enum LaunchScenario: String {
     case onboardingSlow
     /// Signed in with no squad, before the profile step is done.
     case onboardingProfile
+    /// Play sessions: Alex's session tonight (you haven't answered), your own later
+    /// one, a cancelled one and one that's over, as cards between a few messages.
+    case playSessions
+    /// The same squad with nothing scheduled yet, so the form and the first card can be tried.
+    case playSessionsEmpty
+    /// A server without the session tables (0016): the feature says so and stays off.
+    case playSessionsMissing
+    /// The sessions read fails until Retry.
+    case playSessionsFailed
+    /// Alex is on Warzone and needs 1, pinned over the chat. Join fills it.
+    case gameOn
+    /// Alex and Jordan fill Alex's Warzone, so Join is off.
+    case gameOnFull
+    /// You started a Game on (Sam's in), so End shows.
+    case gameOnMine
+    /// Two Game ons are open: the cap, so Game on says so.
+    case gameOnTwo
+    /// Alex's Game on sat untouched past three hours, so it's gone from the top.
+    case gameOnExpired
+    /// A server without 0028: Game on says it needs a server update.
+    case gameOnServerMissing
+    /// The Game on read fails until Retry.
+    case gameOnFailed
+    /// You just joined the group: "I'm on" or Game on, and the photo prompt.
+    case welcome
+    /// A group of two: empty seats come with an invite prompt, and the photo prompt.
+    case smallGroup
+    /// A planned session's start time has come, so it shows as a Game on card.
+    case plannedStarting
 
     var isOnboardingScenario: Bool {
         switch self {
@@ -363,6 +392,29 @@ enum LaunchScenario: String {
     var isWhosInScenario: Bool {
         switch self {
         case .whosIn, .whosInBasic, .whosInEmpty, .whosInFailed, .whosInSlow, .whosInNoServer: true
+        default: false
+        }
+    }
+
+    var isPlaySessionScenario: Bool {
+        switch self {
+        case .playSessions, .playSessionsEmpty, .playSessionsMissing, .playSessionsFailed: true
+        default: false
+        }
+    }
+
+    var isGameOnScenario: Bool {
+        switch self {
+        case .gameOn, .gameOnFull, .gameOnMine, .gameOnTwo, .gameOnExpired, .gameOnServerMissing, .gameOnFailed, .welcome, .plannedStarting: true
+        default: false
+        }
+    }
+
+    /// The scenarios that show the home prompts (invite, photo). Others keep them
+    /// off so the older UI tests see the thread they always did.
+    var showsHomePrompts: Bool {
+        switch self {
+        case .welcome, .smallGroup: true
         default: false
         }
     }
@@ -419,7 +471,11 @@ enum Seed {
         case .noSquad, .invite, .spotCall, .spotCallMine, .spotCallNearlyFull, .spotCallExpired, .almostFull, .spotHistory, .spotServerMissing,
              .chatPolish, .chatNoReplies, .chatEmpty, .chatHistoryFailed, .chatHistorySlow, .chatLongHistory,
              .whosIn, .whosInBasic, .whosInEmpty, .whosInFailed, .whosInSlow, .whosInNoServer,
-             .onboarding, .onboardingOffline, .onboardingSlow, .onboardingProfile:
+             .onboarding, .onboardingOffline, .onboardingSlow, .onboardingProfile,
+             .playSessions, .playSessionsEmpty, .playSessionsMissing, .playSessionsFailed,
+             .gameOn, .gameOnFull, .gameOnMine, .gameOnTwo, .gameOnExpired, .gameOnServerMissing, .gameOnFailed,
+             .welcome, .smallGroup, .plannedStarting:
+            // Chat, Game on and play-session seeds don't use the prototype party card.
             seats = []
         }
         return Party(

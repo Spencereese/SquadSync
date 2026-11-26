@@ -223,7 +223,7 @@ final class MockSquadService: SquadService {
         guard let member = squad.members.first(where: { $0.id == userId }) else {
             throw InviteProblem.other("You can't remove that person.")
         }
-        guard !member.isOwner else { throw InviteProblem.other("The owner stays in the squad.") }
+        guard !member.isOwner else { throw InviteProblem.other("The owner stays in the group.") }
         squad.members.removeAll { $0.id == userId }
         self.squad = squad
     }
@@ -552,6 +552,13 @@ final class MockInviteService: InviteServing {
         guard let squad = try await squads.currentSquad(userId: UUID()) else { throw InviteProblem.notOwner }
         if squad.members.count >= 8 { throw InviteProblem.full }
         return InviteTicket(code: "ABCD2345", squadId: squad.id)
+    }
+
+    /// Any member, like 0029. Same code until it's close to expiring.
+    func memberInvite() async throws -> InviteTicket {
+        guard let squad = try await squads.currentSquad(userId: UUID()) else { throw InviteProblem.notInSquad }
+        if squad.members.count >= 8 { throw InviteProblem.full }
+        return InviteTicket(code: "ABCD2345", squadId: squad.id, expiresAt: Date().addingTimeInterval(7 * 86_400))
     }
 
     func join(code: String) async throws -> UUID {

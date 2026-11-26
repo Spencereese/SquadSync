@@ -240,23 +240,23 @@ final class SquadHomeTests: XCTestCase {
     // MARK: Header title
 
     func testHeaderTitleFallsBackWhenTheNameIsNullOrBlank() {
-        XCTAssertEqual(SquadHeader.title(name: nil), "Your squad")
-        XCTAssertEqual(SquadHeader.title(name: ""), "Your squad")
-        XCTAssertEqual(SquadHeader.title(name: "   \n"), "Your squad")
+        XCTAssertEqual(SquadHeader.title(name: nil), "Your group")
+        XCTAssertEqual(SquadHeader.title(name: ""), "Your group")
+        XCTAssertEqual(SquadHeader.title(name: "   \n"), "Your group")
         XCTAssertEqual(SquadHeader.title(name: "  Friday "), "Friday")
     }
 
     func testHeaderTitleForSquadsAndNoSquad() {
         XCTAssertEqual(SquadHeader.title(squad: nil), "SquadSync")
         let unnamed = SquadRecord(id: squadId, ownerId: viewer, name: "", members: [member(viewer, "You", owner: true)])
-        XCTAssertEqual(SquadHeader.title(squad: unnamed), "Your squad")
+        XCTAssertEqual(SquadHeader.title(squad: unnamed), "Your group")
         XCTAssertEqual(SquadHeader.detail(squad: unnamed), "1 of 8")
-        XCTAssertEqual(SquadHeader.spoken(squad: unnamed), "Your squad · 1 of 8")
+        XCTAssertEqual(SquadHeader.spoken(squad: unnamed), "Your group · 1 of 8")
         let named = SquadRecord(id: squadId, ownerId: viewer, name: "Friday", members: [member(viewer, "You", owner: true), member(riley, "Riley")])
         XCTAssertEqual(SquadHeader.title(squad: named), "Friday")
         XCTAssertEqual(SquadHeader.spoken(squad: named), "Friday · 2 of 8", "The squad-title identifier keeps the old label the UI tests read")
         XCTAssertNil(SquadHeader.spoken(squad: nil))
-        XCTAssertEqual(SquadHeader.detail(squad: nil), "Not in a squad yet")
+        XCTAssertEqual(SquadHeader.detail(squad: nil), "Not in a group yet")
     }
 
     // MARK: Voice pill (mock)

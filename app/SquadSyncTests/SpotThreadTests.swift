@@ -169,26 +169,28 @@ final class SpotThreadModelTests: XCTestCase {
         email: "spencer@squadsync.app"
     )
 
-    func testSlashSpotsWithAGameCallsInsteadOfSending() async {
+    /// `/spots` now opens Game on (chat-first round 1); the old spot sheet stays closed.
+    func testSlashSpotsOpensGameOnNotTheSpotSheet() async {
         let model = model(.spotHistory)
         let before = model.log.ordered.count
         model.draft = "/spots Halo"
         await model.send()
-        XCTAssertEqual(model.spot?.game, "Halo")
+        XCTAssertTrue(model.gameOnSheetOpen)
+        XCTAssertEqual(model.gameOnDraft.game, "Halo")
+        XCTAssertFalse(model.spotSheetOpen)
+        XCTAssertNil(model.spot, "/spots must not call a spot any more")
         XCTAssertEqual(model.log.ordered.count, before, "The command was sent as a message")
         XCTAssertEqual(model.draft, "")
-        let phase = model.spot.map { SpotThread.phase($0, viewerId: model.viewerId, now: Date()) }
-        XCTAssertEqual(phase, .active)
     }
 
-    func testBareSlashSpotsOpensTheSheetWithTheDefaultGame() async {
+    func testBareSlashSpotsOpensGameOnWithTheDefaultGame() async {
         let model = model(.spotHistory)
-        model.spotGame = ""
         model.draft = "/spots"
         await model.send()
-        XCTAssertTrue(model.spotSheetOpen)
-        XCTAssertEqual(model.spotGame, model.defaultGame)
-        XCTAssertNil(model.spot)
+        XCTAssertTrue(model.gameOnSheetOpen)
+        XCTAssertFalse(model.spotSheetOpen)
+        let expected = GameOnDraft.choices(defaultGame: model.defaultGame, games: model.gamesEditor.games).first ?? ""
+        XCTAssertEqual(model.gameOnDraft.game, expected)
     }
 
     func testPlusMenuWithAnActiveCallSaysOneIsOpen() {

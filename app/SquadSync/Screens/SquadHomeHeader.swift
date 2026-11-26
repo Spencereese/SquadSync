@@ -22,6 +22,8 @@ struct SquadHomeHeader: View {
     let onVoice: () -> Void
     /// Opens the who's-in sheet: avatars and the "Who's in" pill.
     let onOpenWhosIn: () -> Void
+    /// Opens the list of side threads (side groups and DMs). Large text finds it in the squad panel.
+    let onOpenSideThreads: () -> Void
     /// Large-text roster state. The roster itself is drawn by the session screen.
     @Binding var rosterOpen: Bool
 
@@ -90,7 +92,7 @@ struct SquadHomeHeader: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(SquadHeader.spoken(squad: squad) ?? SquadHeader.noSquadTitle)
         .accessibilityValue(linkNote ?? "")
-        .accessibilityHint("Opens the squad panel")
+        .accessibilityHint("Opens members")
         .accessibilityAddTraits(.isHeader)
         .accessibilityIdentifier(squad == nil ? "squad-header-empty" : "squad-title")
     }
@@ -105,11 +107,22 @@ struct SquadHomeHeader: View {
             if squad != nil && large {
                 iconButton(
                     rosterOpen ? "person.2.circle.fill" : "person.2.circle",
-                    label: rosterOpen ? "Hide squad presence" : "Show squad presence",
+                    label: rosterOpen ? "Hide group presence" : "Show group presence",
                     identifier: "presence-toggle"
                 ) {
                     SQHaptics.play(.tap)
                     rosterOpen.toggle()
+                }
+            }
+            if squad != nil && !large {
+                iconButton(
+                    "bubble.left.and.bubble.right.fill",
+                    label: "Side threads",
+                    identifier: "open-side-threads",
+                    hint: "Opens your side groups and direct messages"
+                ) {
+                    SQHaptics.play(.tap)
+                    onOpenSideThreads()
                 }
             }
             iconButton("person.3.fill", label: "Members", identifier: "members", hint: "Opens invite, join, and remove") {
@@ -167,7 +180,7 @@ struct SquadHomeHeader: View {
         }
         .scrollIndicators(.hidden)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Squad presence")
+        .accessibilityLabel("Group presence")
         .accessibilityIdentifier("presence-strip")
     }
 
@@ -304,7 +317,7 @@ struct SquadPresenceRoster: View {
             panel(limit: limits[4])
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Squad presence")
+        .accessibilityLabel("Group presence")
         .accessibilityIdentifier("presence-strip")
     }
 

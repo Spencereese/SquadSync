@@ -223,7 +223,7 @@ enum CheckInRules {
             return "Pick a time between a few minutes and 7 days from now."
         }
         if text.contains("sq8_check_in_squad") || text.contains("sq8_check_in_spoof") || text.contains("row-level security") {
-            return "You can only check in for your own squad."
+            return "You can only check in for your own group."
         }
         return "Check-in didn't save. Try again."
     }
@@ -444,7 +444,7 @@ enum WhosIn {
     static let honorNote = "Check-ins are on the honor system. Nobody checks the game or console."
     static let detailsMissing = "This server saves when you're on, not the game or console yet."
     static let untrackedNote = "Check-ins aren't set up on this server, so nobody's availability is shown."
-    static let emptyNote = "Just you so far. Invite the squad from the squad panel."
+    static let emptyNote = "Just you so far. Invite the group from Members."
     static let loadingText = "Loading who's in…"
     static let failedPrefix = "Who's in couldn't load."
     static let staleNote = "Couldn't refresh. Showing the last check-ins."

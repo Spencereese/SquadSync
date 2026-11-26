@@ -6,6 +6,7 @@ import os
 /// Opening a pushed message: each step, so a launch that doesn't open it can be read
 /// back from the device log (subsystem com.spencereese.squadsync, category chat-open).
 private let chatOpenLog = Logger(subsystem: "com.spencereese.squadsync", category: "chat-open")
+private let sideThreadLog = Logger(subsystem: "com.spencereese.squadsync", category: "side-thread")
 #if DEBUG
 /// One line per poll: whether it changed the thread. Capture with
 /// `log stream --level debug --predicate 'subsystem == "com.spencereese.squadsync"'`.
@@ -95,6 +96,63 @@ final class LiveSessionModel {
     /// Set when the history read fails. The thread says so instead of looking empty.
     var spotHistoryNote = ""
     var spotLoad = SpotLoadState.idle
+    // Play sessions (PlaySessions.swift): a time to play, with In and Out.
+    var playSessions: [PlaySession] = []
+    var playLoad = PlaySessionLoad.idle
+    var playSheetOpen = false
+    /// The sheet opens straight on the form (the + menu) instead of the list.
+    var playSheetSchedules = false
+    var playDraft = PlaySessionDraft(startsAt: Date(), game: "", note: "")
+    var playScheduling = false
+    /// Why the form didn't schedule, in plain words.
+    var playScheduleError = ""
+    /// The last thing that happened ("Scheduled …", "Cancelled …").
+    var playNote = ""
+    /// Per session: why the last answer or cancel didn't save.
+    var playErrors: [UUID: String] = [:]
+    /// Sessions with a write in flight. Their buttons wait.
+    var playBusy: Set<UUID> = []
+    /// Bumped when you schedule one, so the chat brings its card into view.
+    var playScheduledSerial = 0
+    var playScheduledId: UUID?
+    @ObservationIgnored private var playSquad: UUID?
+    // Game on (GameOn.swift): what people are playing right now, pinned over the chat.
+    var gameOns: [GameOn] = []
+    var gameOnLoad = GameOnLoad.idle
+    var gameOnSheetOpen = false
+    var gameOnDraft = GameOnDraft.initial(defaultGame: "", games: [])
+    var gameOnStarting = false
+    /// Why the form didn't start one, in plain words.
+    var gameOnSheetError = ""
+    /// Per card: why the last join, leave, Ready or End didn't go through.
+    var gameOnErrors: [UUID: String] = [:]
+    /// Cards with a write in flight. Their buttons wait.
+    var gameOnBusy: Set<UUID> = []
+    /// A line over the cards, like "Two games are already on."
+    var gameOnNote = ""
+    @ObservationIgnored private var gameOnSquad: UUID?
+    /// Mock Game on server. Internal so model tests can change what it holds.
+    let mockGameOn: MockGameOnService?
+    /// You just joined this group (an invite or a link): "I'm on" or Game on, once.
+    var justJoined = false
+    /// The small-group invite nudge, until you close it.
+    var invitePromptDismissed = UserDefaults.standard.bool(forKey: "sq8.prompt.invite.dismissed")
+    /// The photo nudge, until you add one or say not now.
+    var photoPromptDismissed = UserDefaults.standard.bool(forKey: "sq8.prompt.photo.dismissed")
+    /// Your photo, when you have one. Nil while unknown or when there isn't one.
+    var avatarURL: URL?
+    /// The `avatars` bucket answered, so photos can be added.
+    var avatarReady = false
+    var avatarUploading = false
+    var avatarError = ""
+    /// Mock photo storage. Internal so model tests can change it.
+    let mockAvatars: MockAvatarService?
+    /// When the shared invite stops working.
+    var inviteExpires: Date?
+    /// The text the share sheet sends: link, then the code.
+    var inviteShareText = ""
+    /// An invite link that arrived before it could be used.
+    var pendingInvite: PendingInvite?
     /// The call sheet opened from the composer's + menu or a bare `/spots`.
     var spotSheetOpen = false
     var spotSheet = SpotSheetState.editing
@@ -187,6 +245,8 @@ final class LiveSessionModel {
     private let mockSpots: SpotServing?
     /// Internal so model tests can change what the mock server holds.
     let mockCheckIns: MockCheckInService?
+    /// Mock play-session server. Internal so model tests can change what it holds.
+    let mockPlay: MockPlaySessionService?
     /// Internal so model tests can read what the mock auth and games servers saw.
     let mockAuth: MockAuthService?
     let mockGames: MockProfileGames?
@@ -198,6 +258,23 @@ final class LiveSessionModel {
     private var poll: Task<Void, Never>?
     private var expiryRead: Task<Void, Never>?
     private var loadedSquad: UUID?
+    /// The side thread a reply's push opened, shown over the chat. Nil when closed.
+    var sideThread: SideThreadPanel?
+    /// The list of side threads, shown over the chat. A thread opened from the list
+    /// sits over the list, so closing it comes back here; a push tap clears this.
+    var sideThreadsOpen = false
+    var sideThreadList = SideThreadListState()
+    /// The new-thread form; nil when not making one.
+    var sideThreadDraft: SideThreadDraft?
+    @ObservationIgnored private var sideThreadsLoad: Task<Void, Never>?
+    /// Bumped when the list closes (and on sign-out), so a read that was already in
+    /// flight can't write its rows or a failure into the next state.
+    @ObservationIgnored private var sideThreadsGeneration = 0
+    /// Mock only: the side-thread server (one seeded side group).
+    @ObservationIgnored private var mockSideThreads: MockSideThreadService?
+    @ObservationIgnored private var sideThreadLoad: Task<Void, Never>?
+    /// The coordinator's cover serial last seen, so a landed squad-chat tap closes an open side thread.
+    @ObservationIgnored private var lastPushCover = 0
 
     enum Phase {
         case email
@@ -259,10 +336,29 @@ final class LiveSessionModel {
                 self.resend = ResendClock(cooldown: 5)
             }
             self.mockCheckIns = Self.mockCheckIns(for: scenario, viewerId: session.userId)
+            self.mockPlay = Self.mockPlay(for: scenario, viewerId: session.userId, now: Date())
             self.mockProfiles = MockProfileService()
             self.mockSquads = squads
             self.mockChat = chat
+            let sideThreads = MockSideThreadService()
+            // `-mock-side-threads empty|down` (UI tests): no threads at all, or a server that's down.
+            let sideMode = LaunchOptions.flag("-mock-side-threads", in: ProcessInfo.processInfo.arguments)
+            if sideMode != "empty" {
+                sideThreads.seed(viewerId: session.userId, otherId: ChatSeed.otherId, squadId: ChatSeed.squadId)
+            }
+            if sideMode == "down" { sideThreads.failsReads = true }
+            self.mockSideThreads = sideThreads
             self.mockInvites = MockInviteService(squads: squads)
+            self.mockGameOn = Self.mockGameOn(for: scenario, viewerId: session.userId, now: Date())
+            self.mockAvatars = MockAvatarService(bucketMissing: !scenario.showsHomePrompts)
+            if !scenario.showsHomePrompts {
+                self.invitePromptDismissed = true
+                self.photoPromptDismissed = true
+            } else {
+                self.invitePromptDismissed = false
+                self.photoPromptDismissed = false
+            }
+            if scenario == .welcome { self.justJoined = true }
             if !signedOut {
                 self.phase = .ready
                 self.email = session.email
@@ -303,6 +399,26 @@ final class LiveSessionModel {
                     for read in thread.reads { chat.seedRead(userId: read.userId, at: read.lastReadAt) }
                     for mark in thread.reactions { chat.seedReaction(mark) }
                 }
+            } else if scenario.isPlaySessionScenario || scenario.isGameOnScenario {
+                let seeded = squads.seedSpotSquad(ownerId: session.userId)
+                self.squad = seeded
+                self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: nil)
+                let now = Date()
+                let lines: [(String, TimeInterval, UUID)] = [
+                    ("Who's on tonight?", -35 * 60, SpotSeed.alex),
+                    ("I can do 8", -15 * 60, SpotSeed.jordan),
+                    ("Same", -5 * 60, session.userId)
+                ]
+                for (index, line) in lines.enumerated() {
+                    let message = RemoteMessage(
+                        id: UUID(uuidString: "00000000-0000-0000-0000-00000000060\(index + 1)")!,
+                        squadId: seeded.id,
+                        senderId: line.2,
+                        body: line.0,
+                        sentAt: now.addingTimeInterval(line.1)
+                    )
+                    chat.seed(message)
+                }
             } else if scenario == .spotHistory || scenario == .spotServerMissing {
                 let seeded = squads.seedSpotSquad(ownerId: session.userId)
                 self.squad = seeded
@@ -338,6 +454,11 @@ final class LiveSessionModel {
                     self.squad = squads.seed(ownerId: session.userId, name: "Friday")
                 } else if scenario.isWhosInScenario {
                     self.squad = squads.seedSpotSquad(ownerId: session.userId)
+                } else if scenario == .smallGroup {
+                    var seeded = squads.seed(ownerId: session.userId, name: "Friday")
+                    squads.addMember(id: ChatSeed.otherId, name: "Riley")
+                    seeded.members.append(SquadMemberRecord(id: ChatSeed.otherId, displayName: "Riley", defaultGame: "", isOwner: false))
+                    self.squad = seeded
                 } else if scenario == .invite {
                     var seeded = squads.seed(ownerId: session.userId, name: "Friday")
                     squads.addMember(id: ChatSeed.otherId, name: "Riley")
@@ -375,6 +496,9 @@ final class LiveSessionModel {
             self.mockInvites = nil
             self.mockSpots = nil
             self.mockCheckIns = nil
+            self.mockPlay = nil
+            self.mockGameOn = nil
+            self.mockAvatars = nil
             self.mockAuth = nil
             self.mockGames = nil
             self.marks = OnboardingMarks()
@@ -416,6 +540,64 @@ final class LiveSessionModel {
             return MockCheckInService(caps: .unknown)
         default:
             return MockCheckInService()
+        }
+    }
+
+    /// Mock play-session servers. Every mock squad has the session tables (like
+    /// live since 0016) and nothing scheduled; the play-session scenarios vary that.
+    private static func mockPlay(for scenario: LaunchScenario, viewerId: UUID, now: Date) -> MockPlaySessionService {
+        let members: Set<UUID> = [viewerId, SpotSeed.alex, SpotSeed.jordan, SpotSeed.sam, SpotSeed.casey]
+        switch scenario {
+        case .playSessions:
+            return MockPlaySessionService(
+                sessions: PlaySessionSeed.squad(viewerId: viewerId, squadId: ChatSeed.squadId, alex: SpotSeed.alex, jordan: SpotSeed.jordan, sam: SpotSeed.sam, now: now),
+                memberIds: members
+            )
+        case .playSessionsEmpty:
+            return MockPlaySessionService(memberIds: members)
+        case .plannedStarting:
+            return MockPlaySessionService(
+                sessions: [PlaySessionSeed.startingNow(squadId: ChatSeed.squadId, creator: SpotSeed.alex, now: now)],
+                memberIds: members
+            )
+        case .playSessionsMissing:
+            return MockPlaySessionService(serverMissing: true)
+        case .playSessionsFailed:
+            return MockPlaySessionService(
+                sessions: PlaySessionSeed.squad(viewerId: viewerId, squadId: ChatSeed.squadId, alex: SpotSeed.alex, jordan: SpotSeed.jordan, sam: SpotSeed.sam, now: now),
+                memberIds: members,
+                readsDown: true
+            )
+        default:
+            return MockPlaySessionService()
+        }
+    }
+
+    /// Mock Game on servers. Every mock group has 0028 and nothing on; the Game on
+    /// scenarios vary that.
+    private static func mockGameOn(for scenario: LaunchScenario, viewerId: UUID, now: Date) -> MockGameOnService {
+        let members: Set<UUID> = [viewerId, SpotSeed.alex, SpotSeed.jordan, SpotSeed.sam, SpotSeed.casey]
+        let squad = ChatSeed.squadId
+        switch scenario {
+        case .gameOn:
+            return MockGameOnService(viewerId: viewerId, memberIds: members, calls: [GameOnSeed.alexWarzone(squadId: squad, now: now)])
+        case .gameOnFull:
+            return MockGameOnService(viewerId: viewerId, memberIds: members, calls: [GameOnSeed.alexWarzone(squadId: squad, now: now, full: true)])
+        case .gameOnMine:
+            return MockGameOnService(viewerId: viewerId, memberIds: members, calls: [GameOnSeed.mine(viewerId: viewerId, squadId: squad, now: now)])
+        case .gameOnTwo:
+            return MockGameOnService(viewerId: viewerId, memberIds: members, calls: [
+                GameOnSeed.alexWarzone(squadId: squad, now: now),
+                GameOnSeed.jordanApex(squadId: squad, now: now)
+            ])
+        case .gameOnExpired:
+            return MockGameOnService(viewerId: viewerId, memberIds: members, calls: [GameOnSeed.alexWarzone(squadId: squad, now: now, idle: true)])
+        case .gameOnServerMissing:
+            return MockGameOnService(viewerId: viewerId, memberIds: members, serverMissing: true)
+        case .gameOnFailed:
+            return MockGameOnService(viewerId: viewerId, memberIds: members, calls: [GameOnSeed.alexWarzone(squadId: squad, now: now)], readsDown: true)
+        default:
+            return MockGameOnService(viewerId: viewerId, memberIds: members)
         }
     }
 
@@ -735,7 +917,7 @@ final class LiveSessionModel {
             let session = try requiredSession()
             let service = squadService(session)
             squad = try await service.createSquad(ownerId: session.userId, name: name)
-            status = "Squad created."
+            status = "Group created."
             await loadChat(session)
             startLive(session)
             settlePush(signedIn: true)
@@ -784,7 +966,9 @@ final class LiveSessionModel {
                     afterId: squad?.id,
                     afterCount: squad?.members.count ?? 0
                 )
+                if squad?.id != beforeId, squad != nil { justJoined = true }
                 await loadChat(session)
+                await loadGameOns(session)
                 startLive(session)
                 settlePush(signedIn: true)
             } catch let problem as InviteProblem {
@@ -834,7 +1018,7 @@ final class LiveSessionModel {
             } else if case .rejected(let message) = failure {
                 status = message
             } else {
-                status = "Could not rename the squad."
+                status = "Could not rename the group."
             }
         } catch {
             membershipIsError = true
@@ -876,7 +1060,7 @@ final class LiveSessionModel {
                 self.transferTo = nil
                 self.loadedSquad = nil
                 membershipIsError = false
-                status = "You left the squad."
+                status = "You left the group."
             } catch let problem as InviteProblem {
                 membershipIsError = true
                 status = problem.message
@@ -1119,12 +1303,511 @@ final class LiveSessionModel {
         await loadSpot(session)
     }
 
+    // MARK: Play sessions
+
+    private func playService(_ session: AuthSession) -> PlaySessionServing {
+        mockPlay ?? SupabasePlaySessionService(config: config, accessToken: session.accessToken, refresher: tokenRefresher)
+    }
+
+    /// Read-only. A failed refresh keeps what's showing and says so; a server
+    /// without the tables turns the feature off with a plain line.
+    func loadPlaySessions(_ session: AuthSession) async {
+        guard let squad else { return }
+        let requested = squad.id
+        if playSquad != requested {
+            playSquad = requested
+            playSessions = []
+            playErrors = [:]
+            playNote = ""
+            playLoad = .idle
+        }
+        quietly(\.playLoad, PlaySessionLoad.beginning(playLoad))
+        do {
+            let since = Date().addingTimeInterval(-PlaySessionRules.readWindow)
+            let rows = try await playService(session).sessions(squadId: requested, since: since)
+            guard self.squad?.id == requested else { return }
+            quietly(\.playSessions, rows)
+            quietly(\.playLoad, PlaySessionLoad.loaded)
+        } catch {
+            if RequestNoise.isCancellation(error) { return }
+            guard self.squad?.id == requested else { return }
+            if PlaySessionProblem.isSessionFailure(error) {
+                handleSessionError(error)
+                return
+            }
+            let problem = PlaySessionProblem.from(error)
+            if problem == .unavailable {
+                quietly(\.playSessions, [])
+                quietly(\.playLoad, PlaySessionLoad.unavailable)
+            } else {
+                let text = problem == .offline ? problem.message : PlaySessionCopy.loadFailed
+                quietly(\.playLoad, PlaySessionLoad.failed(text))
+            }
+        }
+    }
+
+    func retryPlaySessions() async {
+        mockPlay?.recover()
+        await refreshPlaySessions()
+    }
+
+    /// Opening the sheet reads again; only Retry tells the mock server to come back.
+    func refreshPlaySessions() async {
+        guard let session = try? requiredSession() else { return }
+        await loadPlaySessions(session)
+    }
+
+    /// The + menu opens the form; the bar above the chat opens the list.
+    func openPlaySessions(schedule: Bool = false) {
+        if schedule { resetPlayDraft() }
+        playSheetSchedules = schedule
+        playScheduleError = ""
+        playSheetOpen = true
+    }
+
+    /// Tonight at 8 (or soon), your default game, no note.
+    func resetPlayDraft(now: Date = Date()) {
+        playDraft = PlaySessionDraft(
+            startsAt: PlaySessionTime.suggestedStart(now: now, calendar: .autoupdatingCurrent),
+            game: defaultGame.trimmingCharacters(in: .whitespacesAndNewlines),
+            note: ""
+        )
+        playScheduleError = ""
+    }
+
+    /// True when it was scheduled. You're put down as In right after; if that
+    /// part doesn't save, the session still stands and the note says so.
+    @discardableResult
+    func schedulePlaySession(now: Date = Date()) async -> Bool {
+        guard !playScheduling else { return false }
+        if let problem = playDraft.problem(now: now, defaultGame: defaultGame) {
+            playScheduleError = problem.message
+            return false
+        }
+        guard let squad else { return false }
+        playScheduling = true
+        defer { playScheduling = false }
+        playScheduleError = ""
+        do {
+            let session = try requiredSession()
+            let me = viewerId ?? session.userId
+            let service = playService(session)
+            let created = try await service.schedule(PlaySessionRequest(
+                squadId: squad.id,
+                creatorId: me,
+                game: playDraft.resolvedGame(defaultGame: defaultGame),
+                startsAt: playDraft.startsAt,
+                note: playDraft.resolvedNote
+            ))
+            playSessions = PlaySessionRules.replacing(created, in: playSessions)
+            playLoad = .loaded
+            let time = PlaySessionTime.label(created.startsAt, now: now, clock: .current)
+            do {
+                try await service.respond(sessionId: created.id, userId: me, response: .going)
+                playSessions = PlaySessionRules.replacing(PlaySessionRules.setting(.going, for: me, in: created, at: now), in: playSessions)
+                playNote = PlaySessionCopy.scheduledNote(game: created.game, time: time)
+            } catch {
+                playNote = PlaySessionCopy.scheduledButRSVPFailed(game: created.game, time: time)
+            }
+            playScheduledId = created.id
+            playScheduledSerial += 1
+            await loadPlaySessions(session)
+            return true
+        } catch {
+            if PlaySessionProblem.isSessionFailure(error) {
+                handleSessionError(error)
+                return false
+            }
+            let problem = PlaySessionProblem.from(error)
+            if problem == .unavailable { playLoad = .unavailable }
+            playScheduleError = problem.message
+            return false
+        }
+    }
+
+    /// Shows your answer right away. If the server says no, it goes back to what
+    /// it was and the card says why.
+    func respondToPlaySession(_ id: UUID, _ response: PlaySessionResponse, now: Date = Date()) async {
+        guard !playBusy.contains(id), let before = playSessions.first(where: { $0.id == id }) else { return }
+        guard PlaySessionRules.canRespond(before, now: now) else { return }
+        guard let session = try? requiredSession() else { return }
+        let me = viewerId ?? session.userId
+        if before.response(of: me) == response { return }
+        playBusy.insert(id)
+        defer { playBusy.remove(id) }
+        playErrors[id] = nil
+        playSessions = PlaySessionRules.replacing(PlaySessionRules.setting(response, for: me, in: before, at: now), in: playSessions)
+        do {
+            try await playService(session).respond(sessionId: id, userId: me, response: response)
+            // A read that landed while this was saving may not have it yet.
+            if let current = playSessions.first(where: { $0.id == id }), current.response(of: me) != response {
+                playSessions = PlaySessionRules.replacing(PlaySessionRules.setting(response, for: me, in: current, at: now), in: playSessions)
+            }
+        } catch {
+            if let current = playSessions.first(where: { $0.id == id }) {
+                var restored = current
+                restored.rsvps = before.rsvps
+                playSessions = PlaySessionRules.replacing(restored, in: playSessions)
+            }
+            if PlaySessionProblem.isSessionFailure(error) {
+                handleSessionError(error)
+                return
+            }
+            let problem = PlaySessionProblem.from(error)
+            playErrors[id] = problem == .failed ? "Your answer didn't save. Try again." : problem.message
+            if problem == .cancelled || problem == .over || problem == .notAllowed || problem == .full || problem == .unavailable {
+                await loadPlaySessions(session)
+            }
+        }
+    }
+
+    func cancelPlaySession(_ id: UUID, now: Date = Date()) async {
+        guard !playBusy.contains(id), let current = playSessions.first(where: { $0.id == id }) else { return }
+        guard let session = try? requiredSession() else { return }
+        guard PlaySessionRules.canCancel(current, viewerId: viewerId ?? session.userId, now: now) else { return }
+        playBusy.insert(id)
+        defer { playBusy.remove(id) }
+        playErrors[id] = nil
+        do {
+            let cancelled = try await playService(session).cancel(sessionId: id)
+            playSessions = PlaySessionRules.replacing(cancelled, in: playSessions)
+            let time = PlaySessionTime.label(current.startsAt, now: now, clock: .current)
+            playNote = "Cancelled \(current.game) for \(time)."
+        } catch {
+            if PlaySessionProblem.isSessionFailure(error) {
+                handleSessionError(error)
+                return
+            }
+            let problem = PlaySessionProblem.from(error)
+            playErrors[id] = problem == .failed ? "Couldn't cancel. Try again." : problem.message
+            if problem == .cancelled || problem == .notAllowed || problem == .unavailable {
+                await loadPlaySessions(session)
+            }
+        }
+    }
+
+    // MARK: Game on
+
+    private func gameOnService(_ session: AuthSession) -> GameOnServing {
+        if let mockGameOn {
+            // The mock counts seats against the group the screen shows.
+            if let squad { mockGameOn.memberIds = Set(squad.members.map(\.id)) }
+            return mockGameOn
+        }
+        return SupabaseGameOnService(config: config, accessToken: session.accessToken, refresher: tokenRefresher)
+    }
+
+    var groupMemberIds: Set<UUID>? {
+        squad.map { Set($0.members.map(\.id)) }
+    }
+
+    /// The cards pinned over the chat right now: two at most, idle ones gone.
+    func liveGameOns(now: Date = Date()) -> [GameOn] {
+        GameOnRules.live(gameOns, now: now, memberIds: groupMemberIds)
+    }
+
+    /// Planned sessions whose start time has come: they show as Game on cards.
+    func startingSessions(now: Date = Date()) -> [PlaySession] {
+        PlannedGameOn.starting(playSessions, now: now)
+    }
+
+    /// Read-only. A failed refresh keeps what's showing and says so; a server
+    /// without 0028 says Game on needs a server update.
+    func loadGameOns(_ session: AuthSession) async {
+        guard let squad else { return }
+        let requested = squad.id
+        if gameOnSquad != requested {
+            gameOnSquad = requested
+            gameOns = []
+            gameOnErrors = [:]
+            gameOnNote = ""
+            gameOnLoad = .idle
+        }
+        if gameOnLoad == .idle { quietly(\.gameOnLoad, GameOnLoad.loading) }
+        do {
+            let since = Date().addingTimeInterval(-GameOnRules.readWindow)
+            let rows = try await gameOnService(session).recent(squadId: requested, since: since)
+            guard self.squad?.id == requested else { return }
+            quietly(\.gameOns, rows)
+            quietly(\.gameOnLoad, GameOnLoad.loaded)
+        } catch {
+            if RequestNoise.isCancellation(error) { return }
+            guard self.squad?.id == requested else { return }
+            if PlaySessionProblem.isSessionFailure(error) {
+                handleSessionError(error)
+                return
+            }
+            let problem = GameOnProblem.from(error)
+            if problem == .notSetUp {
+                quietly(\.gameOns, [])
+                quietly(\.gameOnLoad, GameOnLoad.unavailable)
+            } else {
+                quietly(\.gameOnLoad, GameOnLoad.failed(problem == .offline ? problem.message : GameOnCopy.loadFailed))
+            }
+        }
+    }
+
+    func retryGameOns() async {
+        mockGameOn?.recover()
+        guard let session = try? requiredSession() else { return }
+        await loadGameOns(session)
+    }
+
+    /// The Game on button, the + menu and `/spots`. At the cap it says why instead.
+    func openGameOn(game: String? = nil, now: Date = Date()) {
+        gameOnNote = ""
+        if gameOnLoad == .unavailable {
+            gameOnNote = GameOnCopy.unavailable
+            return
+        }
+        guard GameOnRules.canStart(live: liveGameOns(now: now)) else {
+            gameOnNote = GameOnCopy.capReached
+            return
+        }
+        var draft = GameOnDraft.initial(defaultGame: defaultGame, games: gamesEditor.games)
+        if let game, !game.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            draft.game = game.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !draft.games.contains(where: { $0.caseInsensitiveCompare(draft.game) == .orderedSame }) {
+                draft.games.append(draft.game)
+            }
+        }
+        gameOnDraft = draft
+        gameOnSheetError = ""
+        gameOnSheetOpen = true
+        if gamesEditor.load != .loaded {
+            Task {
+                await loadProfileGames()
+                let choices = GameOnDraft.choices(defaultGame: defaultGame, games: gamesEditor.games + gameOnDraft.games)
+                if gameOnSheetOpen { gameOnDraft.games = choices }
+            }
+        }
+    }
+
+    /// True when it started. The first Game on is when the app asks to send notifications.
+    @discardableResult
+    func startGameOn() async -> Bool {
+        guard !gameOnStarting, let squad else { return false }
+        if let problem = gameOnDraft.validationError {
+            gameOnSheetError = problem
+            return false
+        }
+        gameOnStarting = true
+        defer { gameOnStarting = false }
+        gameOnSheetError = ""
+        do {
+            let session = try requiredSession()
+            _ = try await gameOnService(session).start(squadId: squad.id, game: gameOnDraft.trimmedGame, need: gameOnDraft.need)
+            gameOnSheetOpen = false
+            justJoined = false
+            gameOnNote = ""
+            askForNotificationsAtFirstGameOn()
+            await loadGameOns(session)
+            return true
+        } catch {
+            if PlaySessionProblem.isSessionFailure(error) {
+                handleSessionError(error)
+                return false
+            }
+            let problem = GameOnProblem.from(error)
+            if problem == .notSetUp { gameOnLoad = .unavailable }
+            gameOnSheetError = problem.message
+            if problem == .cap, let session = try? requiredSession() { await loadGameOns(session) }
+            return false
+        }
+    }
+
+    func joinGameOn(_ id: UUID) async {
+        await gameOnWrite(id, failure: "Couldn't join. Try again.") { service in
+            try await service.join(callId: id)
+        }
+        if gameOnErrors[id] == nil {
+            justJoined = false
+            askForNotificationsAtFirstGameOn()
+        }
+    }
+
+    func leaveGameOn(_ id: UUID) async {
+        await gameOnWrite(id, failure: "Couldn't leave. Try again.") { service in
+            try await service.leave(callId: id)
+        }
+    }
+
+    func setGameOnReady(_ id: UUID, ready: Bool) async {
+        await gameOnWrite(id, failure: "Couldn't save that. Try again.") { service in
+            try await service.setReady(callId: id, ready: ready)
+        }
+    }
+
+    func closeGameOn(_ id: UUID) async {
+        await gameOnWrite(id, failure: "Couldn't end it. Try again.") { service in
+            try await service.close(callId: id)
+        }
+    }
+
+    /// One write, then a fresh read so the card shows what the server has.
+    private func gameOnWrite(_ id: UUID, failure: String, _ work: (GameOnServing) async throws -> Void) async {
+        guard !gameOnBusy.contains(id), let session = try? requiredSession() else { return }
+        gameOnBusy.insert(id)
+        defer { gameOnBusy.remove(id) }
+        gameOnErrors[id] = nil
+        do {
+            try await work(gameOnService(session))
+        } catch {
+            if PlaySessionProblem.isSessionFailure(error) {
+                handleSessionError(error)
+                return
+            }
+            let problem = GameOnProblem.from(error)
+            gameOnErrors[id] = problem == .failed ? failure : problem.message
+            if problem == .notSetUp { gameOnLoad = .unavailable }
+        }
+        await loadGameOns(session)
+    }
+
+    /// Notifications are asked for at your first Game on or join, not at sign-in.
+    private func askForNotificationsAtFirstGameOn() {
+        // The mock backend (UI tests, previews, unit tests) never raises the system prompt.
+        guard backendMode == .live else { return }
+        PushCoordinator.shared.askIfReady(signedIn: true, hasSquad: squad != nil, moment: .gameOn)
+    }
+
+    /// "I'm on": a plain chat message, so everyone sees it the usual way.
+    func sayImOn() async {
+        draft = HomePrompts.imOnMessage
+        justJoined = false
+        await send()
+    }
+
+    func dismissWelcome() {
+        justJoined = false
+    }
+
+    func dismissInvitePrompt() {
+        invitePromptDismissed = true
+        if backendMode == .live { UserDefaults.standard.set(true, forKey: "sq8.prompt.invite.dismissed") }
+    }
+
+    func dismissPhotoPrompt() {
+        photoPromptDismissed = true
+        if backendMode == .live { UserDefaults.standard.set(true, forKey: "sq8.prompt.photo.dismissed") }
+    }
+
+    // MARK: Invite link
+
+    /// Any member can make the share link (0029). The same code comes back until
+    /// it's close to expiring, so sharing twice doesn't break the first link.
+    func shareInvite() async {
+        membershipIsError = false
+        status = "Making a link…"
+        await run {
+            let session = try requiredSession()
+            do {
+                let ticket = try await inviteService(session).memberInvite()
+                inviteCode = ticket.code
+                inviteExpires = ticket.expiresAt
+                inviteShareText = InviteLink.shareText(groupName: squad?.name ?? "", code: ticket.code)
+                membershipIsError = false
+                status = "Link ready. Share it with a friend."
+            } catch let problem as InviteProblem {
+                membershipIsError = true
+                status = problem.message
+            }
+        }
+    }
+
+    /// `squadsync://join/CODE`. Signed out, it waits for sign-in; already in a
+    /// group, it says so instead of trying.
+    func openInviteLink(_ url: URL) async {
+        guard let code = InviteLink.code(from: url) else { return }
+        await useInvite(code)
+    }
+
+    private func useInvite(_ code: String) async {
+        switch PendingInvite.action(code: code, signedIn: phase == .ready, hasGroup: squad != nil) {
+        case .wait:
+            pendingInvite = PendingInvite(code: code)
+        case .alreadyIn, .inAnotherGroup:
+            pendingInvite = nil
+            membershipIsError = true
+            status = "You're already in a group. Leave it first to join another."
+        case .join(let code):
+            pendingInvite = nil
+            joinCode = code
+            await joinSquad()
+        }
+    }
+
+    /// After sign-in finishes and the group read is back.
+    func usePendingInvite() async {
+        guard let pending = pendingInvite, phase == .ready, !busy else { return }
+        await useInvite(pending.code)
+    }
+
+    // MARK: Profile photo
+
+    private func avatarService(_ session: AuthSession) -> AvatarServing {
+        mockAvatars ?? SupabaseAvatarService(config: config, accessToken: session.accessToken, refresher: tokenRefresher)
+    }
+
+    /// The photo URL for anyone in the group: public, so no request until it's shown.
+    func photoURL(for userId: UUID) -> URL? {
+        if userId == chatViewerId { return avatarURL }
+        if let mockAvatars { return mockAvatars.photos[userId] }
+        guard let base = config.url else { return nil }
+        return AvatarPath.publicURL(base: base, userId: userId)
+    }
+
+    func loadAvatar() async {
+        guard let session = try? requiredSession() else { return }
+        do {
+            avatarURL = try await avatarService(session).photoURL(userId: session.userId)
+            avatarReady = true
+        } catch {
+            if RequestNoise.isCancellation(error) { return }
+            // No bucket, or the check failed: no prompt, and nothing claims a photo.
+            avatarReady = false
+        }
+    }
+
+    /// A JPEG from the photo picker, already shrunk.
+    func uploadAvatar(_ jpeg: Data) async {
+        guard let session = try? requiredSession(), !avatarUploading else { return }
+        guard jpeg.count <= AvatarPath.maxBytes else {
+            avatarError = "That photo's too big. Pick a smaller one."
+            return
+        }
+        avatarUploading = true
+        defer { avatarUploading = false }
+        avatarError = ""
+        do {
+            avatarURL = try await avatarService(session).upload(userId: session.userId, jpeg: jpeg)
+            photoPromptDismissed = true
+        } catch {
+            if PlaySessionProblem.isSessionFailure(error) {
+                handleSessionError(error)
+                return
+            }
+            if let failure = error as? BackendFailure, case .notSetUp = failure {
+                avatarReady = false
+                avatarError = "Photos aren't set up on this server yet."
+            } else if let failure = error as? BackendFailure, case .reconnecting = failure {
+                avatarError = "You're offline. Try again when you're back."
+            } else {
+                avatarError = "Your photo didn't upload. Try again."
+            }
+        }
+    }
+
     func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let squad else { return }
         if let command = SpotCommand.parse(text) {
+            // `/spots` opens Game on now (spot calls are gone from the screen);
+            // `/spots Apex` opens it with Apex picked.
             draft = ""
-            await runSpotCommand(command)
+            switch command {
+            case .call(let game): openGameOn(game: game)
+            }
             return
         }
         let session: AuthSession
@@ -1477,6 +2160,9 @@ final class LiveSessionModel {
         olderPagedThisSquad = false
         olderHoldAnchor = nil
         pendingOpen.clear()
+        closeSideThread()
+        closeSideThreadList()
+        sideThreadList = SideThreadListState()
         FunctionPresence.shared.reset()
         gamesEditor = ProfileGamesEditor()
         realtime?.stop()
@@ -1510,6 +2196,12 @@ final class LiveSessionModel {
         profileError = ""
         showProfileErrors = false
         gamesHome = nil
+        playSessions = []
+        playLoad = .idle
+        playSquad = nil
+        playErrors = [:]
+        playNote = ""
+        playSheetOpen = false
         if marks != nil { profileConfirmed = true }
         phase = .email
         settlePush(signedIn: false)
@@ -1631,10 +2323,12 @@ final class LiveSessionModel {
             }
             if !profileConfirmed && squad == nil { await loadOnboardingProfile() }
             await loadChat(session)
-            await loadSpot(session)
-            // The slow mock skips this so the sheet's own read is the one that loads.
-            if mockCheckIns?.waitsForSheet != true { await loadWhosIn() }
+            // Spot calls and the check-in board are off the screen: Game on replaced them.
+            await loadGameOns(session)
+            await loadPlaySessions(session)
+            if squad != nil, !avatarReady { await loadAvatar() }
             settlePush(signedIn: true)
+            await usePendingInvite()
         } catch {
             handleSessionError(error)
         }
@@ -1648,6 +2342,17 @@ final class LiveSessionModel {
         )
         if let message = PushCoordinator.shared.focusMessage {
             requestOpen(messageId: message)
+        }
+        let landed = PushCoordinator.shared.coverSerial != lastPushCover
+        lastPushCover = PushCoordinator.shared.coverSerial
+        if let thread = PushCoordinator.shared.takeThreadOpen() {
+            // A push goes straight to its thread; closing it returns to the chat, not the list.
+            closeSideThreadList()
+            openSideThread(thread.thread, reply: thread.reply)
+        } else if landed, sideThread != nil || sideThreadsOpen {
+            // A squad-chat tap (or "not in that squad") landed: the chat has to show.
+            closeSideThread()
+            closeSideThreadList()
         }
         guard signedIn else { return }
         PushCoordinator.shared.askIfReady(signedIn: true, hasSquad: squad != nil)
@@ -2018,7 +2723,9 @@ final class LiveSessionModel {
         case .reaction(let mark, let removed):
             if removed { board.remove(mark) } else { board.add(mark) }
         case .spots:
-            await loadSpot(session)
+            await loadGameOns(session)
+        case .sessions:
+            await loadPlaySessions(session)
         case .checkIns:
             await loadWhosIn()
         case .checkInRemoved(let user):
@@ -2073,7 +2780,8 @@ final class LiveSessionModel {
             quietly(\.log, merged)
             quietly(\.chatLoad, .loaded)
             connectionProven()
-            await loadSpot(session)
+            await loadGameOns(session)
+            await loadPlaySessions(session)
             polls += 1
             #if DEBUG
             pollTrace.debug("poll \(self.polls, privacy: .public) rows=\(rows.count, privacy: .public) thread=\(changed ? "changed" : "same", privacy: .public)")
@@ -2127,6 +2835,215 @@ final class LiveSessionModel {
     }
 
     private var tokenRefresher: TokenRefreshing? { auth as? TokenRefreshing }
+
+    private func sideThreadService(_ session: AuthSession) -> SideThreadServing {
+        mockSideThreads ?? SupabaseSideThreadService(
+            config: config,
+            accessToken: session.accessToken,
+            refresher: tokenRefresher
+        )
+    }
+
+    // MARK: Side threads (opened from a reply's push)
+
+    /// Opens a side thread over the chat and loads it, with `reply` scrolled to.
+    func openSideThread(_ thread: UUID, reply: UUID?) {
+        sideThreadLoad?.cancel()
+        sideThread = SideThreadPanel(threadId: thread, focus: reply)
+        PushCoordinator.shared.viewingThread = thread
+        sideThreadLoad = Task { [weak self] in await self?.loadSideThread() }
+    }
+
+    func closeSideThread() {
+        let wasOpen = sideThread != nil
+        sideThreadLoad?.cancel()
+        sideThreadLoad = nil
+        sideThread = nil
+        PushCoordinator.shared.viewingThread = nil
+        // Back on the list: it picks up what was just said.
+        if wasOpen && sideThreadsOpen { reloadSideThreads() }
+    }
+
+    // MARK: Side-thread list and new thread
+
+    func openSideThreadList() {
+        guard squad != nil else { return }
+        sideThreadsOpen = true
+        sideThreadDraft = nil
+        reloadSideThreads(showLoading: sideThreadList.load != .ready)
+    }
+
+    func closeSideThreadList() {
+        sideThreadsGeneration += 1
+        sideThreadsLoad?.cancel()
+        sideThreadsLoad = nil
+        sideThreadsOpen = false
+        sideThreadDraft = nil
+    }
+
+    private func reloadSideThreads(showLoading: Bool = false) {
+        sideThreadsLoad?.cancel()
+        let generation = sideThreadsGeneration
+        sideThreadsLoad = Task { [weak self] in await self?.loadSideThreads(showLoading: showLoading, generation: generation) }
+    }
+
+    /// The signed-in person's side threads for this squad, newest activity first. RLS
+    /// is the filter: a thread you aren't in never comes back.
+    func loadSideThreads(showLoading: Bool = true, generation: Int? = nil) async {
+        let generation = generation ?? sideThreadsGeneration
+        // A read the list (or sign-out) has given up on writes nothing.
+        let current = { !Task.isCancelled && generation == self.sideThreadsGeneration }
+        guard current() else { return }
+        guard let squad, let session = try? requiredSession() else {
+            sideThreadList.load = .failed
+            return
+        }
+        let squadId = squad.id
+        // A refresh keeps the rows on screen; only the first read shows "Loading".
+        if showLoading || sideThreadList.load == .idle { sideThreadList.load = .loading }
+        let service = sideThreadService(session)
+        do {
+            let threads = try await service.threads(squadId: squadId)
+            let ids = threads.map(\.id)
+            let memberships = try await service.memberships(threadIds: ids)
+            let last = try await service.lastMessages(threadIds: ids)
+            guard current(), self.squad?.id == squadId else { return }
+            sideThreadList.rows = SideThreadList.rows(threads: threads, memberships: memberships, last: last, squadId: squadId)
+            sideThreadList.load = .ready
+        } catch {
+            if RequestNoise.isCancellation(error) || !current() { return }
+            sideThreadLog.info("side thread list failed: \(String(describing: error), privacy: .public)")
+            // A failed refresh over rows already shown keeps them rather than blanking the list.
+            if sideThreadList.rows.isEmpty || showLoading { sideThreadList.load = .failed }
+        }
+    }
+
+    func openThreadFromList(_ id: UUID) {
+        openSideThread(id, reply: nil)
+    }
+
+    /// People you can put in a side thread: the squad except you, by name.
+    var sideThreadCandidates: [SquadMemberRecord] {
+        let me = profile?.id ?? viewerId
+        return (squad?.members ?? []).filter { $0.id != me }.sorted {
+            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+        }
+    }
+
+    func beginNewSideThread() {
+        sideThreadDraft = SideThreadDraft()
+    }
+
+    func cancelNewSideThread() {
+        sideThreadDraft = nil
+    }
+
+    func toggleSideThreadMember(_ id: UUID) {
+        sideThreadDraft?.toggle(id)
+    }
+
+    /// Opens the DM you already have with that person, or makes the thread and opens it.
+    func createSideThread() async {
+        guard let draft = sideThreadDraft, let squad, let session = try? requiredSession() else { return }
+        let me = session.userId
+        if draft.isDirect, let other = draft.selected.first,
+           let existing = SideThreadList.directThread(in: sideThreadList.rows, between: me, and: other) {
+            sideThreadDraft = nil
+            openSideThread(existing.id, reply: nil)
+            return
+        }
+        guard let thread = draft.newThread(squadId: squad.id, creator: me, names: memberNames) else { return }
+        sideThreadDraft?.creating = true
+        sideThreadDraft?.error = ""
+        do {
+            try await sideThreadService(session).create(thread)
+            sideThreadDraft = nil
+            openSideThread(thread.id, reply: nil)
+        } catch {
+            if RequestNoise.isCancellation(error) {
+                sideThreadDraft?.creating = false
+                return
+            }
+            sideThreadLog.info("side thread create failed: \(String(describing: error), privacy: .public)")
+            sideThreadDraft?.creating = false
+            sideThreadDraft?.error = SideThreadCopy.createFailed
+        }
+    }
+
+    /// Thread, members, the newest page, and the tapped reply if it's older than that page.
+    func loadSideThread() async {
+        guard let panel = sideThread else { return }
+        let id = panel.threadId
+        guard let session = try? requiredSession() else {
+            sideThread?.load = .failed
+            return
+        }
+        let service = sideThreadService(session)
+        sideThread?.load = .loading
+        do {
+            // A thread from another squad (or one this person can't see) is "not available".
+            guard let info = try await service.thread(id: id), info.squadId == squad?.id else {
+                guard sideThread?.threadId == id else { return }
+                sideThread?.load = .notFound
+                return
+            }
+            let members = try await service.members(threadId: id)
+            let rows = try await service.messages(threadId: id, limit: SideThreadPanel.pageSize)
+            var tapped: SideThreadMessage?
+            if let focus = panel.focus, !rows.contains(where: { $0.id == focus }) {
+                tapped = try await service.message(threadId: id, id: focus)
+            }
+            guard sideThread?.threadId == id else { return }
+            sideThread?.info = info
+            sideThread?.memberIds = members
+            sideThread?.merge(rows)
+            if let tapped { sideThread?.merge([tapped]) }
+            // Read first, then write: `sideThread?.note = … sideThread?.…` starts the write
+            // access before the right side runs, which traps under exclusivity checking.
+            let replyMissing = panel.focus != nil && sideThread?.focusLoaded == false
+            sideThread?.note = replyMissing ? SideThreadCopy.replyMissing : ""
+            sideThread?.load = .ready
+        } catch {
+            if RequestNoise.isCancellation(error) { return }
+            guard sideThread?.threadId == id else { return }
+            sideThreadLog.info("side thread load failed: \(String(describing: error), privacy: .public)")
+            sideThread?.load = .failed
+        }
+    }
+
+    /// While a side thread is open: pick up replies that arrived since.
+    func refreshSideThread() async {
+        guard let panel = sideThread, panel.load == .ready, let session = try? requiredSession() else { return }
+        guard let rows = try? await sideThreadService(session).messages(threadId: panel.threadId, limit: SideThreadPanel.pageSize) else { return }
+        guard sideThread?.threadId == panel.threadId else { return }
+        sideThread?.merge(rows)
+    }
+
+    func sendSideThreadReply() async {
+        guard let panel = sideThread, let session = try? requiredSession(),
+              let row = panel.outgoing(id: UUID(), senderId: session.userId, now: Date()) else { return }
+        sideThread?.sending = true
+        sideThread?.sendError = ""
+        do {
+            try await sideThreadService(session).send(row)
+            guard sideThread?.threadId == panel.threadId else { return }
+            sideThread?.merge([row])
+            sideThread?.draft = ""
+            sideThread?.focus = row.id
+            sideThread?.note = ""
+        } catch {
+            guard sideThread?.threadId == panel.threadId else { return }
+            if !RequestNoise.isCancellation(error) { sideThread?.sendError = SideThreadCopy.sendFailed }
+        }
+        if sideThread?.threadId == panel.threadId { sideThread?.sending = false }
+    }
+
+    #if DEBUG
+    /// Tests: what the mock side-thread server was sent.
+    var mockSideThreadSends: [SideThreadMessage] { mockSideThreads?.sent ?? [] }
+    var mockSideThreadCreates: [NewSideThread] { mockSideThreads?.created ?? [] }
+    var mockSideThreadServer: MockSideThreadService? { mockSideThreads }
+    #endif
 
     private func handleSessionError(_ error: Error) {
         if RequestNoise.isCancellation(error) { return }
@@ -2216,6 +3133,11 @@ struct LiveSessionView: View {
     /// Large-text presence roster, floated over the chat instead of pushing it down.
     @State private var rosterOpen = false
     @State private var confirmLeave = false
+    /// Something the Members panel hands off once it has closed (a sheet can't
+    /// open over another sheet): sign out, or the voice room.
+    @State private var afterPanel: PanelFollowUp?
+    /// A play session whose Cancel was tapped in the chat, waiting on the confirm.
+    @State private var playCancelTarget: PlaySession?
     @ScaledMetric(relativeTo: .body) private var composerLine: CGFloat = 22
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -2247,7 +3169,25 @@ struct LiveSessionView: View {
                             .padding(.bottom, SQSpace.xs)
                     }
                 }
+                // A side-thread reply's push opens that thread over the chat. It's a
+                // layer here, not a sheet, so it never races the sheets a tap closes.
+                // The list stays mounted under a thread opened from it, so Back uncovers
+                // the list where it was instead of sliding a new one in. A tap on Close
+                // right after Back used to land mid-slide and miss.
+                if model.sideThreadsOpen {
+                    SideThreadListView(model: model)
+                        .transition(systemReduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .bottom))
+                        .zIndex(2)
+                        .accessibilityHidden(model.sideThread != nil)
+                }
+                if model.sideThread != nil {
+                    SideThreadView(model: model)
+                        .transition(systemReduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .bottom))
+                        .zIndex(3)
+                }
             }
+            .animation(systemReduceMotion ? nil : Animation.easeOut(duration: 0.25), value: model.sideThread?.threadId)
+            .animation(systemReduceMotion ? nil : Animation.easeOut(duration: 0.25), value: model.sideThreadsOpen)
             .navigationTitle(squadTitle ?? "SquadSync")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -2260,10 +3200,11 @@ struct LiveSessionView: View {
             signOutSheet
                 .adoptingLaunchDynamicType()
         }
-        .sheet(isPresented: Binding(get: { model.spotSheetOpen }, set: { model.spotSheetOpen = $0 })) {
-            spotCallSheet
+        .sheet(isPresented: Binding(get: { model.gameOnSheetOpen }, set: { model.gameOnSheetOpen = $0 })) {
+            GameOnSheet(model: model)
+                .adoptingLaunchDynamicType()
         }
-        .sheet(isPresented: $showMembers) {
+        .sheet(isPresented: $showMembers, onDismiss: runAfterPanel) {
             membershipSheet
                 .adoptingLaunchDynamicType()
         }
@@ -2271,12 +3212,26 @@ struct LiveSessionView: View {
             SquadVoiceSheet(model: model)
                 .adoptingLaunchDynamicType()
         }
-        .sheet(isPresented: Binding(get: { model.whosInOpen }, set: { model.whosInOpen = $0 })) {
-            // The launch Dynamic Type override sits outside, so the sheet reads AX5 for its detents.
-            WhosInSheet(model: model)
+        .sheet(isPresented: Binding(get: { model.playSheetOpen }, set: { model.playSheetOpen = $0 })) {
+            PlaySessionsSheet(model: model)
                 .adoptingLaunchDynamicType()
         }
+        .alert(
+            playCancelTarget.map { "Cancel \($0.game)?" } ?? "",
+            isPresented: Binding(get: { playCancelTarget != nil }, set: { if !$0 { playCancelTarget = nil } }),
+            presenting: playCancelTarget
+        ) { target in
+            Button("Cancel session", role: .destructive) {
+                Task { await model.cancelPlaySession(target.id) }
+            }
+            Button("Keep it", role: .cancel) {}
+        } message: { _ in
+            Text("Everyone in the group will see it's cancelled.")
+        }
         .task { await model.restore() }
+        .onOpenURL { url in
+            Task { await model.openInviteLink(url) }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .sq8PushToken)) { note in
             guard let token = note.object as? String else { return }
             Task { await model.syncPushToken(token) }
@@ -2286,6 +3241,9 @@ struct LiveSessionView: View {
         }
         .onChange(of: PushCoordinator.shared.coverSerial) { _, _ in
             for cover in PushCover.allCases { close(cover) }
+            // Not a PushCover case (that list is the push routing's): closed here instead.
+            model.playSheetOpen = false
+            playCancelTarget = nil
         }
         .task(id: pushToastText) {
             guard let message = pushToastText else { return }
@@ -2325,7 +3283,30 @@ struct LiveSessionView: View {
         case .voiceSheet: model.voiceSheetOpen = false
         case .whosInSheet: model.whosInOpen = false
         case .largeTextRoster: rosterOpen = false
+        case .gameOnSheet: model.gameOnSheetOpen = false
         }
+    }
+
+    private enum PanelFollowUp {
+        case signOut
+        case voice
+    }
+
+    /// The Members panel closed: open what it asked for.
+    private func runAfterPanel() {
+        guard let next = afterPanel else { return }
+        afterPanel = nil
+        switch next {
+        case .signOut: confirmSignOut = true
+        case .voice: Task { await model.toggleVoice() }
+        }
+    }
+
+    /// Invite from the chat (a card or the small-group prompt): the panel opens on
+    /// the link, made right away.
+    private func inviteFromChat() {
+        showMembers = true
+        if model.inviteCode.isEmpty { Task { await model.shareInvite() } }
     }
 
     /// Swiping the sheet away only clears `confirmSignOut`. It does not sign out.
@@ -2432,13 +3413,8 @@ struct LiveSessionView: View {
                     .padding(.horizontal, SQSpace.xs)
                     .accessibilityIdentifier("home-status")
             }
-            if let spot = model.spot {
-                TimelineView(.periodic(from: .now, by: 1)) { context in
-                    let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
-                    if SpotCallRules.showsPinnedBar(spot, now: now) {
-                        activeCallBar(spot, now: now)
-                    }
-                }
+            if showsPinnedGameOn {
+                GameOnPinnedArea(model: model, onInvite: inviteFromChat)
             }
             if model.squad != nil {
                 chatList
@@ -2451,22 +3427,19 @@ struct LiveSessionView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 
+    /// Game on sits over the chat once in a group. At accessibility sizes it
+    /// steps aside while the keyboard is up, so the composer keeps its room.
+    private var showsPinnedGameOn: Bool {
+        guard model.squad != nil else { return false }
+        return !(typeSize.isAccessibilitySize && composerFocused)
+    }
+
     private var homeHeader: some View {
-        TimelineView(.periodic(from: .now, by: 1)) { context in
-            let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
-            SquadHomeHeader(
-                squad: model.squad,
-                entries: model.presenceEntries(now: now),
-                compact: typeSize.isAccessibilitySize && composerFocused,
-                voice: model.voicePill,
-                linkNote: model.squad == nil ? nil : liveNotice,
-                onOpenPanel: { showMembers = true },
-                onAccount: { confirmSignOut = true },
-                onVoice: { Task { await model.toggleVoice() } },
-                onOpenWhosIn: { model.openWhosIn() },
-                rosterOpen: $rosterOpen
-            )
-        }
+        GroupHomeHeader(
+            squad: model.squad,
+            linkNote: model.squad == nil ? nil : liveNotice,
+            onMembers: { showMembers = true }
+        )
     }
 
     private var showsRoster: Bool {
@@ -2512,18 +3485,6 @@ struct LiveSessionView: View {
     /// The thread's rows, inside the list's stack (lazy or not, see chatList).
     @ViewBuilder
     private var chatRows: some View {
-        // Ticks only while there's a call whose countdown it shows: with
-        // no call the slot is the call form, which doesn't change with
-        // time, and a once-a-second update inside the lazy stack is work
-        // on a settled thread for nothing.
-        TimelineView(ChatSlotSchedule(ticks: model.spot != nil)) { context in
-            let now = SpotClock.now(timeline: context.date, resumedAt: model.resumedAt)
-            spotSlot(now: now)
-        }
-        .id(ChatAnchor.spot)
-        if !model.spotHistoryNote.isEmpty {
-            SpotStatusRow(text: model.spotHistoryNote, identifier: "spot-history-note")
-        }
         if let display = model.chatLoad.display(hasMessages: !model.log.entries.isEmpty) {
             ChatHistoryRow(display: display) {
                 Task { await model.retryChatLoad() }
@@ -2561,7 +3522,23 @@ struct LiveSessionView: View {
                 if let outcome = SpotThread.outcome(call, viewerId: spotViewer, now: Date()) {
                     SpotHistoryCard(call: call, outcome: outcome)
                 }
+            case .session(let session):
+                PlaySessionCard(
+                    session: session,
+                    members: model.squad?.members ?? [],
+                    viewerId: model.chatViewerId,
+                    busy: model.playBusy.contains(session.id),
+                    error: model.playErrors[session.id],
+                    onRespond: { response in Task { await model.respondToPlaySession(session.id, response) } },
+                    onCancel: { playCancelTarget = session }
+                )
+                .id(PlaySessionAnchor.id(session.id))
+            case .gameOn(let call):
+                GameOnLineRow(call: call, names: model.memberNames, viewerId: model.chatViewerId)
             }
+        }
+        if model.chatLoad == .loaded {
+            HomePromptRows(model: model, onInvite: inviteFromChat)
         }
     }
 
@@ -2613,7 +3590,10 @@ struct LiveSessionView: View {
                 }
                 .contentMargins(.bottom, listBottomMargin, for: .scrollContent)
                 .coordinateSpace(name: ChatRowGeometry.listSpace)
-                .scrollDismissesKeyboard(.interactively)
+                // At accessibility sizes the list is a sliver above the keyboard, too short
+                // to drag down into it, so any scroll puts the keyboard away (and Game on
+                // comes back). Elsewhere it follows your finger, like Messages.
+                .scrollDismissesKeyboard(typeSize.isAccessibilitySize ? .immediately : .interactively)
                 .modifier(ChatPinModifier(pinned: $pinnedToBottom))
                 .accessibilityIdentifier("message-list")
                 .overlay(alignment: .top) {
@@ -2711,11 +3691,12 @@ struct LiveSessionView: View {
                     proxy.scrollTo(restore.id, anchor: UnitPoint(x: 0.5, y: restore.unitY))
                 }
             }
-            // The viewer called spots: the card is at the top of the thread.
-            .onChange(of: model.spotCalledSerial) { _, _ in
+            // The viewer scheduled a play session: bring its card into view.
+            .onChange(of: model.playScheduledSerial) { _, _ in
+                guard let id = model.playScheduledId else { return }
                 model.scrollHold.endHold()
                 model.scrollHold.jumped(toBottom: false)
-                proxy.scrollTo(ChatAnchor.spot, anchor: .top)
+                proxy.scrollTo(PlaySessionAnchor.id(id), anchor: .center)
             }
             // A pinned list follows the end: a new row, or the last one sending,
             // failing (its "Not delivered" and Retry stay above the composer), sent.
@@ -2913,7 +3894,12 @@ struct LiveSessionView: View {
             viewerId: spotViewer,
             now: Date()
         )
-        return SpotThread.items(entries: model.log.ordered, history: history)
+        let base = SpotThread.items(entries: model.log.ordered, history: history)
+        // Play session cards go where they were scheduled. While older messages are
+        // still unread, cards from before the oldest loaded one wait for that page.
+        let earliest = model.olderPaging.state == .reachedStart ? nil : model.log.ordered.first?.sentAt
+        let withSessions = PlaySessionThread.items(base, sessions: model.playSessions, earliest: earliest)
+        return GameOnThread.items(withSessions, calls: model.gameOns, earliest: earliest)
     }
 
     /// Top of the thread. An active call keeps its full card here (with the pinned bar
@@ -3243,23 +4229,30 @@ struct LiveSessionView: View {
         .frame(maxHeight: composerLine * 3)
     }
 
-    /// The + menu. Calling spots is the first thing it does; `/spots` does the same.
+    /// The + menu: Game on (`/spots` does the same), schedule a session, side threads.
     private var composerPlus: some View {
         Menu {
             Button {
                 SQHaptics.play(.tap)
-                model.openSpotCall()
+                model.openGameOn()
             } label: {
-                Text("Call spots")
+                Label(GameOnCopy.button, systemImage: "gamecontroller.fill")
             }
-            .accessibilityIdentifier("composer-call-spots")
+            .accessibilityIdentifier("composer-game-on")
             Button {
                 SQHaptics.play(.tap)
-                model.openWhosIn()
+                model.openPlaySessions(schedule: true)
             } label: {
-                Text("Who's in")
+                Label(PlaySessionCopy.schedule, systemImage: "calendar")
             }
-            .accessibilityIdentifier("composer-whos-in")
+            .accessibilityIdentifier("composer-schedule-session")
+            Button {
+                SQHaptics.play(.tap)
+                model.openSideThreadList()
+            } label: {
+                Label(SideThreadCopy.listTitle, systemImage: "bubble.left.and.bubble.right")
+            }
+            .accessibilityIdentifier("composer-side-threads")
         } label: {
             Image(systemName: "plus.circle.fill")
                 .font(.title2.weight(.semibold))
@@ -3269,14 +4262,8 @@ struct LiveSessionView: View {
                 .contentShape(Rectangle())
         }
         .accessibilityLabel("More")
-        .accessibilityHint("Call spots, or see who's in")
+        .accessibilityHint("Game on, schedule a session, or side threads")
         .accessibilityIdentifier("composer-plus")
-    }
-
-    /// Opened from the + menu or a bare `/spots`.
-    private var spotCallSheet: some View {
-        SpotCallSheet(model: model)
-            .adoptingLaunchDynamicType()
     }
 
     private var membershipSheet: some View {
@@ -3289,7 +4276,7 @@ struct LiveSessionView: View {
                         .font(.title2.weight(.semibold))
                         .foregroundStyle(SQColor.ink)
                         .accessibilityAddTraits(.isHeader)
-                    Text(model.squad.map { SquadTitle.line(name: $0.name, memberCount: $0.members.count) } ?? "You're not in a squad yet.")
+                    Text(model.squad.map { SquadTitle.line(name: $0.name, memberCount: $0.members.count) } ?? "You're not in a group yet.")
                         .font(SQType.detail)
                         .foregroundStyle(SQColor.subtle)
                         .accessibilityIdentifier("squad-count")
@@ -3301,6 +4288,29 @@ struct LiveSessionView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("membership-status")
                 }
+                // First, so voice and side threads are on the first screen even at
+                // the largest text size; the rest of the panel is set-up.
+                if model.squad != nil {
+                    SQCardSurface {
+                        VStack(alignment: .leading, spacing: SQSpace.s) {
+                            panelHeading("Voice and side threads")
+                            VoiceRoomPillButton(voice: model.voicePill) {
+                                afterPanel = .voice
+                                showMembers = false
+                            }
+                            .frame(minHeight: 44)
+                            Button {
+                                showMembers = false
+                                model.openSideThreadList()
+                            } label: {
+                                Text("Open side threads")
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            }
+                            .accessibilityHint("Your side groups and direct messages")
+                            .accessibilityIdentifier("panel-side-threads")
+                        }
+                    }
+                }
                 SQCardSurface {
                     VStack(alignment: .leading, spacing: SQSpace.s) {
                         panelHeading("Join with a code")
@@ -3310,7 +4320,7 @@ struct LiveSessionView: View {
                 if let squad = model.squad {
                     SQCardSurface {
                         VStack(alignment: .leading, spacing: SQSpace.s) {
-                            panelHeading("In this squad")
+                            panelHeading("In the group")
                             if squad.members.isEmpty {
                                 Text("No members yet.")
                                     .accessibilityIdentifier("members-empty")
@@ -3333,6 +4343,14 @@ struct LiveSessionView: View {
                         }
                     }
                 }
+                if model.squad != nil {
+                    SQCardSurface {
+                        VStack(alignment: .leading, spacing: SQSpace.s) {
+                            panelHeading("Invite")
+                            InviteShareSection(model: model)
+                        }
+                    }
+                }
                 if isOwner {
                     SQCardSurface {
                         VStack(alignment: .leading, spacing: SQSpace.s) {
@@ -3340,20 +4358,26 @@ struct LiveSessionView: View {
                             renameControls
                         }
                     }
-                    SQCardSurface {
-                        VStack(alignment: .leading, spacing: SQSpace.s) {
-                            panelHeading("Invite")
-                            inviteControls
-                            if model.inviteCode.isEmpty {
-                                Text("No invite yet.")
-                                    .font(.footnote)
-                                    .foregroundStyle(SQColor.muted)
-                                    .accessibilityIdentifier("invite-empty")
-                            }
-                        }
-                    }
                 }
                 profileSection
+                SQCardSurface {
+                    VStack(alignment: .leading, spacing: SQSpace.s) {
+                        panelHeading("Account")
+                        Text(model.email)
+                            .font(.footnote)
+                            .foregroundStyle(SQColor.muted)
+                            .accessibilityIdentifier("panel-email")
+                        Button(role: .destructive) {
+                            afterPanel = .signOut
+                            showMembers = false
+                        } label: {
+                            Text("Sign out")
+                                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        }
+                        .accessibilityLabel("Sign out")
+                        .accessibilityIdentifier("account")
+                    }
+                }
                 if !model.notes.isEmpty {
                     notes
                         .padding(.horizontal, SQSpace.xs)
@@ -3380,8 +4404,15 @@ struct LiveSessionView: View {
         }
     }
 
-    @ViewBuilder
     private func memberRow(_ member: SquadMemberRecord, isOwner: Bool) -> some View {
+        HStack(alignment: .center, spacing: SQSpace.s) {
+            MemberAvatar(url: model.photoURL(for: member.id), name: member.displayName, size: 32)
+            memberDetail(member, isOwner: isOwner)
+        }
+    }
+
+    @ViewBuilder
+    private func memberDetail(_ member: SquadMemberRecord, isOwner: Bool) -> some View {
         let title = member.isOwner ? "\(member.displayName) · Owner" : member.displayName
         let nameLabel = member.isOwner ? "\(member.displayName), owner" : member.displayName
         if isOwner && !member.isOwner {
@@ -3442,7 +4473,7 @@ struct LiveSessionView: View {
                 Button("Leave") { confirmLeave = true }
                     .disabled(model.busy)
                     .accessibilityIdentifier("leave-squad")
-                    .accessibilityLabel(isOwner && squad.members.count > 1 ? "Leave and transfer ownership" : "Leave the squad")
+                    .accessibilityLabel(isOwner && squad.members.count > 1 ? "Leave and transfer ownership" : "Leave the group")
                 if confirmLeave {
                     if isOwner && squad.members.count > 1 {
                         if MembershipPrompt.shows(selected: model.transferTo) {
@@ -3462,14 +4493,14 @@ struct LiveSessionView: View {
                             .accessibilityLabel(model.transferTo == member.id ? "Next owner \(member.displayName), selected" : "Transfer to \(member.displayName)")
                         }
                     }
-                    Text("Leave the squad?")
+                    Text("Leave the group?")
                         .font(.headline)
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("confirm-leave-title")
                     Text("You can join again with a code.")
                         .font(.footnote)
                         .foregroundStyle(SQColor.muted)
-                    Button(model.busy ? "Leaving…" : "Leave squad") {
+                    Button(model.busy ? "Leaving…" : "Leave group") {
                         Task {
                             await model.leaveSquad()
                             if model.squad == nil {
@@ -3480,7 +4511,7 @@ struct LiveSessionView: View {
                     }
                     .disabled(model.busy)
                     .accessibilityIdentifier("confirm-leave")
-                    .accessibilityLabel("Confirm leaving the squad")
+                    .accessibilityLabel("Confirm leaving the group")
                     Button("Stay") { confirmLeave = false }
                         .disabled(model.busy)
                         .accessibilityIdentifier("cancel-leave")
@@ -3499,6 +4530,9 @@ struct LiveSessionView: View {
                         .font(SQType.section)
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("profile-heading")
+                    if model.avatarReady {
+                        ProfilePhotoRow(model: model)
+                    }
                     TextField("Display name", text: Binding(get: { model.displayName }, set: { model.displayName = $0 }))
                         .textFieldStyle(.roundedBorder)
                         .accessibilityIdentifier("profile-name")
@@ -3659,13 +4693,13 @@ struct LiveSessionView: View {
     private var renameControls: some View {
         VStack(alignment: .leading, spacing: SQSpace.s) {
             if RenameAccess.showsControl(isOwner: true, available: model.renameAvailable) {
-                TextField("Squad name", text: Binding(get: { model.renameDraft }, set: { model.renameDraft = $0 }))
+                TextField("Group name", text: Binding(get: { model.renameDraft }, set: { model.renameDraft = $0 }))
                     .textFieldStyle(.roundedBorder)
                     .accessibilityIdentifier("rename-field")
                 Button("Rename") { Task { await model.renameSquad() } }
                     .disabled(model.busy)
                     .accessibilityIdentifier("rename-squad")
-                    .accessibilityLabel("Rename the squad")
+                    .accessibilityLabel("Rename the group")
             }
             if RenameAccess.showsUnavailable(isOwner: true, available: model.renameAvailable) {
                 Text(RenameAccess.unavailable)
@@ -3673,27 +4707,6 @@ struct LiveSessionView: View {
                     .foregroundStyle(SQColor.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("rename-unavailable")
-            }
-        }
-    }
-
-    private var inviteControls: some View {
-        VStack(alignment: .leading, spacing: SQSpace.s) {
-            Button("Create invite") { Task { await model.createInvite() } }
-                .disabled(model.busy)
-                .accessibilityIdentifier("create-invite")
-            if !model.inviteCode.isEmpty {
-                Text(model.inviteCode)
-                    .font(.body.monospaced())
-                    .accessibilityIdentifier("invite-code")
-                ShareLink(item: model.inviteCode) {
-                    Text("Share")
-                }
-                Button("Copy") {
-                    UIPasteboard.general.string = model.inviteCode
-                    model.membershipIsError = false
-                    model.status = "Copied."
-                }
             }
         }
     }
@@ -4166,7 +5179,7 @@ private struct SpotCallSheet: View {
                     .font(.title2.weight(.semibold))
                     .foregroundStyle(SQColor.ink)
                     .accessibilityAddTraits(.isHeader)
-                Text("The squad gets 5 minutes to join. Starters already in a game can join late. Seats cap at 8.")
+                Text("The group gets 5 minutes to join. Starters already in a game can join late. Seats cap at 8.")
                     .font(SQType.detail)
                     .foregroundStyle(SQColor.subtle)
                     .fixedSize(horizontal: false, vertical: true)

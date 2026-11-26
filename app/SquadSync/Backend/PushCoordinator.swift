@@ -12,10 +12,14 @@ final class PushCoordinator {
     var openedChat = false
     var openedSquad = false
     var focusMessage: UUID?
+    /// A side-thread reply tap that landed and hasn't been opened yet.
+    private(set) var threadOpen: PushThreadOpen?
     private(set) var pending: PushPayload?
     /// Goes up each time a tap lands; the session screen closes its sheets when it changes.
     private(set) var coverSerial = 0
     var viewingSquad: UUID?
+    /// The side thread on screen, if any. Its replies don't banner.
+    var viewingThread: UUID?
     /// Latest device token, including one whose store has not succeeded yet.
     private(set) var seenToken: String?
     /// Token the register RPC accepted.
@@ -67,7 +71,7 @@ final class PushCoordinator {
 
     func showsBanner(_ userInfo: [AnyHashable: Any]) -> Bool {
         guard let payload = PushPayloadParser.parse(userInfo) else { return true }
-        return PushBanner.shows(viewingSquad: viewingSquad, payload: payload)
+        return PushBanner.shows(viewingSquad: viewingSquad, viewingThread: viewingThread, payload: payload)
     }
 
     func settle(signedIn: Bool, squadId: UUID?, membershipKnown: Bool) {
@@ -89,14 +93,36 @@ final class PushCoordinator {
             openedChat = false
             openedSquad = false
             focusMessage = nil
+            threadOpen = nil
             self.pending = nil
         case .open(let payload):
             notice = ""
-            openedChat = payload.kind == .chat
-            openedSquad = payload.kind == .squad
-            focusMessage = payload.messageId
+            switch PushDestination.of(payload) {
+            case .chat(let message):
+                openedChat = true
+                openedSquad = false
+                focusMessage = message
+                threadOpen = nil
+            case .squad:
+                openedChat = false
+                openedSquad = true
+                focusMessage = payload.messageId
+                threadOpen = nil
+            case .thread(let thread, let reply):
+                // The side thread opens over the chat; the chat isn't scrolled for it.
+                openedChat = false
+                openedSquad = false
+                focusMessage = nil
+                threadOpen = PushThreadOpen(thread: thread, reply: reply)
+            }
             self.pending = nil
         }
+    }
+
+    /// Hands the landed side-thread tap to the screen once.
+    func takeThreadOpen() -> PushThreadOpen? {
+        defer { threadOpen = nil }
+        return threadOpen
     }
 
     func dismissToast() {
@@ -116,12 +142,13 @@ final class PushCoordinator {
         register()
     }
 
-    func askIfReady(signedIn: Bool, hasSquad: Bool, arguments: [String] = ProcessInfo.processInfo.arguments) {
+    func askIfReady(signedIn: Bool, hasSquad: Bool, moment: PushAskMoment = .launch, arguments: [String] = ProcessInfo.processInfo.arguments) {
         guard PushPermissionMoment.shouldAsk(
             signedIn: signedIn,
             hasSquad: hasSquad,
             alreadyAsked: asked,
-            automated: PushPermissionMoment.isAutomated(arguments)
+            automated: PushPermissionMoment.isAutomated(arguments),
+            moment: moment
         ) else { return }
         asked = true
         UserDefaults.standard.set(true, forKey: askedKey)
@@ -170,6 +197,8 @@ final class PushCoordinator {
         UserDefaults.standard.removeObject(forKey: tokenKey)
         UserDefaults.standard.removeObject(forKey: seenKey)
         viewingSquad = nil
+        viewingThread = nil
+        threadOpen = nil
         return action
     }
 
@@ -180,6 +209,8 @@ final class PushCoordinator {
         openedChat = false
         openedSquad = false
         focusMessage = nil
+        threadOpen = nil
+        viewingThread = nil
         storedToken = nil
         seenToken = nil
         storeFailure = ""

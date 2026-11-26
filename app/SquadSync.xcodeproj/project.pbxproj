@@ -38,6 +38,11 @@
 		A10000000000000000000061 /* PushRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000060 /* PushRoute.swift */; };
 		A10000000000000000000063 /* PushRouteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000062 /* PushRouteTests.swift */; };
 		A10000000000000000000065 /* PushCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000064 /* PushCoordinator.swift */; };
+		A10000000000000000003002 /* SideThreads.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003001 /* SideThreads.swift */; };
+		A10000000000000000003106 /* SideThreadListTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003105 /* SideThreadListTests.swift */; };
+		A10000000000000000003104 /* SideThreadPushTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003103 /* SideThreadPushTests.swift */; };
+		A10000000000000000003102 /* SideThreadListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003101 /* SideThreadListView.swift */; };
+		A10000000000000000003004 /* SideThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003003 /* SideThreadView.swift */; };
 		A10000000000000000000080 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000070 /* Typography.swift */; };
 		A10000000000000000000081 /* Surfaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000071 /* Surfaces.swift */; };
 		A10000000000000000000082 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000072 /* Haptics.swift */; };
@@ -70,6 +75,18 @@
 		A10000000000000000002002 /* SquadVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000002001 /* SquadVoice.swift */; };
 		A10000000000000000002004 /* SquadVoiceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000002003 /* SquadVoiceSheet.swift */; };
 		A10000000000000000002006 /* SquadVoiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000002005 /* SquadVoiceTests.swift */; };
+		A10000000000000000003208 /* PlaySessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003207 /* PlaySessionTests.swift */; };
+		A10000000000000000003206 /* PlaySessionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003205 /* PlaySessionViews.swift */; };
+		A10000000000000000003204 /* PlaySessionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003203 /* PlaySessionService.swift */; };
+		A10000000000000000003202 /* PlaySessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003201 /* PlaySessions.swift */; };
+		A10000000000000000003402 /* GameOn.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003401 /* GameOn.swift */; };
+		A10000000000000000003404 /* GroupInvite.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003403 /* GroupInvite.swift */; };
+		A10000000000000000003406 /* CopyCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003405 /* CopyCheck.swift */; };
+		A10000000000000000003408 /* GameOnService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003407 /* GameOnService.swift */; };
+		A1000000000000000000340A /* AvatarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003409 /* AvatarService.swift */; };
+		A1000000000000000000340C /* GameOnTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000340B /* GameOnTests.swift */; };
+		A1000000000000000000340E /* InviteLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000340D /* InviteLinkTests.swift */; };
+		A10000000000000000003410 /* GameOnViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000340F /* GameOnViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -122,6 +139,11 @@
 		A10000000000000000000060 /* PushRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRoute.swift; sourceTree = "<group>"; };
 		A10000000000000000000062 /* PushRouteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRouteTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000064 /* PushCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushCoordinator.swift; sourceTree = "<group>"; };
+		A10000000000000000003001 /* SideThreads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideThreads.swift; sourceTree = "<group>"; };
+		A10000000000000000003105 /* SideThreadListTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideThreadListTests.swift; sourceTree = "<group>"; };
+		A10000000000000000003103 /* SideThreadPushTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideThreadPushTests.swift; sourceTree = "<group>"; };
+		A10000000000000000003101 /* SideThreadListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideThreadListView.swift; sourceTree = "<group>"; };
+		A10000000000000000003003 /* SideThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideThreadView.swift; sourceTree = "<group>"; };
 		A10000000000000000000066 /* SquadSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SquadSync.entitlements; sourceTree = "<group>"; };
 		A10000000000000000000070 /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
 		A10000000000000000000071 /* Surfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Surfaces.swift; sourceTree = "<group>"; };
@@ -159,6 +181,18 @@
 		A10000000000000000002001 /* SquadVoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadVoice.swift; sourceTree = "<group>"; };
 		A10000000000000000002003 /* SquadVoiceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadVoiceSheet.swift; sourceTree = "<group>"; };
 		A10000000000000000002005 /* SquadVoiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadVoiceTests.swift; sourceTree = "<group>"; };
+		A10000000000000000003207 /* PlaySessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaySessionTests.swift; sourceTree = "<group>"; };
+		A10000000000000000003205 /* PlaySessionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaySessionViews.swift; sourceTree = "<group>"; };
+		A10000000000000000003203 /* PlaySessionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaySessionService.swift; sourceTree = "<group>"; };
+		A10000000000000000003201 /* PlaySessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaySessions.swift; sourceTree = "<group>"; };
+		A10000000000000000003401 /* GameOn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameOn.swift; sourceTree = "<group>"; };
+		A10000000000000000003403 /* GroupInvite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupInvite.swift; sourceTree = "<group>"; };
+		A10000000000000000003405 /* CopyCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyCheck.swift; sourceTree = "<group>"; };
+		A10000000000000000003407 /* GameOnService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameOnService.swift; sourceTree = "<group>"; };
+		A10000000000000000003409 /* AvatarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarService.swift; sourceTree = "<group>"; };
+		A1000000000000000000340B /* GameOnTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameOnTests.swift; sourceTree = "<group>"; };
+		A1000000000000000000340D /* InviteLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InviteLinkTests.swift; sourceTree = "<group>"; };
+		A1000000000000000000340F /* GameOnViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameOnViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -219,6 +253,10 @@
 				A10000000000000000000060 /* PushRoute.swift */,
 				A10000000000000000000074 /* SquadPresence.swift */,
 				A10000000000000000000970 /* WhosIn.swift */,
+				A10000000000000000003201 /* PlaySessions.swift */,
+				A10000000000000000003405 /* CopyCheck.swift */,
+				A10000000000000000003403 /* GroupInvite.swift */,
+				A10000000000000000003401 /* GameOn.swift */,
 				A10000000000000000000980 /* Onboarding.swift */,
 				A10000000000000000000077 /* SpotThread.swift */,
 				A1000000000000000000007A /* ChatThread.swift */,
@@ -237,8 +275,12 @@
 				A10000000000000000000011 /* VoiceRoomView.swift */,
 				A10000000000000000002003 /* SquadVoiceSheet.swift */,
 				A10000000000000000000056 /* LiveSessionView.swift */,
+				A10000000000000000003003 /* SideThreadView.swift */,
+				A10000000000000000003101 /* SideThreadListView.swift */,
 				A10000000000000000000075 /* SquadHomeHeader.swift */,
 				A10000000000000000000972 /* WhosInSheet.swift */,
+				A10000000000000000003205 /* PlaySessionViews.swift */,
+				A1000000000000000000340F /* GameOnViews.swift */,
 				A10000000000000000000984 /* OnboardingView.swift */,
 				A10000000000000000000078 /* SpotCardViews.swift */,
 				A1000000000000000000007B /* ChatRows.swift */,
@@ -263,10 +305,15 @@
 				A10000000000000000000015 /* StoreTests.swift */,
 				A10000000000000000000031 /* VoiceRoomServiceTests.swift */,
 				A10000000000000000002005 /* SquadVoiceTests.swift */,
+				A10000000000000000003105 /* SideThreadListTests.swift */,
+				A10000000000000000003103 /* SideThreadPushTests.swift */,
 				A10000000000000000000057 /* ChatLogTests.swift */,
 				A10000000000000000000062 /* PushRouteTests.swift */,
 				A10000000000000000000076 /* SquadHomeTests.swift */,
 				A10000000000000000000973 /* WhosInTests.swift */,
+				A10000000000000000003207 /* PlaySessionTests.swift */,
+				A1000000000000000000340D /* InviteLinkTests.swift */,
+				A1000000000000000000340B /* GameOnTests.swift */,
 				A10000000000000000000985 /* OnboardingTests.swift */,
 				A10000000000000000000987 /* LaunchTests.swift */,
 				A10000000000000000001000 /* ChatDurabilityTests.swift */,
@@ -290,6 +337,9 @@
 			children = (
 				A10000000000000000000050 /* ChatLog.swift */,
 				A10000000000000000000971 /* CheckInService.swift */,
+				A10000000000000000003203 /* PlaySessionService.swift */,
+				A10000000000000000003409 /* AvatarService.swift */,
+				A10000000000000000003407 /* GameOnService.swift */,
 				A10000000000000000002001 /* SquadVoice.swift */,
 				A10000000000000000000983 /* ProfileGames.swift */,
 				A10000000000000000000986 /* LaunchBackend.swift */,
@@ -301,6 +351,7 @@
 				A10000000000000000000055 /* SupabaseBackend.swift */,
 				A10000000000000000000058 /* RealtimeClient.swift */,
 				A10000000000000000000064 /* PushCoordinator.swift */,
+				A10000000000000000003001 /* SideThreads.swift */,
 				9768416076EE12B49D30B4BA /* StreamVoiceEngine.swift */,
 			);
 			path = Backend;
@@ -467,6 +518,9 @@
 				A10000000000000000000046 /* LiveSessionView.swift in Sources */,
 				A10000000000000000000061 /* PushRoute.swift in Sources */,
 				A10000000000000000000065 /* PushCoordinator.swift in Sources */,
+				A10000000000000000003002 /* SideThreads.swift in Sources */,
+				A10000000000000000003004 /* SideThreadView.swift in Sources */,
+				A10000000000000000003102 /* SideThreadListView.swift in Sources */,
 				A10000000000000000000080 /* Typography.swift in Sources */,
 				A10000000000000000000081 /* Surfaces.swift in Sources */,
 				A10000000000000000000082 /* Haptics.swift in Sources */,
@@ -477,6 +531,15 @@
 				A10000000000000000002002 /* SquadVoice.swift in Sources */,
 				A10000000000000000002004 /* SquadVoiceSheet.swift in Sources */,
 				A10000000000000000000974 /* WhosIn.swift in Sources */,
+				A10000000000000000003206 /* PlaySessionViews.swift in Sources */,
+				A10000000000000000003410 /* GameOnViews.swift in Sources */,
+				A10000000000000000003204 /* PlaySessionService.swift in Sources */,
+				A1000000000000000000340A /* AvatarService.swift in Sources */,
+				A10000000000000000003408 /* GameOnService.swift in Sources */,
+				A10000000000000000003202 /* PlaySessions.swift in Sources */,
+				A10000000000000000003406 /* CopyCheck.swift in Sources */,
+				A10000000000000000003404 /* GroupInvite.swift in Sources */,
+				A10000000000000000003402 /* GameOn.swift in Sources */,
 				A10000000000000000000994 /* OnboardingView.swift in Sources */,
 				A10000000000000000000993 /* ProfileGames.swift in Sources */,
 				A10000000000000000000996 /* LaunchBackend.swift in Sources */,
@@ -502,10 +565,15 @@
 				A10000000000000000000029 /* StoreTests.swift in Sources */,
 				A10000000000000000000033 /* VoiceRoomServiceTests.swift in Sources */,
 				A10000000000000000002006 /* SquadVoiceTests.swift in Sources */,
+				A10000000000000000003106 /* SideThreadListTests.swift in Sources */,
+				A10000000000000000003104 /* SideThreadPushTests.swift in Sources */,
 				A10000000000000000000047 /* ChatLogTests.swift in Sources */,
 				A10000000000000000000063 /* PushRouteTests.swift in Sources */,
 				A10000000000000000000086 /* SquadHomeTests.swift in Sources */,
 				A10000000000000000000977 /* WhosInTests.swift in Sources */,
+				A10000000000000000003208 /* PlaySessionTests.swift in Sources */,
+				A1000000000000000000340E /* InviteLinkTests.swift in Sources */,
+				A1000000000000000000340C /* GameOnTests.swift in Sources */,
 				A10000000000000000000995 /* OnboardingTests.swift in Sources */,
 				A10000000000000000000997 /* LaunchTests.swift in Sources */,
 				A10000000000000000000999 /* ChatDurabilityTests.swift in Sources */,
@@ -602,7 +670,7 @@
 				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SquadSync/Info.plist;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SquadSync uses the microphone only while you're in your squad's voice room.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SquadSync uses the microphone only while you're in your group's voice room.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -630,7 +698,7 @@
 				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SquadSync/Info.plist;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SquadSync uses the microphone only while you're in your squad's voice room.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SquadSync uses the microphone only while you're in your group's voice room.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (

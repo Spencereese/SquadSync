@@ -452,7 +452,7 @@ enum Receipts {
 enum MembershipChange {
     static func note(beforeId: UUID?, beforeCount: Int, afterId: UUID?, afterCount: Int) -> String {
         if let beforeId, beforeId == afterId, beforeCount == afterCount {
-            return "You're already in this squad."
+            return "You're already in this group."
         }
         return "Joined."
     }
@@ -469,6 +469,8 @@ enum InviteProblem: Error, Equatable {
     case notInSquad
     case alreadyLeft
     case signedOut
+    /// Server without 0029: only the owner can make a link until it's updated.
+    case memberInvitesNotSetUp
     case other(String)
 
     var message: String {
@@ -478,21 +480,23 @@ enum InviteProblem: Error, Equatable {
         case .revokedOrUnknown:
             "That code isn't valid, or it was revoked."
         case .full:
-            "That squad is full (8)."
+            "That group is full (8)."
         case .alreadyInASquad:
-            "You're already in a squad."
+            "You're already in a group."
         case .ownsSquadWithMembers:
-            "You own a squad that still has members."
+            "You own a group that still has members."
         case .notOwner:
             "Only the owner can make an invite."
         case .ownerMustTransfer:
             "Choose the next owner before you leave."
         case .notInSquad:
-            "You're not in a squad."
+            "You're not in a group."
         case .alreadyLeft:
-            "You already left this squad."
+            "You already left this group."
         case .signedOut:
             "Sign in again before leaving."
+        case .memberInvitesNotSetUp:
+            "Only the owner can make an invite until the server is updated."
         case .other(let text):
             text
         }
@@ -506,6 +510,7 @@ enum InviteProblem: Error, Equatable {
         case "already_in_squad": .alreadyInASquad
         case "owns_squad_with_members": .ownsSquadWithMembers
         case "not_owner": .notOwner
+        case "not_member": .notInSquad
         case "owner_must_transfer": .ownerMustTransfer
         case "not_in_squad": .notInSquad
         case "already_left": .alreadyLeft

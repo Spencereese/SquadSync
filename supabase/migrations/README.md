@@ -1,9 +1,10 @@
 # Migrations
 
-## Status on project `sfckxrnoiwetmzdycqaa` (updated Nov 18, 2026)
+## Status on project `sfckxrnoiwetmzdycqaa` (updated Nov 26, 2026)
 
 - **Live:** 0001–0024. 0012 (device tokens), 0015 (Steam links), 0016 (scheduled sessions), 0017 (side threads), 0022 (check-in game and console) and 0023 (profile games list) were applied live on Nov 18, 2026 (about 4:54–4:55 PM CT) with Spencer's yes. Their tables and columns were confirmed afterwards with a read-only catalog query.
 - 0024 (side-thread guards, a security fix for 0017) was applied live on Nov 19, 2026 (about 2:27 PM CT) with Spencer's yes. Its functions, both insert policies and both triggers were confirmed afterwards with read-only catalog queries.
+- 0025–0030 and 0031 (push webhooks) were applied live on Nov 26, 2026 by Grok Bot, which reported them as steps Spencer approved. `supabase_migrations.schema_migrations` lists them as versions 20261126141539–20261126141554 (0025–0030) and 20261126141715 (`sq8_thread_and_game_on_push_webhooks`, the file 0031 here). A read-only catalog query the same day confirmed the 0031 functions and triggers match the file.
 
 Nothing here is applied by the app or by CI. Every not-applied file needs Spencer's yes before it runs. Older notes below that say "not applied" for files now on the live list are kept for history and are out of date.
 
@@ -55,6 +56,21 @@ Run these in order, in one project, as the migration role:
     - A thread message's `squad_id` must be its thread's squad (policy plus trigger), and the sender must be a thread member. Under 0017, someone who moved to another squad could still file messages in the old squad's thread under the new squad.
 
     Apply after file 17. Running it again is safe. It does not grant `anon` or `public`. The two preflight queries in the file header should return no rows. Local check: `supabase/tests/sq8_side_thread_guards.sql` (in `tests/run.sh`).
+25. `20261126_0025_session_guards.sql` — **live** (applied Nov 26, 2026). Server-side guards for play sessions (file 16). The app's schedule and RSVP slice works on file 16 alone; this only tightens it:
+    - Puts the table privileges back to what file 16 meant. Supabase's default privileges left `authenticated` with DELETE, TRUNCATE, REFERENCES and TRIGGER on both session tables (read-only check, Nov 26, 2026). TRUNCATE skips RLS.
+    - A session's squad, creator and `created_at` can't change. A time that's set or moved must be no more than 5 minutes ago and at most 60 days ahead. A game is at most 60 characters. Cancelling is final and stamped with the server's clock.
+    - An RSVP only goes in or changes while its session isn't cancelled or over (start plus duration, or 2 hours), and only for someone still in that squad. `updated_at` is the server's clock.
+
+    Apply after file 16. Running it again is safe. It does not grant `anon` or `public` and touches no non-sq8 table. Existing rows aren't rewritten. Local check: `supabase/tests/sq8_session_guards.sql` (in `tests/run.sh`, after `sq8_session_guards_pre.sql` gives `authenticated` the live default privileges so the revoke is tested).
+
+26. `20261126_0026_thread_push_targets.sql` — **live** (applied Nov 26, 2026). (PR43.) Read-only push targets for side-thread replies, service role only. Additive, idempotent.
+27. `20261126_0027_spot_reconcile.sql` — **live** (applied Nov 26, 2026). Restates 0020's `seat_target`/`ready`/`expired` shape on `sq8_spot_calls`/`sq8_spot_rsvps` with existence checks. A read-only catalog compare (Nov 26, 2026 about 3:40 AM CT) found live matching the repo's 0001–0026 for those tables; the real gaps were CI's `run.sh` skipping 0018–0023 (fixed) and table privileges (file 30).
+28. `20261126_0028_game_on.sql` — **live** (applied Nov 26, 2026). Game on (chat-first round 1) on the spot tables: a `kind` column (`'spot'` default, `'game_on'`), `sq8_start_game_on(squad, game, need)`, `sq8_join_game_on`, `sq8_leave_game_on`, `sq8_set_game_on_ready`, `sq8_close_game_on`, and the service-role `sq8_game_on_push_context` for the push. At most 2 open per group, joins until the seats fill, ends when the starter closes it, when everyone leaves, or after 3 hours idle (swept under the squad lock). The one-live unique index now covers `kind = 'spot'` only; 0013/0020 functions are unchanged so old builds keep working. Writes only through security definer functions; reads stay on 0013's member select policies. Apply after 13, 20 and 27. Local check: `supabase/tests/sq8_game_on.sql`.
+29. `20261126_0029_member_invites.sql` — **live** (applied Nov 26, 2026). `sq8_member_invite()`: any member gets the group's link; reuses the current code when it has more than a day left, otherwise rotates it the 0011 way. The 8-person cap and owner-only removal are unchanged. Apply after 8, 10 and 11. Local check: `supabase/tests/sq8_member_invites.sql`.
+30. `20261126_0030_spot_privileges.sql` — **live** (applied Nov 26, 2026). Revokes everything but SELECT from `authenticated` on the two spot tables (live has INSERT/UPDATE/DELETE/TRUNCATE/REFERENCES/TRIGGER from Supabase's default privileges; TRUNCATE skips RLS). All writes already go through security definer functions. Apply after 13.
+31. `20261126_0031_thread_and_game_on_push_webhooks.sql` — **live** (applied Nov 26, 2026 as version 20261126141715). Push webhooks for side-thread replies (`sq8_thread_messages_push` on `sq8_thread_messages`) and Game on (`sq8_spot_calls_push` on `sq8_spot_calls`; the function only sends for `kind = 'game_on'`), built like the live `sq8_messages_push`: the webhook secret is read from Vault by name at call time, so no secret is in the file. Needs Vault and pg_net, so `tests/run.sh` doesn't apply it. Apply after 17 and 28, with `sq8-notify-message` deployed.
+
+The app works without 27–30: without 28 the Game on area says it needs a server update and the chat keeps working; without 29 non-owners are told only the owner can make an invite until the server is updated.
 
 ## What each file does
 

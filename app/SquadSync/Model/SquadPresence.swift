@@ -236,7 +236,7 @@ enum SquadPresence {
 /// Header copy for the chat-first home.
 enum SquadHeader {
     static let noSquadTitle = "SquadSync"
-    static let unnamedTitle = "Your squad"
+    static let unnamedTitle = "Your group"
 
     /// The big visible name. A null or blank name falls back to "Your squad".
     static func title(name: String?) -> String {
@@ -251,7 +251,7 @@ enum SquadHeader {
 
     /// The small line under the name.
     static func detail(squad: SquadRecord?, cap: Int = SpotCallRules.cap) -> String {
-        guard let squad else { return "Not in a squad yet" }
+        guard let squad else { return "Not in a group yet" }
         return "\(squad.members.count) of \(cap)"
     }
 

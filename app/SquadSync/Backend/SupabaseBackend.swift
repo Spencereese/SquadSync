@@ -322,7 +322,7 @@ final class SupabaseSquadService: SquadService {
             feature: .squad
         )
         let created = try BackendJSON.decoder.decode([SquadDetails].self, from: data)
-        guard let row = created.first else { throw BackendFailure.rejected("Squad was not returned.") }
+        guard let row = created.first else { throw BackendFailure.rejected("Group was not returned.") }
         return try await load(squadId: row.id)
     }
 
@@ -341,7 +341,7 @@ final class SupabaseSquadService: SquadService {
             )
         } catch let failure as BackendFailure {
             if case .rejected(let message) = failure, message.lowercased().contains("sq8_owner_protected") {
-                throw InviteProblem.other("The owner stays in the squad.")
+                throw InviteProblem.other("The owner stays in the group.")
             }
             throw failure
         }
@@ -455,7 +455,7 @@ final class SupabaseSquadService: SquadService {
             feature: .squad
         )
         let squads = try BackendJSON.decoder.decode([SquadDetails].self, from: squadData)
-        guard let squad = squads.first else { throw BackendFailure.rejected("Squad was not found.") }
+        guard let squad = squads.first else { throw BackendFailure.rejected("Group was not found.") }
         return squad
     }
 
@@ -527,9 +527,9 @@ enum RenameFailure {
     static func message(_ code: String) -> String {
         switch code {
         case "signed_out": "Sign in again before renaming."
-        case "not_owner": "Only the owner can rename the squad."
+        case "not_owner": "Only the owner can rename the group."
         case "name_length": "Use 40 characters or fewer."
-        case "missing": "That squad is gone."
+        case "missing": "That group is gone."
         default: code
         }
     }

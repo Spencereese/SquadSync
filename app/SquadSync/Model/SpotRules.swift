@@ -392,9 +392,9 @@ enum SpotProblem: Error, Equatable {
     var message: String {
         switch self {
         case .signedOut: "Sign in again before calling spots."
-        case .notMember: "You are not in this squad."
+        case .notMember: "You are not in this group."
         case .gameBlank: "Enter a game name."
-        case .alreadyOpen: "This squad already has a spot call."
+        case .alreadyOpen: "This group already has a spot call."
         case .missing: "That spot call is gone."
         case .closed: "That spot call is closed."
         case .locked: "That spot call is locked."

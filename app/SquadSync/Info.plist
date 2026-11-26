@@ -23,5 +23,16 @@
 	<string>$(SUPABASE_ANON_KEY)</string>
 	<key>SQ8SteamPresence</key>
 	<false/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.spencereese.squadsync.invite</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>squadsync</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

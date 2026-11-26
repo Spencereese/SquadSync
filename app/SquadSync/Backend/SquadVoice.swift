@@ -53,7 +53,7 @@ enum SquadVoiceProblem: Error, Equatable {
     var message: String {
         switch self {
         case .notSetUp: return Self.notSetUpText
-        case .notMember: return "You're not in this squad, so you can't join its voice room."
+        case .notMember: return "You're not in this group, so you can't join its voice room."
         case .signedOut: return "Sign in again to use voice."
         case .offline: return "Couldn't reach voice. Check your connection and try again."
         case .failed(let text): return text
@@ -193,7 +193,7 @@ enum SquadVoiceRoster {
                 let trimmed = entry.name.trimmingCharacters(in: .whitespacesAndNewlines)
                 return SquadVoiceMember(
                     id: entry.id,
-                    name: trimmed.isEmpty || trimmed == entry.userId ? "Squad member" : trimmed,
+                    name: trimmed.isEmpty || trimmed == entry.userId ? "Group member" : trimmed,
                     muted: !entry.hasAudio,
                     speaking: entry.hasAudio && entry.isSpeaking,
                     isYou: entry.userId == you
@@ -317,13 +317,13 @@ struct SquadVoiceState: Equatable {
         switch phase {
         case .connected:
             let count = members.count == 1 ? "1 person is in it" : "\(members.count) people are in it"
-            return "Squad voice room. You're in it\(muted ? ", muted" : ""). \(count). Double tap to open."
+            return "Group voice room. You're in it\(muted ? ", muted" : ""). \(count). Double tap to open."
         case .notSetUp:
-            return "Squad voice room. \(SquadVoiceProblem.notSetUpText). Double tap to open."
+            return "Group voice room. \(SquadVoiceProblem.notSetUpText). Double tap to open."
         case .loading:
-            return "Squad voice room. Joining. Double tap to open."
+            return "Group voice room. Joining. Double tap to open."
         case .idle, .failed:
-            return "Squad voice room. You're not in it. Double tap to open."
+            return "Group voice room. You're not in it. Double tap to open."
         }
     }
 }

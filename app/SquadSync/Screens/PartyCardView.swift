@@ -21,7 +21,7 @@ struct PartyCardView: View {
                 }
             }
         } else if let party = store.party, party.conversationId != conversation.id, isSquadThread {
-            let home = store.conversations.first { $0.id == party.conversationId }?.title ?? "the squad thread"
+            let home = store.conversations.first { $0.id == party.conversationId }?.title ?? "the group thread"
             Text("\(party.game) is already forming in \(home).")
                 .font(.footnote)
                 .foregroundStyle(SQColor.muted)
@@ -158,7 +158,7 @@ struct PartyCardView: View {
                 Spacer(minLength: SQSpace.s)
                 if party.locked {
                     Image(systemName: "lock.fill")
-                        .accessibilityLabel("Squad locked")
+                        .accessibilityLabel("Locked in")
                 }
             }
             Text(availabilityLine)
@@ -175,7 +175,7 @@ struct PartyCardView: View {
             if !party.locked {
                 actionRow(party, now: now)
             } else {
-                Text("Squad locked. Open voice or hand off.")
+                Text("Locked in. Open voice or hand off.")
                     .font(.subheadline)
                     .fixedSize(horizontal: false, vertical: true)
             }

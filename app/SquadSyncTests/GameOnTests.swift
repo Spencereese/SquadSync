@@ -433,4 +433,145 @@ final class GameOnTests: XCTestCase {
             XCTAssertEqual(error as? GameOnProblem, .notSetUp)
         }
     }
+
+    // MARK: Push
+
+    func testGameOnPushOpensTheChat() {
+        let call = UUID()
+        let payload = PushPayloadParser.parse([
+            "type": "game_on", "squad_id": squad.uuidString, "call_id": call.uuidString
+        ] as [String: Any])
+        XCTAssertEqual(payload, PushPayload(kind: .gameOn, squadId: squad, messageId: nil, callId: call))
+        XCTAssertEqual(payload.map(PushDestination.of), .chat(message: nil))
+        XCTAssertNil(PushPayloadParser.parse(["type": "game_on", "squad_id": squad.uuidString] as [String: Any]), "No call id is no tap")
+    }
+}
+
+/// The home model's Game on flow against the mock server (Mac only: it needs the app model).
+@MainActor
+final class GameOnModelTests: XCTestCase {
+    private func model(_ scenario: LaunchScenario) -> LiveSessionModel {
+        LiveSessionModel(
+            config: BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test"),
+            backend: .mock,
+            scenario: scenario
+        )
+    }
+
+    func testJoinIsOneTapAndFillsTheLastSeat() async {
+        let model = model(.gameOn)
+        await model.retryGameOns()
+        let call = GameOnSeed.alexCall
+        XCTAssertEqual(model.liveGameOns().map(\.id), [call])
+        XCTAssertEqual(GameOnRules.viewerState(model.liveGameOns()[0], viewerId: model.chatViewerId, memberIds: model.groupMemberIds), .canJoin)
+        await model.joinGameOn(call)
+        XCTAssertNil(model.gameOnErrors[call])
+        let after = model.liveGameOns().first
+        XCTAssertEqual(after.map { GameOnRules.need($0, memberIds: model.groupMemberIds) }, 0)
+        XCTAssertEqual(after.map { GameOnRules.viewerState($0, viewerId: model.chatViewerId, memberIds: model.groupMemberIds) }, .joined(ready: false, starter: false))
+    }
+
+    func testFullCardTurnsAJoinAwayWithAMessage() async {
+        let model = model(.gameOnFull)
+        await model.retryGameOns()
+        await model.joinGameOn(GameOnSeed.alexCall)
+        XCTAssertEqual(model.gameOnErrors[GameOnSeed.alexCall], GameOnProblem.full.message)
+    }
+
+    func testStarterClosesAndTheCardGoesButTheLineStays() async {
+        let model = model(.gameOnMine)
+        await model.retryGameOns()
+        await model.closeGameOn(GameOnSeed.mineCall)
+        XCTAssertTrue(model.liveGameOns().isEmpty)
+        XCTAssertEqual(model.gameOns.first?.status, .ended)
+    }
+
+    func testIdleCardIsNotLive() async {
+        let model = model(.gameOnExpired)
+        await model.retryGameOns()
+        XCTAssertTrue(model.liveGameOns().isEmpty, "Idle past three hours is over")
+    }
+
+    func testCapStopsAThirdAndSaysWhy() async {
+        let model = model(.gameOnTwo)
+        await model.retryGameOns()
+        XCTAssertEqual(model.liveGameOns().count, 2)
+        model.openGameOn()
+        XCTAssertFalse(model.gameOnSheetOpen)
+        XCTAssertEqual(model.gameOnNote, GameOnProblem.cap.message)
+    }
+
+    func testStartFromTheSheetPinsYourCard() async {
+        let model = model(.welcome)
+        await model.retryGameOns()
+        model.openGameOn(game: "Halo")
+        XCTAssertTrue(model.gameOnSheetOpen)
+        XCTAssertEqual(model.gameOnDraft.game, "Halo")
+        model.gameOnDraft.need = 2
+        let started = await model.startGameOn()
+        XCTAssertTrue(started)
+        XCTAssertFalse(model.gameOnSheetOpen)
+        XCTAssertFalse(model.justJoined, "Starting answers the welcome")
+        let mine = model.liveGameOns().first
+        XCTAssertEqual(mine?.game, "Halo")
+        XCTAssertEqual(mine?.callerId, model.chatViewerId)
+        XCTAssertEqual(mine.map { GameOnRules.need($0, memberIds: model.groupMemberIds) }, 2)
+    }
+
+    func testBlankGameStaysInTheSheet() async {
+        let model = model(.welcome)
+        model.openGameOn()
+        model.gameOnDraft.game = "  "
+        let started = await model.startGameOn()
+        XCTAssertFalse(started)
+        XCTAssertTrue(model.gameOnSheetOpen)
+        XCTAssertEqual(model.gameOnSheetError, GameOnProblem.gameBlank.message)
+    }
+
+    func testServerWithoutGameOnIsUnavailableNotFailed() async {
+        let model = model(.gameOnServerMissing)
+        await model.retryGameOns()
+        XCTAssertEqual(model.gameOnLoad, .unavailable)
+        model.openGameOn()
+        XCTAssertFalse(model.gameOnSheetOpen)
+        XCTAssertEqual(model.gameOnNote, GameOnCopy.unavailable)
+    }
+
+    func testFailedReadSaysSoAndKeepsNothingMadeUp() async {
+        let model = model(.gameOnFailed)
+        model.gameOns = []
+        await model.loadGameOns(AuthSession(accessToken: "mock-access", refreshToken: "mock-refresh", userId: model.chatViewerId ?? UUID(), email: "spencer@squadsync.app"))
+        XCTAssertEqual(model.gameOnLoad, .failed(GameOnCopy.loadFailed))
+        XCTAssertTrue(model.liveGameOns().isEmpty)
+    }
+
+    func testSlashSpotsWithAGameOpensGameOnInsteadOfSending() async {
+        let model = model(.gameOn)
+        await model.retryGameOns()
+        let before = model.log.ordered.count
+        model.draft = "/spots Halo"
+        await model.send()
+        XCTAssertTrue(model.gameOnSheetOpen)
+        XCTAssertEqual(model.gameOnDraft.game, "Halo")
+        XCTAssertEqual(model.log.ordered.count, before, "The command was sent as a message")
+        XCTAssertEqual(model.draft, "")
+    }
+
+    func testImOnSendsAPlainMessageAndEndsTheWelcome() async {
+        let model = model(.welcome)
+        XCTAssertTrue(model.justJoined)
+        let before = model.log.ordered.count
+        await model.sayImOn()
+        XCTAssertFalse(model.justJoined)
+        XCTAssertEqual(model.log.ordered.count, before + 1)
+        XCTAssertEqual(model.log.ordered.last?.body, HomePrompts.imOnMessage)
+    }
+
+    func testAnyMemberCanMakeAShareLink() async {
+        let model = model(.invite)
+        await model.shareInvite()
+        XCTAssertFalse(model.inviteCode.isEmpty)
+        XCTAssertTrue(model.inviteShareText.contains("squadsync://join/\(model.inviteCode)"), model.inviteShareText)
+        XCTAssertNil(CopyCheck.offending(model.inviteShareText))
+    }
 }

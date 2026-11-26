@@ -292,7 +292,7 @@ struct PlaySessionsSheet: View {
             }
             Button("Keep it", role: .cancel) {}
         } message: { _ in
-            Text("Everyone in the squad will see it's cancelled.")
+            Text("Everyone in the group will see it's cancelled.")
         }
         .onDisappear {
             model.playSheetOpen = false
@@ -456,7 +456,7 @@ struct PlaySessionsSheet: View {
         .foregroundStyle(SQColor.onSignal)
         .disabled(model.playScheduling || unavailable)
         .accessibilityIdentifier("play-schedule")
-        Text("The squad sees it in the chat and can say In or Out. You're put down as In.")
+        Text("The group sees it in the chat and can say In or Out. You're put down as In.")
             .font(SQType.caption)
             .foregroundStyle(SQColor.subtle)
             .fixedSize(horizontal: false, vertical: true)

@@ -142,12 +142,13 @@ final class PushCoordinator {
         register()
     }
 
-    func askIfReady(signedIn: Bool, hasSquad: Bool, arguments: [String] = ProcessInfo.processInfo.arguments) {
+    func askIfReady(signedIn: Bool, hasSquad: Bool, moment: PushAskMoment = .launch, arguments: [String] = ProcessInfo.processInfo.arguments) {
         guard PushPermissionMoment.shouldAsk(
             signedIn: signedIn,
             hasSquad: hasSquad,
             alreadyAsked: asked,
-            automated: PushPermissionMoment.isAutomated(arguments)
+            automated: PushPermissionMoment.isAutomated(arguments),
+            moment: moment
         ) else { return }
         asked = true
         UserDefaults.standard.set(true, forKey: askedKey)

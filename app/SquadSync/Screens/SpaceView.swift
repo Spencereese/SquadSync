@@ -26,7 +26,7 @@ struct SpaceView: View {
         .navigationTitle("Space")
         .overlay {
             if store.screen == .empty {
-                StateBanner(title: "No members", detail: "The mock squad is empty.")
+                StateBanner(title: "No members", detail: "The mock group is empty.")
                     .padding()
             }
         }

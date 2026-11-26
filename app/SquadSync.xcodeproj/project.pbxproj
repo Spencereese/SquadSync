@@ -86,6 +86,7 @@
 		A1000000000000000000340A /* AvatarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003409 /* AvatarService.swift */; };
 		A1000000000000000000340C /* GameOnTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000340B /* GameOnTests.swift */; };
 		A1000000000000000000340E /* InviteLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000340D /* InviteLinkTests.swift */; };
+		A10000000000000000003410 /* GameOnViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000340F /* GameOnViews.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -191,6 +192,7 @@
 		A10000000000000000003409 /* AvatarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarService.swift; sourceTree = "<group>"; };
 		A1000000000000000000340B /* GameOnTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameOnTests.swift; sourceTree = "<group>"; };
 		A1000000000000000000340D /* InviteLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InviteLinkTests.swift; sourceTree = "<group>"; };
+		A1000000000000000000340F /* GameOnViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameOnViews.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -278,6 +280,7 @@
 				A10000000000000000000075 /* SquadHomeHeader.swift */,
 				A10000000000000000000972 /* WhosInSheet.swift */,
 				A10000000000000000003205 /* PlaySessionViews.swift */,
+				A1000000000000000000340F /* GameOnViews.swift */,
 				A10000000000000000000984 /* OnboardingView.swift */,
 				A10000000000000000000078 /* SpotCardViews.swift */,
 				A1000000000000000000007B /* ChatRows.swift */,
@@ -529,6 +532,7 @@
 				A10000000000000000002004 /* SquadVoiceSheet.swift in Sources */,
 				A10000000000000000000974 /* WhosIn.swift in Sources */,
 				A10000000000000000003206 /* PlaySessionViews.swift in Sources */,
+				A10000000000000000003410 /* GameOnViews.swift in Sources */,
 				A10000000000000000003204 /* PlaySessionService.swift in Sources */,
 				A1000000000000000000340A /* AvatarService.swift in Sources */,
 				A10000000000000000003408 /* GameOnService.swift in Sources */,
@@ -666,7 +670,7 @@
 				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SquadSync/Info.plist;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SquadSync uses the microphone only while you're in your squad's voice room.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SquadSync uses the microphone only while you're in your group's voice room.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -694,7 +698,7 @@
 				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = SquadSync/Info.plist;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SquadSync uses the microphone only while you're in your squad's voice room.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "SquadSync uses the microphone only while you're in your group's voice room.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (

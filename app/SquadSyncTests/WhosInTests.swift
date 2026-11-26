@@ -108,7 +108,7 @@ final class WhosInTests: XCTestCase {
 
     func testServerRefusalsReadAsPlainWords() {
         XCTAssertEqual(CheckInRules.message(for: "sq8_check_in_later_invalid"), "Pick a time between a few minutes and 7 days from now.")
-        XCTAssertEqual(CheckInRules.message(for: "new row violates row-level security policy"), "You can only check in for your own squad.")
+        XCTAssertEqual(CheckInRules.message(for: "new row violates row-level security policy"), "You can only check in for your own group.")
         XCTAssertEqual(CheckInRules.message(for: "boom"), "Check-in didn't save. Try again.")
     }
 

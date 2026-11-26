@@ -92,7 +92,7 @@ struct SquadHomeHeader: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(SquadHeader.spoken(squad: squad) ?? SquadHeader.noSquadTitle)
         .accessibilityValue(linkNote ?? "")
-        .accessibilityHint("Opens the squad panel")
+        .accessibilityHint("Opens members")
         .accessibilityAddTraits(.isHeader)
         .accessibilityIdentifier(squad == nil ? "squad-header-empty" : "squad-title")
     }
@@ -107,7 +107,7 @@ struct SquadHomeHeader: View {
             if squad != nil && large {
                 iconButton(
                     rosterOpen ? "person.2.circle.fill" : "person.2.circle",
-                    label: rosterOpen ? "Hide squad presence" : "Show squad presence",
+                    label: rosterOpen ? "Hide group presence" : "Show group presence",
                     identifier: "presence-toggle"
                 ) {
                     SQHaptics.play(.tap)
@@ -180,7 +180,7 @@ struct SquadHomeHeader: View {
         }
         .scrollIndicators(.hidden)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Squad presence")
+        .accessibilityLabel("Group presence")
         .accessibilityIdentifier("presence-strip")
     }
 
@@ -317,7 +317,7 @@ struct SquadPresenceRoster: View {
             panel(limit: limits[4])
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Squad presence")
+        .accessibilityLabel("Group presence")
         .accessibilityIdentifier("presence-strip")
     }
 

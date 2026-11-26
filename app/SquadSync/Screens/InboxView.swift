@@ -10,13 +10,13 @@ struct InboxView: View {
         Group {
             switch store.screen {
             case .loading:
-                StateBanner(title: "Loading the squad", detail: "Mock data is coming up. Nothing is on the network.")
+                StateBanner(title: "Loading the group", detail: "Mock data is coming up. Nothing is on the network.")
                     .padding(SQSpace.l)
             case .failed:
                 StateBanner(title: "Couldn't open the inbox", detail: "This prototype has no server. Try Ready again.")
                     .padding(SQSpace.l)
             case .empty:
-                StateBanner(title: "No chats yet", detail: "Side groups and DMs will sit under the squad once someone starts one.")
+                StateBanner(title: "No chats yet", detail: "Side groups and DMs will sit under the group once someone starts one.")
                     .padding(SQSpace.l)
             case .ready:
                 ready
@@ -49,10 +49,10 @@ struct InboxView: View {
                             FormingDock(party: party, now: context.date)
                         }
                         .buttonStyle(.plain)
-                        .accessibilityHint("Opens the squad thread")
+                        .accessibilityHint("Opens the group thread")
                     }
                 }
-                section("Squad") {
+                section("Group") {
                     spaceRow(visible)
                 }
                 section("Side groups") {
@@ -226,7 +226,7 @@ private struct PresenceStrip: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(hidden.count) more: \(hidden.map(\.name).joined(separator: ", "))")
-        .accessibilityHint("Shows the rest of the squad")
+        .accessibilityHint("Shows the rest of the group")
     }
 
     private var restSheet: some View {

@@ -257,7 +257,7 @@ final class PlaySessionTests: XCTestCase {
         XCTAssertEqual(draft.problem(now: now, defaultGame: ""), .timePast)
         draft.startsAt = now.addingTimeInterval(61 * 86_400)
         XCTAssertEqual(draft.problem(now: now, defaultGame: ""), .timeFar)
-        XCTAssertEqual(PlaySessionProblem.gameBlank.message, "Add a game so the squad knows what you're playing.")
+        XCTAssertEqual(PlaySessionProblem.gameBlank.message, "Add a game so the group knows what you're playing.")
     }
 
     // MARK: Errors and load states

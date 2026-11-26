@@ -524,7 +524,7 @@ enum ChatHistoryState: Equatable {
     case failed(String)
 
     static let loadingText = "Loading messages…"
-    static let emptyText = "No messages yet. Say hi to the squad."
+    static let emptyText = "No messages yet. Say hi to the group."
     static let failedText = "Messages couldn't load."
     static let staleText = "Couldn't refresh messages. Showing what's here."
     static let notSetUpText = "Chat isn't set up on this server yet."

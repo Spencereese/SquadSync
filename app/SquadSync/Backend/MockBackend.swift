@@ -223,7 +223,7 @@ final class MockSquadService: SquadService {
         guard let member = squad.members.first(where: { $0.id == userId }) else {
             throw InviteProblem.other("You can't remove that person.")
         }
-        guard !member.isOwner else { throw InviteProblem.other("The owner stays in the squad.") }
+        guard !member.isOwner else { throw InviteProblem.other("The owner stays in the group.") }
         squad.members.removeAll { $0.id == userId }
         self.squad = squad
     }

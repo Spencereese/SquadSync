@@ -68,12 +68,20 @@ final class PushRouteTests: XCTestCase {
     }
 
     func testPermissionWaitsUntilThereIsASquad() {
-        XCTAssertFalse(PushPermissionMoment.shouldAsk(signedIn: false, hasSquad: false, alreadyAsked: false, automated: false))
-        XCTAssertFalse(PushPermissionMoment.shouldAsk(signedIn: true, hasSquad: false, alreadyAsked: false, automated: false))
-        XCTAssertTrue(PushPermissionMoment.shouldAsk(signedIn: true, hasSquad: true, alreadyAsked: false, automated: false))
-        XCTAssertFalse(PushPermissionMoment.shouldAsk(signedIn: true, hasSquad: true, alreadyAsked: true, automated: false))
-        XCTAssertFalse(PushPermissionMoment.shouldAsk(signedIn: true, hasSquad: true, alreadyAsked: false, automated: true))
+        XCTAssertFalse(PushPermissionMoment.shouldAsk(signedIn: false, hasSquad: false, alreadyAsked: false, automated: false, moment: .gameOn))
+        XCTAssertFalse(PushPermissionMoment.shouldAsk(signedIn: true, hasSquad: false, alreadyAsked: false, automated: false, moment: .gameOn))
+        XCTAssertTrue(PushPermissionMoment.shouldAsk(signedIn: true, hasSquad: true, alreadyAsked: false, automated: false, moment: .gameOn))
+        XCTAssertFalse(PushPermissionMoment.shouldAsk(signedIn: true, hasSquad: true, alreadyAsked: true, automated: false, moment: .gameOn))
+        XCTAssertFalse(PushPermissionMoment.shouldAsk(signedIn: true, hasSquad: true, alreadyAsked: false, automated: true, moment: .gameOn))
         XCTAssertTrue(PushPermissionMoment.isAutomated(["-scenario", "invite"]))
+    }
+
+    /// Chat-first: sign-in, launch and joining the group never ask. The first
+    /// Game on you start or join does.
+    func testPermissionIsAskedAtTheFirstGameOnNotAtSignIn() {
+        XCTAssertFalse(PushPermissionMoment.shouldAsk(signedIn: true, hasSquad: true, alreadyAsked: false, automated: false))
+        XCTAssertFalse(PushPermissionMoment.shouldAsk(signedIn: true, hasSquad: true, alreadyAsked: false, automated: false, moment: .launch))
+        XCTAssertTrue(PushPermissionMoment.shouldAsk(signedIn: true, hasSquad: true, alreadyAsked: false, automated: false, moment: .gameOn))
     }
 
     func testCoordinatorHoldsASignedOutTapUntilTheSquadIsKnown() {
@@ -357,7 +365,7 @@ final class PushTapRoutingTests: XCTestCase {
     func testEverySheetOverTheChatIsACover() {
         XCTAssertEqual(Set(PushCover.allCases.map { "\($0)" }), [
             "signOutConfirm", "endSpotConfirm", "leaveConfirm", "members",
-            "callSpotSheet", "voiceSheet", "whosInSheet", "largeTextRoster"
+            "callSpotSheet", "voiceSheet", "whosInSheet", "largeTextRoster", "gameOnSheet"
         ])
     }
 

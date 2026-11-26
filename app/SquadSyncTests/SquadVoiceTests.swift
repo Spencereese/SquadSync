@@ -283,7 +283,7 @@ final class SquadVoiceTests: XCTestCase {
     }
 
     func testNotAMemberAndSignedOutSayWhy() async {
-        for (problem, line) in [(SquadVoiceProblem.notMember, "You're not in this squad"), (.signedOut, "Sign in again")] {
+        for (problem, line) in [(SquadVoiceProblem.notMember, "You're not in this group"), (.signedOut, "Sign in again")] {
             let session = SquadVoiceSession(tokens: FakeSquadVoiceTokens(.failure(problem)), engine: FakeSquadVoiceEngine())
             await session.join(squadId: squad, name: "Spencer")
             let status = session.state.statusLine
@@ -333,13 +333,13 @@ final class SquadVoiceTests: XCTestCase {
 
     func testThePillSpeaksEveryState() {
         var state = SquadVoiceState()
-        XCTAssertEqual(state.pillSpoken, "Squad voice room. You're not in it. Double tap to open.")
+        XCTAssertEqual(state.pillSpoken, "Group voice room. You're not in it. Double tap to open.")
         state.phase = .notSetUp
-        XCTAssertEqual(state.pillSpoken, "Squad voice room. Voice isn't set up yet. Double tap to open.")
+        XCTAssertEqual(state.pillSpoken, "Group voice room. Voice isn't set up yet. Double tap to open.")
         state.phase = .connected
         state.members = [you]
         state.muted = true
-        XCTAssertEqual(state.pillSpoken, "Squad voice room. You're in it, muted. 1 person is in it. Double tap to open.")
+        XCTAssertEqual(state.pillSpoken, "Group voice room. You're in it, muted. 1 person is in it. Double tap to open.")
         var pill = VoicePillState()
         pill.live = state
         XCTAssertEqual(pill.title, "In voice · 1")
@@ -358,7 +358,7 @@ final class SquadVoiceTests: XCTestCase {
         XCTAssertEqual(members[0], SquadVoiceMember(id: "s1", name: "Spencer", muted: true, speaking: false, isYou: true),
                        "A muted mic is never shown as speaking")
         XCTAssertEqual(members[1].name, "Avery")
-        XCTAssertEqual(members[2].name, "Squad member", "A bare user id is not a name")
+        XCTAssertEqual(members[2].name, "Group member", "A bare user id is not a name")
         XCTAssertTrue(members[3].speaking)
         XCTAssertEqual(SquadVoiceRoster.members([], you: "me"), [])
     }

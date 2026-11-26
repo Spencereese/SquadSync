@@ -24,7 +24,7 @@ enum OnboardingStep: Equatable, CaseIterable {
         case .email: "Sign in with email"
         case .code: "Enter your code"
         case .profile: "Set up your profile"
-        case .squad: "Find your squad"
+        case .squad: "Find your group"
         case .home: "SquadSync"
         }
     }
@@ -255,7 +255,7 @@ struct ProfileDraft: Equatable {
 
     var nameError: String? {
         let name = Self.tidy(self.name)
-        if name.isEmpty { return "Add the name your squad will see." }
+        if name.isEmpty { return "Add the name your group will see." }
         if name.count > Self.maxName { return "Keep your name to \(Self.maxName) characters." }
         return nil
     }

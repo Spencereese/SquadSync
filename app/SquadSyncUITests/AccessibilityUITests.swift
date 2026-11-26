@@ -125,217 +125,6 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(chip.waitForNonExistence(timeout: 5), "The reaction chip stayed after it was removed")
     }
 
-    func testMockSpotCallJoinIsOneTapWithNoReadyStep() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall"]
-        app.launch()
-
-        let title = app.descendants(matching: .any)["squad-title"]
-        XCTAssertTrue(title.waitForExistence(timeout: 15), "Squad title was not on the chat screen")
-        XCTAssertEqual(title.label, "Friday · 5 of 8")
-        XCTAssertGreaterThan(title.frame.height, 1, "Squad title was squeezed out, frame \(title.frame)")
-        XCTAssertTrue(app.windows.firstMatch.frame.intersects(title.frame), "Squad title is off screen, frame \(title.frame)")
-        let heading = app.descendants(matching: .any)["spot-title"]
-        XCTAssertTrue(heading.waitForExistence(timeout: 15), "Spot title was not on the card")
-        XCTAssertTrue(heading.label.contains("Calling spots"))
-        let join = app.buttons["spot-join"]
-        XCTAssertTrue(join.waitForExistence(timeout: 15), "Join was not on the spot card")
-        XCTAssertEqual(join.label, "Join the spot call")
-        reveal(join, in: app)
-        join.tap()
-
-        let seat = app.descendants(matching: .any)["spot-seat-You"]
-        XCTAssertTrue(seat.waitForExistence(timeout: 5), "Joining did not seat the viewer")
-        XCTAssertEqual(seat.label, "You, In")
-        XCTAssertTrue(waitForLabel(join, "isEnabled == false"), "Join stayed enabled after joining")
-        XCTAssertFalse(app.buttons["spot-ready"].exists, "There is no Ready step any more")
-        XCTAssertFalse(app.buttons["active-call-ready"].exists, "The pinned bar still offers Ready")
-        XCTAssertTrue(app.buttons["active-call-leave"].waitForExistence(timeout: 5), "The pinned bar did not offer Leave after joining")
-        assertListClearsComposer(app)
-    }
-
-    func testGatedSpotJoinMarksReadyAndLockWaitsForTheRest() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallNearlyFull"]
-        app.launch()
-
-        let waiting = app.descendants(matching: .any)["spot-lock-waiting"]
-        XCTAssertTrue(waiting.waitForExistence(timeout: 15), "The card did not say who Lock waits for")
-        XCTAssertEqual(waiting.label, "Lock waits for Quinn and Avery to join.")
-        let quinn = app.descendants(matching: .any)["spot-seat-Quinn"]
-        XCTAssertTrue(quinn.exists, "Quinn's seat was not on the card")
-        XCTAssertEqual(quinn.label, "Quinn, Hasn't joined")
-        XCTAssertFalse(app.buttons["spot-lock"].exists, "Lock showed before everyone who is in had joined")
-        let join = app.buttons["spot-join"]
-        XCTAssertTrue(join.waitForExistence(timeout: 5))
-        reveal(join, in: app)
-        join.tap()
-
-        let seat = app.descendants(matching: .any)["spot-seat-You"]
-        XCTAssertTrue(seat.waitForExistence(timeout: 5), "Joining did not seat the viewer")
-        XCTAssertEqual(seat.label, "You, In", "Join on a gated server has to set ready in the same tap")
-        XCTAssertEqual(waiting.label, "Lock waits for Quinn and Avery to join.", "The viewer's own join should not be waited on")
-        XCTAssertFalse(app.buttons["spot-ready"].exists, "There is no Ready step any more")
-        XCTAssertFalse(app.buttons["spot-lock"].exists, "Lock must still follow the server's rule")
-    }
-
-    func testExpiredSpotStillOffersCallSpots() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallExpired"]
-        app.launch()
-
-        let stale = app.descendants(matching: .any)["spot-history"]
-        XCTAssertTrue(stale.waitForExistence(timeout: 15), "The stale spot was not on screen as history")
-        XCTAssertTrue(stale.label.contains("expired"), "The stale call did not read as expired: \(stale.label)")
-        XCTAssertFalse(app.descendants(matching: .any)["spot-card"].exists, "An expired call kept the full card")
-        let call = app.buttons["call-spots"]
-        XCTAssertTrue(call.waitForExistence(timeout: 5), "Call spots was hidden by the expired card")
-        XCTAssertEqual(call.label, "Call spots")
-        reveal(call, in: app)
-        call.tap()
-        let replacement = app.descendants(matching: .any)["spot-countdown"]
-        XCTAssertTrue(replacement.waitForExistence(timeout: 5))
-        XCTAssertTrue(replacement.label.contains("left"), "The new call did not replace the stale one, label \(replacement.label)")
-        XCTAssertFalse(app.buttons["call-spots"].exists)
-        let archived = app.descendants(matching: .any)["spot-history"]
-        XCTAssertTrue(archived.waitForExistence(timeout: 5), "The replaced call did not move into the thread as history")
-        XCTAssertTrue(archived.label.contains("Warzone"))
-    }
-
-    func testMockSpotCallCallerCanCancel() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine"]
-        app.launch()
-
-        let cancel = app.buttons["spot-cancel"]
-        XCTAssertTrue(cancel.waitForExistence(timeout: 15), "Cancel was not on the caller's card")
-        XCTAssertEqual(cancel.label, "Cancel the spot call")
-        XCTAssertTrue(app.buttons["spot-lock"].waitForExistence(timeout: 5), "Lock was not on the caller's card")
-        reveal(cancel, in: app)
-        cancel.tap()
-
-        let history = app.descendants(matching: .any)["spot-history"]
-        XCTAssertTrue(history.waitForExistence(timeout: 5), "The cancelled call did not turn into a history card")
-        XCTAssertTrue(history.label.contains("cancelled"), "History card label: \(history.label)")
-        XCTAssertFalse(app.buttons["spot-join"].exists)
-        XCTAssertFalse(app.buttons["spot-lock"].exists)
-        XCTAssertFalse(app.buttons["spot-cancel"].exists)
-    }
-
-    func testCallerEndsALockedSpot() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine"]
-        app.launch()
-
-        let lock = app.buttons["spot-lock"]
-        XCTAssertTrue(lock.waitForExistence(timeout: 15), "Lock was not on the caller's card")
-        reveal(lock, in: app)
-        lock.tap()
-
-        let end = app.buttons["spot-end"]
-        XCTAssertTrue(end.waitForExistence(timeout: 5), "End spot was not on the locked card")
-        XCTAssertEqual(end.label, "End the spot call")
-        reveal(end, in: app)
-        end.tap()
-
-        let confirm = app.buttons["spot-end-confirm"].firstMatch
-        XCTAssertTrue(confirm.waitForExistence(timeout: 5), "End confirmation was not shown")
-        confirm.tap()
-
-        let history = app.descendants(matching: .any)["spot-history"]
-        XCTAssertTrue(history.waitForExistence(timeout: 5), "The ended call did not turn into a history card")
-        XCTAssertTrue(history.label.contains("ended"), "History card label: \(history.label)")
-        XCTAssertFalse(app.buttons["spot-end"].exists)
-        XCTAssertFalse(app.buttons["spot-lock"].exists)
-    }
-
-    func testCancelEndKeepsTheSpotLocked() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine"]
-        app.launch()
-
-        let lock = app.buttons["spot-lock"]
-        XCTAssertTrue(lock.waitForExistence(timeout: 15), "Lock was not on the caller's card")
-        reveal(lock, in: app)
-        lock.tap()
-
-        let end = app.buttons["spot-end"]
-        XCTAssertTrue(end.waitForExistence(timeout: 5), "End spot was not on the locked card")
-        reveal(end, in: app)
-        end.tap()
-
-        let cancel = app.buttons["spot-end-cancel"].firstMatch
-        XCTAssertTrue(cancel.waitForExistence(timeout: 5), "Cancel was not on the end confirmation")
-        XCTAssertEqual(cancel.label, "Cancel")
-        cancel.tap()
-
-        let status = app.descendants(matching: .any)["spot-countdown"]
-        XCTAssertTrue(status.waitForExistence(timeout: 5))
-        XCTAssertEqual(status.label, "Locked")
-        XCTAssertTrue(app.buttons["spot-end"].waitForExistence(timeout: 5), "End spot left after Cancel")
-        XCTAssertFalse(app.buttons["spot-end-confirm"].exists)
-    }
-
-    func testEndSpotStaysHittableAtLargeText() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine", "-uitest-largeText"]
-        app.launch()
-
-        let lock = app.buttons["spot-lock"]
-        XCTAssertTrue(lock.waitForExistence(timeout: 15), "Lock was not on the caller's card at large text")
-        reveal(lock, in: app)
-        lock.tap()
-
-        let end = app.buttons["spot-end"]
-        XCTAssertTrue(end.waitForExistence(timeout: 5), "End spot was not on the locked card at large text")
-        reveal(end, in: app)
-        XCTAssertTrue(end.isHittable, "End spot was not reachable at the largest text size")
-        let composer = app.descendants(matching: .any)["composer"]
-        XCTAssertTrue(composer.waitForExistence(timeout: 5), "Composer was not on screen")
-        XCTAssertLessThanOrEqual(end.frame.maxY + 8, composer.frame.minY, "End spot is under the composer")
-        XCTAssertLessThan(end.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
-    }
-
-    func testMockSpotCallStaysReadableAtLargeText() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall", "-uitest-largeText"]
-        app.launch()
-
-        let card = app.descendants(matching: .any)["spot-card"]
-        XCTAssertTrue(card.waitForExistence(timeout: 15), "Spot card was not in the accessibility tree")
-        let join = app.buttons["spot-join"]
-        XCTAssertTrue(join.waitForExistence(timeout: 5), "Join was not in the accessibility tree")
-        reveal(join, in: app)
-        XCTAssertTrue(join.isHittable, "Join was not reachable at the largest text size")
-        let composer = app.descendants(matching: .any)["composer"]
-        XCTAssertTrue(composer.waitForExistence(timeout: 5), "Composer was not on screen")
-        XCTAssertLessThanOrEqual(join.frame.maxY + 8, composer.frame.minY, "Card Join is still under the composer")
-        XCTAssertLessThan(join.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
-        XCTAssertTrue(app.descendants(matching: .any)["spot-countdown"].exists)
-        assertListClearsComposer(app)
-    }
-
-    func testPinnedJoinStaysHittableAtLargeTextWithKeyboard() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall", "-uitest-largeText"]
-        app.launch()
-
-        let title = app.descendants(matching: .any)["squad-title"]
-        XCTAssertTrue(title.waitForExistence(timeout: 15), "Squad title was not on the chat screen at large text")
-        XCTAssertEqual(title.label, "Friday · 5 of 8")
-        XCTAssertGreaterThan(title.frame.height, 1, "Squad title was squeezed out at large text, frame \(title.frame)")
-        let join = app.buttons["active-call-join"]
-        XCTAssertTrue(join.waitForExistence(timeout: 15), "Pinned Join was not under the title")
-        XCTAssertLessThanOrEqual(title.frame.maxY, join.frame.minY + 1, "Pinned Join covers the squad title")
-        XCTAssertEqual(join.label, "Join the spot call")
-        let field = app.textFields["Message"]
-        XCTAssertTrue(field.waitForExistence(timeout: 5), "Message field was not on screen")
-        field.tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 3), "Keyboard did not come up")
-        XCTAssertTrue(join.isHittable, "Pinned Join was covered with the keyboard up, frame \(join.frame)")
-        XCTAssertLessThan(join.frame.maxX, app.windows.firstMatch.frame.maxX + 1)
-    }
-
     private func tapJoin(in app: XCUIApplication) {
         let join = app.buttons["join-squad"]
         XCTAssertTrue(join.waitForExistence(timeout: 5), "Join was not in the members sheet")
@@ -484,8 +273,8 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertFalse(status.exists)
         app.buttons["confirm-leave"].tap()
 
-        XCTAssertTrue(app.staticTexts["You're not in a squad yet."].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.descendants(matching: .any)["onboarding-header"].label, "Find your squad", "No step count after leaving a squad")
+        XCTAssertTrue(app.staticTexts["You're not in a group yet."].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.descendants(matching: .any)["onboarding-header"].label, "Find your group", "No step count after leaving a squad")
         XCTAssertEqual(app.textFields.matching(identifier: "join-code").count, 1)
         XCTAssertEqual(app.buttons.matching(identifier: "join-squad").count, 1)
 
@@ -561,7 +350,7 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertEqual(status.label, "Joined.")
         XCTAssertEqual(count.label, "Friday · 8 of 8")
         tapJoin(in: app)
-        XCTAssertEqual(status.label, "That squad is full (8).")
+        XCTAssertEqual(status.label, "That group is full (8).")
         XCTAssertEqual(count.label, "Friday · 8 of 8")
     }
 
@@ -690,19 +479,33 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(reply.isHittable, "The tapped reply was covered")
     }
 
+    /// Side threads open from the composer's + menu (the header keeps only the name and Members).
+    private func openSideThreadsFromMenu(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let plus = app.buttons["composer-plus"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 10), "The composer's + menu was missing", file: file, line: line)
+        plus.tap()
+        let item = app.buttons["composer-side-threads"]
+        if item.waitForExistence(timeout: 3) {
+            XCTAssertEqual(item.label, "Side threads", file: file, line: line)
+            item.tap()
+            return
+        }
+        let fallback = app.collectionViews.buttons["Side threads"]
+        XCTAssertTrue(fallback.waitForExistence(timeout: 3), "Side threads was not in the + menu", file: file, line: line)
+        fallback.tap()
+    }
+
     private let rankedRowId = "side-threads-row-00000000-0000-0000-0000-00000000b001"
 
     func testSideThreadListShowsStartsAndOpensThreads() {
-        // The list from the squad bar: the seeded group with its last reply, a DM made with
+        // The list from the + menu: the seeded group with its last reply, a DM made with
         // Riley from the picker, a reply in it, Back to the list, then the group again.
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
         app.launch()
 
-        let open = app.buttons["open-side-threads"]
-        XCTAssertTrue(open.waitForExistence(timeout: 10), "The side threads button was not in the bar")
-        XCTAssertEqual(open.label, "Side threads")
-        open.tap()
+        XCTAssertFalse(app.buttons["open-side-threads"].exists, "Side threads came back into the header")
+        openSideThreadsFromMenu(app)
         let panel = app.descendants(matching: .any)["side-threads"]
         XCTAssertTrue(panel.waitForExistence(timeout: 5), "The side thread list did not open")
         let ranked = app.buttons[rankedRowId]
@@ -774,9 +577,7 @@ final class AccessibilityUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-mock-side-threads", "empty"]
         app.launch()
-        let open = app.buttons["open-side-threads"]
-        XCTAssertTrue(open.waitForExistence(timeout: 10))
-        open.tap()
+        openSideThreadsFromMenu(app)
         let empty = app.descendants(matching: .any)["side-threads-empty"]
         XCTAssertTrue(empty.waitForExistence(timeout: 8), "An empty list should say so")
         XCTAssertTrue(empty.label.contains("No side threads yet"), empty.label)
@@ -788,9 +589,7 @@ final class AccessibilityUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-mock-side-threads", "down"]
         app.launch()
-        let open = app.buttons["open-side-threads"]
-        XCTAssertTrue(open.waitForExistence(timeout: 10))
-        open.tap()
+        openSideThreadsFromMenu(app)
         let failed = app.descendants(matching: .any)["side-threads-error"]
         XCTAssertTrue(failed.waitForExistence(timeout: 8), "A failed read should say so")
         XCTAssertFalse(app.descendants(matching: .any)["side-threads-empty"].exists, "A failure isn't an empty list")
@@ -801,7 +600,7 @@ final class AccessibilityUITests: XCTestCase {
     }
 
     func testSideThreadsAreReachableFromTheSquadPanelAtLargeText() {
-        // At accessibility sizes the bar keeps its icons short, so the list is in the squad panel.
+        // The Members panel has it too, at every size.
         let app = launchChat("invite", largeText: true)
         let members = app.buttons["members"]
         XCTAssertTrue(members.waitForExistence(timeout: 10), "Members button was not in the bar")
@@ -823,9 +622,7 @@ final class AccessibilityUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-debug-push-open", threadPushPayload, "-debug-push-open-after", "12"]
         app.launch()
-        let open = app.buttons["open-side-threads"]
-        XCTAssertTrue(open.waitForExistence(timeout: 10))
-        open.tap()
+        openSideThreadsFromMenu(app)
         let panel = app.descendants(matching: .any)["side-threads"]
         XCTAssertTrue(panel.waitForExistence(timeout: 5))
         let thread = app.descendants(matching: .any)["side-thread"]
@@ -847,8 +644,8 @@ final class AccessibilityUITests: XCTestCase {
 
         let notice = app.descendants(matching: .any)["push-notice"]
         XCTAssertTrue(notice.waitForExistence(timeout: 15), "A squad you have not joined did not explain itself")
-        XCTAssertEqual(notice.label, "You're not in that squad.")
-        XCTAssertTrue(notice.isHittable, "You're not in that squad. was not on screen")
+        XCTAssertEqual(notice.label, "You're not in that group.")
+        XCTAssertTrue(notice.isHittable, "You're not in that group. was not on screen")
         XCTAssertGreaterThan(notice.frame.height, 1)
         XCTAssertFalse(app.descendants(matching: .any)["push-opened-chat"].exists)
     }
@@ -861,8 +658,8 @@ final class AccessibilityUITests: XCTestCase {
 
         let notice = app.descendants(matching: .any)["push-notice"]
         XCTAssertTrue(notice.waitForExistence(timeout: 15), "A former squad did not explain itself")
-        XCTAssertEqual(notice.label, "You're not in that squad.")
-        XCTAssertTrue(notice.isHittable, "You're not in that squad. was not on screen")
+        XCTAssertEqual(notice.label, "You're not in that group.")
+        XCTAssertTrue(notice.isHittable, "You're not in that group. was not on screen")
         XCTAssertGreaterThan(notice.frame.height, 1)
         XCTAssertFalse(app.descendants(matching: .any)["push-opened-squad"].exists)
     }
@@ -1057,175 +854,103 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(failed.waitForExistence(timeout: 5), "Still offline, the error should stay")
     }
 
-    func testPresenceStripIsPresentAndHittable() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
-        app.launch()
-
-        let strip = app.descendants(matching: .any)["presence-strip"]
-        XCTAssertTrue(strip.waitForExistence(timeout: 15), "The presence strip was not in the header")
-        XCTAssertGreaterThan(strip.frame.height, 1)
-        let riley = app.buttons["presence-Riley"]
-        XCTAssertTrue(riley.waitForExistence(timeout: 5), "Riley was not in the presence strip")
-        XCTAssertTrue(riley.isHittable, "Riley's avatar was not hittable, frame \(riley.frame)")
-        XCTAssertTrue(waitForLabel(riley, "label CONTAINS \"hasn't checked in\""), "Without a check-in Riley should read as not checked in: \(riley.label)")
-        XCTAssertFalse(riley.label.lowercased().contains("online"))
-        let me = app.buttons["presence-You"]
-        XCTAssertTrue(me.exists, "The viewer was not in the presence strip")
-        XCTAssertTrue(me.isHittable)
-
-        riley.tap()
-        XCTAssertTrue(element("whos-in-sheet", in: app).waitForExistence(timeout: 5), "An avatar did not open Who's in")
-    }
-
-    func testPresenceStripShowsSpotSeats() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall"]
-        app.launch()
-
-        let alex = app.buttons["presence-Alex"]
-        XCTAssertTrue(alex.waitForExistence(timeout: 15), "Alex was not in the presence strip")
-        XCTAssertTrue(alex.label.contains("in the spot call"), "A joined seat did not show as in the spot: \(alex.label)")
-        XCTAssertFalse(alex.label.contains("ready"), "Presence still shows a separate Ready state: \(alex.label)")
-        let sam = app.buttons["presence-Sam"]
-        XCTAssertTrue(sam.exists, "Sam was not in the presence strip")
-        XCTAssertTrue(sam.label.contains("in the spot call"), "A joined seat did not show as in the spot: \(sam.label)")
-    }
-
-    func testVoicePillStaysAMock() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
-        app.launch()
-
+    func testVoicePillStaysAMockAndLivesInTheMembersPanel() {
+        let app = launchChat("invite")
+        XCTAssertFalse(app.buttons["voice-room-pill"].waitForExistence(timeout: 3), "The voice pill came back into the header")
+        let members = app.buttons["members"]
+        XCTAssertTrue(members.waitForExistence(timeout: 15))
+        members.tap()
         let pill = app.buttons["voice-room-pill"]
-        XCTAssertTrue(pill.waitForExistence(timeout: 15), "The voice-room pill was not in the header")
-        XCTAssertTrue(pill.isHittable)
+        reveal(pill, in: app, "The voice-room pill was not in the Members panel")
         XCTAssertTrue(pill.label.contains("mock"), "The voice pill did not say it is a mock: \(pill.label)")
         XCTAssertTrue(pill.label.contains("Double tap to join."))
         pill.tap()
-        let joined = NSPredicate(format: "label CONTAINS %@", "Double tap to leave.")
-        let flipped = expectation(for: joined, evaluatedWith: pill)
-        wait(for: [flipped], timeout: 5)
+        // Joining closes the panel so you land back in the chat.
+        XCTAssertTrue(app.scrollViews["message-list"].waitForExistence(timeout: 5))
+        XCTAssertTrue(waitUntil(timeout: 5) { app.buttons["members"].isHittable }, "The panel stayed up after joining voice")
+        app.buttons["members"].tap()
+        let again = app.buttons["voice-room-pill"]
+        reveal(again, in: app, "The voice-room pill went missing after joining")
+        XCTAssertTrue(waitForLabel(again, "label CONTAINS \"Double tap to leave.\""), "Voice did not flip to joined: \(again.label)")
     }
 
-    func testPresenceStripStaysHittableAtLargeText() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-uitest-largeText"]
-        app.launch()
+    func testSignOutLivesInTheMembersPanel() {
+        let app = launchChat("invite")
+        XCTAssertFalse(app.buttons["account"].waitForExistence(timeout: 3), "Account came back into the header")
+        app.buttons["members"].tap()
+        let account = app.buttons["account"]
+        reveal(account, in: app, "Sign out was not in the Members panel")
+        account.tap()
+        XCTAssertTrue(app.staticTexts["Sign out?"].waitForExistence(timeout: 5), "Sign out did not ask to confirm after the panel closed")
+    }
 
-        let title = app.descendants(matching: .any)["squad-title"]
-        XCTAssertTrue(title.waitForExistence(timeout: 15), "The squad header was missing at large text")
-        XCTAssertGreaterThan(title.frame.height, 1)
-        XCTAssertFalse(app.buttons["presence-Riley"].exists, "At large text presence starts folded so the chat keeps the screen")
-        let toggle = app.buttons["presence-toggle"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5), "Presence toggle was not in the large-text header")
-        XCTAssertTrue(toggle.isHittable)
-        XCTAssertEqual(toggle.label, "Show squad presence")
-        toggle.tap()
-        XCTAssertEqual(toggle.label, "Hide squad presence")
-        let riley = app.buttons["presence-Riley"]
-        XCTAssertTrue(riley.waitForExistence(timeout: 5), "Riley was not in the presence roster at large text")
-        XCTAssertTrue(riley.isHittable, "Riley's avatar was not hittable at large text, frame \(riley.frame)")
-        let composer = app.descendants(matching: .any)["composer"]
-        XCTAssertTrue(composer.waitForExistence(timeout: 5))
-        XCTAssertLessThan(riley.frame.maxY, composer.frame.minY, "The presence strip runs into the composer")
-        XCTAssertTrue(app.buttons["members"].isHittable, "Members was squeezed out of the header at large text")
-        let window = app.windows.firstMatch.frame
-        XCTAssertLessThanOrEqual(riley.frame.maxX, window.maxX + 1, "Riley's row runs off the right edge")
-        // Check-ins are on the (mock) server, so the roster offers Who's in instead of "not live".
-        let whosIn = app.buttons["whos-in-open"]
-        XCTAssertTrue(whosIn.waitForExistence(timeout: 5), "Who's in was missing from the large-text roster")
-        XCTAssertTrue(whosIn.isHittable)
-        assertHitSize(whosIn.frame.height)
-        XCTAssertLessThanOrEqual(whosIn.frame.maxX, window.maxX + 1, "Who's in is cut off at the right")
-        XCTAssertFalse(app.descendants(matching: .any)["presence-untracked"].exists, "Presence is tracked by check-ins here")
-        toggle.tap()
-        XCTAssertTrue(riley.waitForNonExistence(timeout: 5), "The roster did not fold again")
+    func testHeaderShowsOnlyTheGroupNameAndMembers() {
+        let app = launchChat("gameOn")
+        let title = element("squad-title", in: app)
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "The group header was missing")
+        XCTAssertEqual(title.label, "Friday · 5 of 8")
+        let members = app.buttons["members"]
+        XCTAssertTrue(members.exists)
+        XCTAssertEqual(members.label, "Members")
+        XCTAssertLessThan(abs(members.frame.midY - title.frame.midY), title.frame.height, "Members dropped below the name")
+        for gone in ["presence-strip", "presence-toggle", "whos-in-open", "open-side-threads", "voice-room-pill", "account", "active-call-bar", "play-next-bar", "spot-card"] {
+            XCTAssertFalse(element(gone, in: app).exists, "\(gone) is still on the home screen")
+        }
+        // The header is just the name and Members: nothing else above the pinned Game on.
+        let list = app.scrollViews["message-list"]
+        let card = element("game-on-card", in: app)
+        XCTAssertTrue(card.waitForExistence(timeout: 10), "Alex's Game on was not pinned")
+        let headerButtons = app.buttons.allElementsBoundByIndex.filter {
+            $0.exists && $0.frame.height > 0 && $0.frame.minY >= title.frame.minY - 4 && $0.frame.maxY <= card.frame.minY
+        }
+        XCTAssertEqual(Set(headerButtons.map(\.identifier)).subtracting(["squad-title"]), ["members"], "Unexpected buttons above the card: \(headerButtons.map(\.identifier))")
+        XCTAssertLessThanOrEqual(card.frame.maxY, list.frame.minY + 1, "The card overlaps the chat")
+    }
+
+    func testQuietGroupShowsOnlyTheGameOnButtonUpTop() {
+        let app = launchChat("invite")
+        let button = app.buttons["game-on-button"]
+        XCTAssertTrue(button.waitForExistence(timeout: 15), "Game on was not up top in a quiet group")
+        XCTAssertEqual(button.label, "Game on")
+        XCTAssertTrue(button.isHittable)
+        assertHitTarget(button, "Game on")
+        XCTAssertFalse(element("game-on-card", in: app).exists, "A quiet group showed a card")
+        let list = app.scrollViews["message-list"]
+        XCTAssertLessThanOrEqual(button.frame.maxY, list.frame.minY + 1, "Game on sits over the chat")
+        XCTAssertLessThan(button.frame.height, app.windows.firstMatch.frame.height * 0.1, "The quiet top is not small")
     }
 
     func testHeaderIsOneRowAtLargeText() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall", "-uitest-largeText"]
-        app.launch()
-
-        let title = app.descendants(matching: .any)["squad-title"]
-        XCTAssertTrue(title.waitForExistence(timeout: 15), "The squad header was missing at large text")
+        let app = launchChat("gameOn", largeText: true)
+        let title = element("squad-title", in: app)
+        XCTAssertTrue(title.waitForExistence(timeout: 15), "The group header was missing at large text")
         let members = app.buttons["members"]
-        let account = app.buttons["account"]
         XCTAssertTrue(members.waitForExistence(timeout: 5))
         XCTAssertTrue(members.isHittable, "Members was not hittable in the one-row header")
-        XCTAssertTrue(account.isHittable, "Account was not hittable in the one-row header")
         XCTAssertLessThan(abs(members.frame.midY - title.frame.midY), title.frame.height, "Members dropped to a second header row, members \(members.frame) title \(title.frame)")
-        XCTAssertLessThan(abs(account.frame.midY - title.frame.midY), title.frame.height, "Account dropped to a second header row")
         let window = app.windows.firstMatch.frame
         XCTAssertLessThan(title.frame.maxY, window.height * 0.22, "The header takes too much of the screen at large text, title \(title.frame)")
-        let bar = app.descendants(matching: .any)["active-call-bar"]
-        XCTAssertTrue(bar.waitForExistence(timeout: 5), "The pinned spot bar was missing")
-        XCTAssertLessThan(bar.frame.height, window.height * 0.22, "The pinned spot bar is not compact at large text, frame \(bar.frame)")
+        let card = element("game-on-card", in: app)
+        XCTAssertTrue(card.waitForExistence(timeout: 5), "The pinned Game on was missing at large text")
+        XCTAssertLessThanOrEqual(card.frame.height, 240 + 1, "The pinned area is not capped at large text, frame \(card.frame)")
         let list = app.scrollViews["message-list"]
         XCTAssertTrue(list.exists)
         XCTAssertGreaterThan(list.frame.height, window.height * 0.4, "The chat keeps less than 40% of the screen at large text, list \(list.frame)")
-        let closedHeight = list.frame.height
-
-        let toggle = app.buttons["presence-toggle"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 5), "Presence toggle was not in the large-text header")
-        toggle.tap()
-        let alex = app.buttons["presence-Alex"]
-        XCTAssertTrue(alex.waitForExistence(timeout: 5), "Alex was not in the presence roster during the spot")
-        XCTAssertTrue(alex.isHittable, "The roster row was covered during the spot, frame \(alex.frame)")
-        XCTAssertGreaterThan(list.frame.height, window.height * 0.4, "Opening presence during a spot squeezed the chat, list \(list.frame)")
-        XCTAssertEqual(list.frame.height, closedHeight, accuracy: 1, "The roster pushed the chat down instead of floating over it")
-        XCTAssertTrue(app.buttons["active-call-cancel"].exists || app.buttons["active-call-join"].exists, "The pinned bar's action went missing with the roster open")
-        XCTAssertTrue(app.textFields["Message"].isHittable, "The roster covered the composer")
-        toggle.tap()
-        XCTAssertTrue(alex.waitForNonExistence(timeout: 5), "The roster did not fold again")
+        XCTAssertTrue(app.textFields["Message"].isHittable, "The card covered the composer")
     }
 
-    func testCardCancelSitsInsideTheChatAtLargeText() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine", "-uitest-largeText"]
-        app.launch()
-
-        let cancel = app.buttons["spot-cancel"]
-        XCTAssertTrue(cancel.waitForExistence(timeout: 15), "The card's Cancel was not on the caller's card at large text")
-        let list = app.scrollViews["message-list"]
-        XCTAssertTrue(list.waitForExistence(timeout: 5))
-        let window = app.windows.firstMatch.frame
-        XCTAssertGreaterThan(list.frame.height, window.height * 0.4, "The chat keeps less than 40% of the screen with the spot open, list \(list.frame)")
-        reveal(cancel, in: app)
-        XCTAssertTrue(cancel.isHittable, "The card's Cancel was not reachable at the largest text size")
-        let frame = cancel.frame
-        let visible = list.frame
-        XCTAssertGreaterThanOrEqual(frame.minY, visible.minY - 1, "The card's Cancel runs above the chat list. cancel \(frame) list \(visible)")
-        XCTAssertLessThanOrEqual(frame.maxY, visible.maxY + 1, "The card's Cancel runs below the chat list. cancel \(frame) list \(visible)")
-        let composer = app.descendants(matching: .any)["composer"]
-        XCTAssertTrue(composer.waitForExistence(timeout: 5))
-        XCTAssertLessThanOrEqual(frame.maxY + 8, composer.frame.minY, "The card's Cancel is under the composer")
-        XCTAssertLessThanOrEqual(frame.maxX, window.maxX + 1)
-        cancel.tap()
-        let history = app.descendants(matching: .any)["spot-history"]
-        XCTAssertTrue(history.waitForExistence(timeout: 5), "Cancelling from the card did not cancel the call")
-        XCTAssertTrue(history.label.contains("cancelled"))
-    }
-
-    func testPresenceDecorationsAreNotReadAloud() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "invite"]
-        app.launch()
-
-        let pill = app.buttons["whos-in-open"]
-        XCTAssertTrue(pill.waitForExistence(timeout: 15), "The Who's in pill was missing")
-        XCTAssertEqual(pill.label, "Who's in")
-        XCTAssertTrue(pill.isHittable || pill.frame.width > 0)
-        XCTAssertLessThanOrEqual(pill.frame.maxX, app.windows.firstMatch.frame.maxX + 1, "The Who's in pill is cut off at the right")
-        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "whos-in-open").count, 1, "The pill's symbol is a second element")
-        let symbolNames = ["antenna", "radiowaves", "mic.slash", "waveform", "gamecontroller", "checkmark", "lock.fill", "chevron", "person.3", "person.2", "ellipsis"]
+    func testHomeDecorationsAreNotReadAloud() {
+        let app = launchChat("gameOnFull")
+        XCTAssertTrue(element("game-on-card", in: app).waitForExistence(timeout: 15))
+        XCTAssertFalse(app.buttons["whos-in-open"].exists, "The Who's in pill is gone in the chat-first home")
+        let symbolNames = ["antenna", "radiowaves", "mic.slash", "waveform", "gamecontroller", "checkmark", "lock.fill", "chevron", "person.3", "person.2", "person.badge", "ellipsis", "xmark", "camera"]
         let format = symbolNames.map { "label CONTAINS[c] '\($0)'" }.joined(separator: " OR ")
         let leaked = app.descendants(matching: .any).matching(NSPredicate(format: format))
         XCTAssertEqual(leaked.count, 0, "An SF Symbol name is exposed to VoiceOver: \(leaked.allElementsBoundByIndex.map(\.label))")
-        let me = app.buttons["presence-You"]
-        XCTAssertTrue(me.exists)
-        XCTAssertTrue(me.label.hasPrefix("You"), "The viewer's avatar does not identify you: \(me.label)")
+        // Seat faces are drawn, not read: the summary already names who's in.
+        let summary = element("game-on-summary", in: app)
+        XCTAssertTrue(summary.label.contains("In: Alex and Jordan"), summary.label)
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "game-on-summary").count, 1, "The summary is split into pieces")
     }
 
     func testSquadPanelGroupsSectionsAndKeepsIdentifiers() {
@@ -1237,12 +962,12 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(members.waitForExistence(timeout: 15))
         members.tap()
         XCTAssertTrue(app.staticTexts["Members"].waitForExistence(timeout: 5), "The panel title was missing")
-        for heading in ["Join with a code", "In this squad", "Rename", "Invite", "Your profile"] {
+        for heading in ["Join with a code", "In the group", "Rename", "Invite", "Voice and side threads", "Your profile", "Account"] {
             XCTAssertTrue(app.staticTexts[heading].waitForExistence(timeout: 5), "Panel section \(heading) was missing")
         }
         XCTAssertTrue(app.buttons["leave-squad"].waitForExistence(timeout: 5), "Leave did not appear after the probe")
         XCTAssertTrue(app.textFields["rename-field"].waitForExistence(timeout: 5), "Rename did not appear after the probe")
-        for identifier in ["squad-count", "join-code", "join-squad", "remove-Riley", "leave-squad", "rename-field", "rename-squad", "create-invite", "invite-empty", "profile-name", "profile-game", "save-profile"] {
+        for identifier in ["squad-count", "join-code", "join-squad", "remove-Riley", "leave-squad", "rename-field", "rename-squad", "create-invite", "invite-empty", "voice-room-pill", "panel-side-threads", "account", "profile-name", "profile-game", "save-profile"] {
             XCTAssertEqual(
                 app.descendants(matching: .any).matching(identifier: identifier).count,
                 1,
@@ -1251,22 +976,385 @@ final class AccessibilityUITests: XCTestCase {
         }
     }
 
-    // MARK: S2 spot card
+    // MARK: Game on (chat-first round 1)
 
-    private func tapMenuCallSpots(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+    private func tapMenuGameOn(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
         let plus = app.buttons["composer-plus"]
         XCTAssertTrue(plus.waitForExistence(timeout: 15), "The composer's + menu was missing", file: file, line: line)
         XCTAssertTrue(plus.isHittable, "The composer's + menu was not hittable, frame \(plus.frame)", file: file, line: line)
         plus.tap()
-        let item = app.buttons["composer-call-spots"]
+        let item = app.buttons["composer-game-on"]
         if item.waitForExistence(timeout: 3) {
             item.tap()
             return
         }
-        let fallback = app.collectionViews.buttons["Call spots"]
-        XCTAssertTrue(fallback.waitForExistence(timeout: 3), "Call spots was not in the + menu", file: file, line: line)
+        let fallback = app.collectionViews.buttons["Game on"]
+        XCTAssertTrue(fallback.waitForExistence(timeout: 3), "Game on was not in the + menu", file: file, line: line)
         fallback.tap()
     }
+
+    private func gameOnLine(_ text: String, in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(identifier: "game-on-line")
+            .matching(NSPredicate(format: "label CONTAINS %@", text))
+            .firstMatch
+    }
+
+    func testGameOnJoinIsOneTap() {
+        let app = launchChat("gameOn")
+        let summary = element("game-on-summary", in: app)
+        XCTAssertTrue(summary.waitForExistence(timeout: 15), "Alex's Game on was not pinned")
+        XCTAssertEqual(summary.label, "Alex's on Warzone. Needs 1 more. In: Alex")
+        let join = app.buttons["game-on-join"]
+        XCTAssertTrue(join.waitForExistence(timeout: 5), "Join was not on the card")
+        XCTAssertEqual(join.label, "Join Warzone")
+        assertHitTarget(join, "Join")
+        join.tap()
+
+        XCTAssertTrue(waitForLabel(summary, "label == \"Alex's on Warzone. Full. In: Alex and You\""), "Joining did not seat you: \(summary.label)")
+        XCTAssertFalse(join.exists, "Join stayed after joining")
+        let ready = app.buttons["game-on-ready"]
+        XCTAssertTrue(ready.waitForExistence(timeout: 5), "Ready (optional) was not offered after joining")
+        XCTAssertEqual(ready.value as? String, "Off", "Joining should not mark you ready")
+        XCTAssertTrue(app.buttons["game-on-leave"].exists, "Leave was not offered after joining")
+        XCTAssertFalse(app.buttons["game-on-end"].exists, "Someone else's Game on offered End")
+        XCTAssertFalse(app.buttons["spot-lock"].exists, "There is no Lock any more")
+        assertListClearsComposer(app)
+    }
+
+    func testGameOnReadyIsOptionalAndLeaveGivesTheSeatBack() {
+        let app = launchChat("gameOn")
+        let join = app.buttons["game-on-join"]
+        XCTAssertTrue(join.waitForExistence(timeout: 15))
+        join.tap()
+        let ready = app.buttons["game-on-ready"]
+        XCTAssertTrue(ready.waitForExistence(timeout: 5))
+        ready.tap()
+        XCTAssertTrue(waitForLabel(ready, "value == \"On\""), "Ready did not turn on")
+        let summary = element("game-on-summary", in: app)
+        XCTAssertTrue(summary.label.hasSuffix("1 ready"), "The card did not count ready: \(summary.label)")
+        app.buttons["game-on-leave"].tap()
+        XCTAssertTrue(join.waitForExistence(timeout: 5), "Leaving did not give the seat back")
+        XCTAssertTrue(waitForLabel(summary, "label == \"Alex's on Warzone. Needs 1 more. In: Alex\""), summary.label)
+    }
+
+    func testFullGameOnSaysFullAndOffersNoJoin() {
+        let app = launchChat("gameOnFull")
+        let summary = element("game-on-summary", in: app)
+        XCTAssertTrue(summary.waitForExistence(timeout: 15))
+        XCTAssertEqual(summary.label, "Alex's on Warzone. Full. In: Alex and Jordan. 1 ready")
+        let full = element("game-on-full", in: app)
+        XCTAssertTrue(full.exists, "A full card did not say Full")
+        XCTAssertEqual(full.label, "Full")
+        XCTAssertFalse(app.buttons["game-on-join"].exists, "A full card still offered Join")
+        XCTAssertFalse(element("game-on-invite", in: app).exists, "A full card asked for invites")
+    }
+
+    func testStarterEndsTheirGameOnAndTheLineStays() {
+        let app = launchChat("gameOnMine")
+        let summary = element("game-on-summary", in: app)
+        XCTAssertTrue(summary.waitForExistence(timeout: 15))
+        XCTAssertEqual(summary.label, "You're on Call of Duty. Needs 2 more. In: You and Sam")
+        XCTAssertFalse(app.buttons["game-on-leave"].exists, "The starter gets End, not Leave")
+        let end = app.buttons["game-on-end"]
+        XCTAssertTrue(end.waitForExistence(timeout: 5))
+        XCTAssertEqual(end.label, "End Call of Duty")
+        end.tap()
+        XCTAssertTrue(element("game-on-card", in: app).waitForNonExistence(timeout: 5), "End left the card pinned")
+        XCTAssertTrue(app.buttons["game-on-button"].waitForExistence(timeout: 5), "Game on did not come back after ending")
+        let line = gameOnLine("You're on Call of Duty", in: app)
+        XCTAssertTrue(line.waitForExistence(timeout: 5), "The chat lost the line where it started")
+        XCTAssertEqual(line.label, "Game on. You're on Call of Duty, need 3")
+    }
+
+    func testGameOnEndStaysHittableAtLargeText() {
+        let app = launchChat("gameOnMine", largeText: true)
+        let end = app.buttons["game-on-end"]
+        XCTAssertTrue(end.waitForExistence(timeout: 15), "End was missing at large text")
+        XCTAssertTrue(end.isHittable, "End was not hittable at large text, frame \(end.frame)")
+        assertHitTarget(end, "End")
+        XCTAssertLessThan(end.frame.maxX, app.windows.firstMatch.frame.maxX + 1, "End runs off the screen")
+        end.tap()
+        XCTAssertTrue(app.buttons["game-on-button"].waitForExistence(timeout: 5), "Ending at large text did not work")
+    }
+
+    func testGameOnJoinStaysUsableAtLargeText() {
+        let app = launchChat("gameOn", largeText: true)
+        let summary = element("game-on-summary", in: app)
+        XCTAssertTrue(summary.waitForExistence(timeout: 15))
+        XCTAssertTrue(summary.label.contains("In: Alex"), "At large text the names move into the label: \(summary.label)")
+        let join = app.buttons["game-on-join"]
+        XCTAssertTrue(join.isHittable, "Join was not hittable at large text, frame \(join.frame)")
+        assertHitTarget(join, "Join")
+        join.tap()
+        XCTAssertTrue(app.buttons["game-on-ready"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["game-on-leave"].isHittable, "Leave was cut off at large text")
+    }
+
+    func testGameOnStepsAsideForTheKeyboardAtLargeText() {
+        // At AX5 the pinned area hides while you type, so the composer and the
+        // newest messages keep the room, then comes back when the keyboard goes.
+        let app = launchChat("gameOn", largeText: true)
+        let card = element("game-on-card", in: app)
+        XCTAssertTrue(card.waitForExistence(timeout: 15))
+        let field = app.textFields["Message"]
+        field.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(card.waitForNonExistence(timeout: 5), "The card stayed pinned over a typing composer at AX5")
+        XCTAssertTrue(field.isHittable, "The composer was covered with the keyboard up")
+        let list = app.scrollViews["message-list"]
+        XCTAssertGreaterThan(list.frame.height, 120, "The chat was squeezed out with the keyboard up: \(list.frame)")
+        // The list dismisses the keyboard interactively, like in Messages.
+        for _ in 0..<3 where app.keyboards.firstMatch.exists {
+            list.swipeDown()
+        }
+        XCTAssertTrue(card.waitForExistence(timeout: 8), "The card did not come back after typing")
+    }
+
+    func testIdleGameOnIsGoneAndGameOnIsOffered() {
+        let app = launchChat("gameOnExpired")
+        let button = app.buttons["game-on-button"]
+        XCTAssertTrue(button.waitForExistence(timeout: 15), "Game on was not offered after the idle one expired")
+        XCTAssertFalse(element("game-on-card", in: app).exists, "A Game on idle past 3 hours stayed pinned")
+        XCTAssertFalse(app.buttons["game-on-join"].exists)
+    }
+
+    func testTwoGameOnsHideTheButtonAndTheMenuSaysWhy() {
+        let app = launchChat("gameOnTwo")
+        let cards = app.descendants(matching: .any).matching(identifier: "game-on-card")
+        XCTAssertTrue(cards.firstMatch.waitForExistence(timeout: 15))
+        XCTAssertTrue(waitUntil(timeout: 5) { cards.count == 2 }, "Both Game ons should be pinned, found \(cards.count)")
+        XCTAssertFalse(app.buttons["game-on-button"].exists, "A third Game on was offered at the cap")
+        tapMenuGameOn(app)
+        let note = element("game-on-note", in: app)
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "The cap was not explained")
+        XCTAssertEqual(note.label, "Two games are already on. Join one, or wait for one to end.")
+        XCTAssertFalse(app.buttons["game-on-start"].exists, "The sheet opened past the cap")
+    }
+
+    func testStartAGameOnFromTheButton() {
+        let app = launchChat("invite")
+        let button = app.buttons["game-on-button"]
+        XCTAssertTrue(button.waitForExistence(timeout: 15))
+        button.tap()
+        let start = app.buttons["game-on-start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 5), "The Game on sheet did not open")
+        let other = app.buttons["game-on-game-other"]
+        XCTAssertTrue(other.exists)
+        other.tap()
+        let field = app.textFields["game-on-other-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 3), "Other did not offer a field")
+        if !app.keyboards.firstMatch.exists { field.tap() }
+        field.typeText("Halo")
+        let need = app.steppers["game-on-need"]
+        XCTAssertTrue(need.exists, "How many more was missing")
+        need.buttons.element(boundBy: 1).tap()
+        XCTAssertTrue(waitForLabel(element("game-on-need-value", in: app), "label == \"2 more\""), "The stepper did not count up")
+        XCTAssertTrue(start.isEnabled)
+        start.tap()
+        XCTAssertTrue(start.waitForNonExistence(timeout: 5), "The sheet stayed after starting")
+        let summary = element("game-on-summary", in: app)
+        XCTAssertTrue(summary.waitForExistence(timeout: 5), "Your Game on was not pinned")
+        XCTAssertEqual(summary.label, "You're on Halo. Needs 2 more. In: You")
+        XCTAssertTrue(app.buttons["game-on-end"].exists, "You can end your own Game on")
+        let line = gameOnLine("You're on Halo", in: app)
+        XCTAssertTrue(line.waitForExistence(timeout: 5), "Starting did not post a line in the chat")
+        XCTAssertEqual(line.label, "Game on. You're on Halo, need 2")
+    }
+
+    func testGameOnSheetNeedsAGame() {
+        let app = launchChat("invite")
+        tapMenuGameOn(app)
+        let start = app.buttons["game-on-start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 5))
+        app.buttons["game-on-game-other"].tap()
+        XCTAssertTrue(app.textFields["game-on-other-field"].waitForExistence(timeout: 3))
+        XCTAssertFalse(start.isEnabled, "Start was on with no game picked")
+        app.buttons["game-on-cancel"].tap()
+        XCTAssertTrue(start.waitForNonExistence(timeout: 5), "Cancel left the sheet up")
+        XCTAssertFalse(element("game-on-card", in: app).exists, "Cancel started a Game on")
+    }
+
+    func testSlashSpotsWithAGameOpensGameOnWithItPicked() {
+        let app = launchChat("invite")
+        sendCommand("/spots Halo", in: app)
+        let halo = app.buttons["game-on-game-Halo"]
+        XCTAssertTrue(halo.waitForExistence(timeout: 5), "/spots Halo did not open Game on with Halo")
+        XCTAssertTrue(halo.isSelected, "Halo was not the picked game")
+        XCTAssertTrue(app.buttons["game-on-start"].isEnabled)
+    }
+
+    func testBareSlashSpotsOpensGameOn() {
+        let app = launchChat("invite")
+        sendCommand("/spots", in: app)
+        XCTAssertTrue(app.buttons["game-on-start"].waitForExistence(timeout: 5), "/spots did not open the Game on sheet")
+        XCTAssertFalse(element("message-row-spots", in: app).exists)
+    }
+
+    func testServerWithoutGameOnSaysSo() {
+        let app = launchChat("gameOnServerMissing")
+        let note = element("game-on-unavailable", in: app)
+        XCTAssertTrue(note.waitForExistence(timeout: 15), "A server without Game on did not say so")
+        XCTAssertEqual(note.label, "Game on needs a server update before it works here.")
+        XCTAssertFalse(app.buttons["game-on-button"].exists, "Game on was offered on a server that can't take it")
+        XCTAssertFalse(element("game-on-card", in: app).exists)
+        tapMenuGameOn(app)
+        XCTAssertFalse(app.buttons["game-on-start"].waitForExistence(timeout: 2), "The sheet opened on a server that can't take it")
+        XCTAssertTrue(app.textFields["Message"].isHittable, "The chat stopped working without Game on")
+    }
+
+    func testFailedGameOnReadSaysSoAndRetries() {
+        let app = launchChat("gameOnFailed")
+        let failed = element("game-on-failed", in: app)
+        XCTAssertTrue(failed.waitForExistence(timeout: 15), "A failed read did not say so")
+        XCTAssertFalse(element("game-on-card", in: app).exists, "A failed read claimed a card")
+        let retry = app.buttons["game-on-retry"]
+        XCTAssertTrue(retry.isHittable)
+        assertHitTarget(retry, "Retry")
+        retry.tap()
+        XCTAssertTrue(failed.waitForExistence(timeout: 8), "The server is still down, so the error stays")
+    }
+
+    func testGameOnSheetStaysUsableAtLargeText() {
+        let app = launchChat("invite", largeText: true)
+        tapMenuGameOn(app)
+        let start = app.buttons["game-on-start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 5), "The sheet did not open at large text")
+        XCTAssertTrue(start.isHittable, "Start was out of reach at large text, frame \(start.frame)")
+        let other = app.buttons["game-on-game-other"]
+        var tries = 0
+        while !other.isHittable, tries < 6 { app.swipeUp(); tries += 1 }
+        other.tap()
+        let field = app.textFields["game-on-other-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        if !app.keyboards.firstMatch.exists { field.tap() }
+        field.typeText("Halo")
+        XCTAssertTrue(start.isHittable, "Start went under the keyboard at large text")
+        start.tap()
+        XCTAssertTrue(element("game-on-card", in: app).waitForExistence(timeout: 8), "Starting at large text did not pin the card")
+    }
+
+    func testPlannedSessionShowsAsAGameOnWhenItStarts() {
+        let app = launchChat("plannedStarting")
+        let card = element("planned-game-on-card", in: app)
+        XCTAssertTrue(card.waitForExistence(timeout: 15), "A session that just started was not pinned")
+        let summary = element("planned-game-on-summary", in: app)
+        XCTAssertTrue(summary.label.contains("Alex's Warzone session is starting"), summary.label)
+        XCTAssertTrue(summary.label.contains("In: Alex"), summary.label)
+        let imIn = app.buttons["planned-im-in"]
+        XCTAssertTrue(imIn.exists)
+        assertHitTarget(imIn, "I'm in")
+        imIn.tap()
+        XCTAssertTrue(element("planned-you-are-in", in: app).waitForExistence(timeout: 5), "I'm in did not stick")
+        XCTAssertTrue(summary.label.contains("You"), summary.label)
+    }
+
+    // MARK: Invite link and prompts
+
+    func testAnyMemberCanMakeAndShareAnInviteLink() {
+        let app = launchChat("invite")
+        app.buttons["members"].tap()
+        let create = app.buttons["create-invite"]
+        reveal(create, in: app, "Make an invite link was missing")
+        XCTAssertEqual(create.label, "Make an invite link")
+        create.tap()
+        let code = element("invite-code", in: app)
+        XCTAssertTrue(code.waitForExistence(timeout: 5), "No code after making a link")
+        XCTAssertTrue(code.label.hasPrefix("Invite code "), code.label)
+        let share = app.buttons["share-invite-link"]
+        reveal(share, in: app, "Share was missing after making a link")
+        XCTAssertTrue(app.buttons["copy-invite"].exists, "Copy was missing")
+    }
+
+    func testWelcomeOffersImOnRightAfterJoining() {
+        let app = launchChat("welcome")
+        let prompt = element("welcome-prompt", in: app)
+        XCTAssertTrue(prompt.waitForExistence(timeout: 15), "No welcome right after joining")
+        let imOn = app.buttons["welcome-im-on"]
+        reveal(imOn, in: app)
+        XCTAssertTrue(app.buttons["welcome-game-on"].exists, "Game on was not offered next to I'm on")
+        imOn.tap()
+        let sent = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "I'm on")).matching(NSPredicate(format: "identifier BEGINSWITH 'message-row-'")).firstMatch
+        XCTAssertTrue(sent.waitForExistence(timeout: 5), "I'm on was not sent to the group")
+        XCTAssertTrue(prompt.waitForNonExistence(timeout: 5), "The welcome stayed after answering")
+    }
+
+    func testWelcomeGameOnOpensTheSheet() {
+        let app = launchChat("welcome")
+        let button = app.buttons["welcome-game-on"]
+        XCTAssertTrue(button.waitForExistence(timeout: 15))
+        reveal(button, in: app)
+        button.tap()
+        XCTAssertTrue(app.buttons["game-on-start"].waitForExistence(timeout: 5), "Game on from the welcome did not open the sheet")
+    }
+
+    func testSmallGroupAsksForInvitesAndAPhoto() {
+        let app = launchChat("smallGroup")
+        let invite = element("invite-prompt", in: app)
+        XCTAssertTrue(invite.waitForExistence(timeout: 15), "A two-person group had no invite nudge")
+        let photo = element("photo-prompt", in: app)
+        XCTAssertTrue(photo.waitForExistence(timeout: 5), "No photo nudge early on")
+        XCTAssertTrue(app.buttons["photo-prompt-add"].exists)
+        let dismissPhoto = app.buttons["photo-prompt-dismiss"]
+        reveal(dismissPhoto, in: app)
+        XCTAssertEqual(dismissPhoto.label, "Not now")
+        assertHitTarget(dismissPhoto, "Not now")
+        dismissPhoto.tap()
+        XCTAssertTrue(photo.waitForNonExistence(timeout: 5), "Not now left the photo nudge")
+        let share = app.buttons["invite-prompt-share"]
+        reveal(share, in: app)
+        share.tap()
+        XCTAssertTrue(element("invite-code", in: app).waitForExistence(timeout: 8), "Invite from the chat did not make a link")
+    }
+
+    func testBigGroupGetsNoInviteOrPhotoNagByDefault() {
+        let app = launchChat("gameOn")
+        XCTAssertTrue(element("game-on-card", in: app).waitForExistence(timeout: 15))
+        XCTAssertFalse(element("invite-prompt", in: app).exists, "A five-person group was nagged to invite")
+        XCTAssertFalse(element("game-on-invite", in: app).exists, "A five-person group's card asked for invites")
+        XCTAssertFalse(element("welcome-prompt", in: app).exists)
+    }
+
+    // MARK: Copy
+
+    /// The app says "group", not "squad", anywhere a person can see or hear it.
+    func testNoScreenSaysSquad() {
+        let app = launchChat("smallGroup")
+        XCTAssertTrue(element("squad-title", in: app).waitForExistence(timeout: 15))
+        assertNoSquad(in: app, "home")
+        app.buttons["members"].tap()
+        XCTAssertTrue(app.staticTexts["In the group"].waitForExistence(timeout: 5))
+        assertNoSquad(in: app, "Members panel")
+        dismissSheet(app)
+        tapMenuGameOn(app)
+        XCTAssertTrue(app.buttons["game-on-start"].waitForExistence(timeout: 5))
+        assertNoSquad(in: app, "Game on sheet")
+    }
+
+    /// Drags a sheet down by its top edge until the home screen's Members is tappable again.
+    private func dismissSheet(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let window = app.windows.firstMatch
+        for _ in 0..<3 where !app.buttons["members"].isHittable {
+            let top = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08))
+            let bottom = window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.98))
+            top.press(forDuration: 0.05, thenDragTo: bottom, withVelocity: .fast, thenHoldForDuration: 0.1)
+            _ = waitUntil(timeout: 2) { app.buttons["members"].isHittable }
+        }
+        XCTAssertTrue(app.buttons["members"].isHittable, "The sheet did not close", file: file, line: line)
+    }
+
+    private func assertNoSquad(in app: XCUIApplication, _ screen: String, file: StaticString = #filePath, line: UInt = #line) {
+        // "SquadSync" is the app's name and is fine (an email at squadsync.app, say).
+        let candidates = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS[c] 'squad' OR value CONTAINS[c] 'squad' OR placeholderValue CONTAINS[c] 'squad'"))
+        let said = candidates.allElementsBoundByIndex.compactMap { element -> String? in
+            let text = [element.label, element.value as? String ?? "", element.placeholderValue ?? ""].joined(separator: " ")
+            let stripped = text.lowercased().replacingOccurrences(of: "squadsync", with: "")
+            return stripped.contains("squad") ? "\(element.identifier): \(text)" : nil
+        }
+        XCTAssertEqual(said, [], "\(screen) says squad", file: file, line: line)
+    }
+
+    // MARK: Commands and history
 
     private func sendCommand(_ text: String, in app: XCUIApplication) {
         let field = app.textFields["Message"]
@@ -1331,9 +1419,9 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertEqual(summary.value as? String, "You're in")
         let id = String(summary.identifier.dropFirst("play-session-summary-".count))
 
-        let bar = element("play-next-bar", in: app)
-        XCTAssertTrue(bar.waitForExistence(timeout: 5), "The next-session bar did not appear")
-        XCTAssertTrue(bar.label.contains("Rocket League"), "Bar label: \(bar.label)")
+        // Chat-first: an upcoming session lives in the chat; the top keeps only Game on.
+        XCTAssertFalse(element("play-next-bar", in: app).exists, "An upcoming session went back above the chat")
+        XCTAssertTrue(app.buttons["game-on-button"].exists, "The Game on button left the top")
 
         let goIn = app.buttons["play-session-in-\(id)"]
         let goOut = app.buttons["play-session-out-\(id)"]
@@ -1357,7 +1445,6 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(goOut.waitForNonExistence(timeout: 5), "A cancelled session still offered In and Out")
         XCTAssertTrue(playSummary("Rocket League", in: app).label.contains("Cancelled"), "The card did not say it was cancelled")
         XCTAssertFalse(cancel.exists, "A cancelled session still offered Cancel")
-        XCTAssertTrue(bar.waitForNonExistence(timeout: 5), "The next-session bar stayed for a cancelled session")
     }
 
     func testSeededSessionCardShowsWhoIsInAndTakesYourAnswer() {
@@ -1381,7 +1468,7 @@ final class AccessibilityUITests: XCTestCase {
 
         XCTAssertFalse(app.buttons["play-session-in-00000000-0000-0000-0000-000000000503"].exists, "A session that's over still took answers")
         XCTAssertFalse(app.buttons["play-session-in-00000000-0000-0000-0000-000000000502"].exists, "A cancelled session still took answers")
-        XCTAssertTrue(element("play-next-bar", in: app).label.contains("Warzone"), "The bar did not lead with the next session")
+        XCTAssertFalse(element("play-next-bar", in: app).exists, "Upcoming sessions stay in the chat, not above it")
     }
 
     func testPlaySessionsSayWhenTheServerIsNotSetUp() {
@@ -1414,84 +1501,6 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 5), "The card did not show in the non-lazy chat at large text")
     }
 
-    func testPlusMenuCallsSpotsFromTheComposer() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotHistory"]
-        app.launch()
-
-        XCTAssertFalse(app.descendants(matching: .any)["spot-card"].exists, "There should be no open call yet")
-        tapMenuCallSpots(app)
-        let game = app.textFields["spot-sheet-game"]
-        XCTAssertTrue(game.waitForExistence(timeout: 5), "The call sheet did not open from the + menu")
-        let call = app.buttons["spot-sheet-call"]
-        XCTAssertTrue(call.isHittable)
-        call.tap()
-        XCTAssertTrue(call.waitForNonExistence(timeout: 5), "The call sheet stayed open after a successful call")
-        let title = app.descendants(matching: .any)["spot-title"]
-        XCTAssertTrue(title.waitForExistence(timeout: 5), "The new call did not pin its card in the chat")
-        XCTAssertTrue(title.label.contains("Warzone"), "Card title: \(title.label)")
-        XCTAssertTrue(app.descendants(matching: .any)["active-call-bar"].waitForExistence(timeout: 5), "The pinned bar did not appear for the active call")
-        XCTAssertFalse(app.buttons["call-spots"].exists, "Call spots stayed offered while a call is active")
-    }
-
-    func testPlusMenuWithAnActiveCallSaysOneIsOpen() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall"]
-        app.launch()
-
-        tapMenuCallSpots(app)
-        XCTAssertFalse(app.buttons["spot-sheet-call"].waitForExistence(timeout: 2), "A second call sheet opened over an active call")
-        let note = app.descendants(matching: .any)["spot-note"]
-        XCTAssertTrue(note.waitForExistence(timeout: 5))
-        XCTAssertEqual(note.label, "This squad already has a spot call.")
-    }
-
-    func testSlashSpotsWithAGameCallsRightAway() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotHistory"]
-        app.launch()
-
-        sendCommand("/spots Halo", in: app)
-        let title = app.descendants(matching: .any)["spot-title"]
-        XCTAssertTrue(title.waitForExistence(timeout: 5), "/spots Halo did not call spots")
-        XCTAssertTrue(title.label.contains("Halo"), "Card title: \(title.label)")
-        let sent = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "/spots"))
-        XCTAssertEqual(sent.count, 0, "The command was sent as a chat message")
-    }
-
-    func testBareSlashSpotsOpensTheCallSheet() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotHistory"]
-        app.launch()
-
-        sendCommand("/spots", in: app)
-        let call = app.buttons["spot-sheet-call"]
-        XCTAssertTrue(call.waitForExistence(timeout: 5), "/spots did not open the call sheet")
-        app.buttons["spot-sheet-cancel"].tap()
-        XCTAssertTrue(call.waitForNonExistence(timeout: 5))
-        XCTAssertFalse(app.descendants(matching: .any)["spot-card"].exists, "Not now still called spots")
-    }
-
-    func testPinnedCardTurnsIntoHistoryWhenCancelled() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotCallMine"]
-        app.launch()
-
-        let card = app.descendants(matching: .any)["spot-card"]
-        XCTAssertTrue(card.waitForExistence(timeout: 15))
-        let bar = app.descendants(matching: .any)["active-call-bar"]
-        XCTAssertTrue(bar.waitForExistence(timeout: 5), "The active call was not pinned")
-        let cancel = app.buttons["spot-cancel"]
-        reveal(cancel, in: app)
-        cancel.tap()
-        XCTAssertTrue(card.waitForNonExistence(timeout: 5), "The full card stayed after cancel")
-        XCTAssertTrue(bar.waitForNonExistence(timeout: 5), "The pinned bar stayed after cancel")
-        let history = app.descendants(matching: .any)["spot-history"]
-        XCTAssertTrue(history.waitForExistence(timeout: 5), "No history card after cancel")
-        XCTAssertTrue(history.label.hasPrefix("Spot call for Warzone, cancelled"), "History label: \(history.label)")
-        XCTAssertTrue(app.buttons["call-spots"].waitForExistence(timeout: 5), "Call spots did not come back after cancel")
-    }
-
     func testHistoryCardsSitBetweenMessagesInTimeOrder() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "spotHistory"]
@@ -1513,219 +1522,6 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(apex.label.contains("4 people joined"), "Apex label: \(apex.label)")
         XCTAssertTrue(valorant.label.contains("cancelled"))
         XCTAssertFalse(app.descendants(matching: .any)["spot-card"].exists, "A finished call kept the full card")
-    }
-
-    func testServerWithoutSpotRpcsSaysSo() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotServerMissing"]
-        app.launch()
-
-        let note = app.descendants(matching: .any)["spot-history-note"]
-        XCTAssertTrue(note.waitForExistence(timeout: 15), "The failed history read was silent")
-        tapMenuCallSpots(app)
-        let call = app.buttons["spot-sheet-call"]
-        XCTAssertTrue(call.waitForExistence(timeout: 5))
-        call.tap()
-        let error = app.descendants(matching: .any)["spot-sheet-error"]
-        XCTAssertTrue(error.waitForExistence(timeout: 5), "The sheet did not say why the call failed")
-        XCTAssertEqual(error.label, "Spot calls aren't set up on this server yet.")
-        XCTAssertTrue(call.exists, "The sheet closed even though the call failed")
-        app.buttons["spot-sheet-cancel"].tap()
-        XCTAssertFalse(app.descendants(matching: .any)["spot-card"].exists)
-    }
-
-    func testSpotCardPathsStayUsableAtLargeText() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotHistory", "-uitest-largeText"]
-        app.launch()
-
-        let valorant = historyCard("Valorant", in: app)
-        XCTAssertTrue(valorant.waitForExistence(timeout: 15))
-        let window = app.windows.firstMatch.frame
-        XCTAssertLessThanOrEqual(valorant.frame.maxX, window.maxX + 1, "The history card runs off the right edge")
-        tapMenuCallSpots(app)
-        let call = app.buttons["spot-sheet-call"]
-        XCTAssertTrue(call.waitForExistence(timeout: 5))
-        var swipes = 0
-        while !call.isHittable, swipes < 6 {
-            app.swipeUp()
-            swipes += 1
-        }
-        XCTAssertTrue(call.isHittable, "The sheet's Call spots was not reachable at AX5")
-        call.tap()
-        // The caller's bar offers Lock (mock calls have no lock gate) or Cancel.
-        let lock = app.buttons["active-call-lock"]
-        let cancel = app.buttons["active-call-cancel"]
-        XCTAssertTrue(lock.waitForExistence(timeout: 5) || cancel.exists, "The pinned bar's action was missing at AX5")
-        XCTAssertTrue(lock.exists ? lock.isHittable : cancel.isHittable, "The pinned bar's action was not hittable at AX5")
-        let symbolNames = ["plus.circle", "antenna", "radiowaves", "mic.slash", "waveform", "checkmark", "lock.fill", "chevron", "ellipsis"]
-        let format = symbolNames.map { "label CONTAINS[c] '\($0)'" }.joined(separator: " OR ")
-        let leaked = app.descendants(matching: .any).matching(NSPredicate(format: format))
-        XCTAssertEqual(leaked.count, 0, "An SF Symbol name is exposed to VoiceOver: \(leaked.allElementsBoundByIndex.map(\.label))")
-    }
-
-    // MARK: AX5 presence roster regressions
-
-    func testPresenceRosterShowsItsLastRowAtLargeText() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-uitest-largeText"]
-        app.launch()
-
-        let toggle = app.buttons["presence-toggle"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 15))
-        toggle.tap()
-        let roster = app.descendants(matching: .any)["presence-strip"]
-        // With check-ins on the server the last row is Who's in, not the untracked line.
-        let note = app.buttons["whos-in-open"]
-        XCTAssertTrue(note.waitForExistence(timeout: 5), "The roster's last row was missing")
-        XCTAssertLessThanOrEqual(note.frame.maxY, roster.frame.maxY + 1, "The last row is cut off by the roster. note \(note.frame) roster \(roster.frame)")
-        let list = app.scrollViews["message-list"]
-        XCTAssertLessThanOrEqual(note.frame.maxY, list.frame.maxY + 1, "The last row runs past the chat list. note \(note.frame) list \(list.frame)")
-        XCTAssertFalse(roster.scrollViews.firstMatch.exists, "The roster scrolls instead of fitting")
-    }
-
-    func testPresenceRosterKeepsThePinnedBarVisibleAtLargeText() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotCall", "-uitest-largeText"]
-        app.launch()
-
-        let toggle = app.buttons["presence-toggle"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 15))
-        toggle.tap()
-        let roster = app.descendants(matching: .any)["presence-strip"]
-        XCTAssertTrue(roster.waitForExistence(timeout: 5))
-        let bar = app.descendants(matching: .any)["active-call-bar"]
-        XCTAssertTrue(bar.exists)
-        XCTAssertGreaterThanOrEqual(roster.frame.minY, bar.frame.maxY - 1, "The roster covers the pinned bar. roster \(roster.frame) bar \(bar.frame)")
-        let join = app.buttons["active-call-join"]
-        XCTAssertTrue(join.isHittable, "The pinned Join was covered with the roster open")
-        let list = app.scrollViews["message-list"]
-        XCTAssertGreaterThan(list.frame.height, app.windows.firstMatch.frame.height * 0.4, "The chat dropped under 40% with the roster open")
-    }
-
-    /// The roster's empty space must let a tap reach the message button under it.
-    /// The tap point is a real hittable message button under an empty part of the
-    /// open roster. A control tap at the same point with the roster closed must
-    /// select the message first, so the test can't pass on a point that never works.
-    func testPresenceRosterPassesEmptyTapsToTheChat() {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-uitest-largeText"]
-        app.launch()
-
-        // Find the point with the roster open.
-        openRoster(app)
-        guard let pick = emptyRosterPointOverMessageButton(app) else {
-            XCTFail("No hittable message button lies under an empty area of the open roster. roster \(rosterFrame(app)), kids \(rosterKidFrames(app)), buttons \(messageButtonFrames(app))")
-            return
-        }
-
-        // Control: roster closed, same point, the tap selects the message.
-        app.buttons["presence-toggle"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["presence-strip"].waitForNonExistence(timeout: 5), "The roster didn't close for the control tap")
-        let controlButton = messageButton(app, label: pick.label)
-        XCTAssertTrue(controlButton.exists && controlButton.isHittable, "Control: message button '\(pick.label)' isn't hittable with the roster closed")
-        XCTAssertTrue(controlButton.frame.contains(pick.point), "Control: the point \(pick.point) left '\(pick.label)' \(controlButton.frame) when the roster closed")
-        tap(app, at: pick.point)
-        XCTAssertTrue(app.buttons["react"].waitForExistence(timeout: 3), "Control: with the roster closed, tapping '\(pick.label)' at \(pick.point) didn't show React, so the point is not a working tap target")
-
-        // Dismiss: the app has no deselect, so relaunch to clear the selection.
-        app.terminate()
-        app.launch()
-        XCTAssertFalse(app.buttons["react"].waitForExistence(timeout: 2), "React was still showing after relaunch")
-
-        // Roster open, same point, the tap reaches the same message.
-        openRoster(app)
-        let roster = app.descendants(matching: .any)["presence-strip"]
-        XCTAssertTrue(roster.frame.contains(pick.point), "The roster moved off the point \(pick.point), roster \(roster.frame)")
-        let kids = rosterKidFrames(app)
-        XCTAssertFalse(kids.contains { $0.insetBy(dx: -4, dy: -4).contains(pick.point) }, "The point \(pick.point) is now on a roster control, kids \(kids)")
-        let button = messageButton(app, label: pick.label)
-        XCTAssertTrue(button.frame.contains(pick.point), "The point \(pick.point) left '\(pick.label)' \(button.frame) with the roster open")
-        let voice = app.buttons["voice-room-pill"]
-        let voiceLabel = voice.exists ? voice.label : nil
-        tap(app, at: pick.point)
-        XCTAssertTrue(app.buttons["react"].waitForExistence(timeout: 3), "The tap on the roster's empty area at \(pick.point) did not reach '\(pick.label)' under it")
-        XCTAssertTrue(roster.exists, "The tap closed the roster, so it hit a roster control")
-        XCTAssertFalse(app.descendants(matching: .any)["squad-count"].exists, "The tap opened the squad panel, so it hit a roster row or 'more'")
-        XCTAssertFalse(app.descendants(matching: .any)["whos-in-sheet"].exists, "The tap opened Who's in, so it hit a roster row, 'more', or Who's in")
-        if let voiceLabel {
-            XCTAssertEqual(app.buttons["voice-room-pill"].label, voiceLabel, "The tap toggled the voice room")
-        }
-    }
-
-    private struct RosterTapPoint {
-        let point: CGPoint
-        let label: String
-    }
-
-    private func openRoster(_ app: XCUIApplication) {
-        let toggle = app.buttons["presence-toggle"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 15))
-        toggle.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["presence-strip"].waitForExistence(timeout: 5), "The roster didn't open")
-    }
-
-    private func rosterFrame(_ app: XCUIApplication) -> CGRect {
-        app.descendants(matching: .any)["presence-strip"].frame
-    }
-
-    /// Every element inside the roster (rows, their text, the voice pill, "more").
-    private func rosterKidFrames(_ app: XCUIApplication) -> [CGRect] {
-        let roster = app.descendants(matching: .any)["presence-strip"]
-        let whole = roster.frame
-        return roster.descendants(matching: .any).allElementsBoundByIndex
-            .map(\.frame)
-            .filter { !$0.isEmpty && $0 != whole }
-    }
-
-    /// Buttons in the message list that are not part of the roster. The control tap
-    /// checks the chosen one is hittable with the roster closed.
-    private func messageButtons(_ app: XCUIApplication) -> [XCUIElement] {
-        let kids = Set(rosterKidFrames(app).map { "\($0)" })
-        return app.scrollViews["message-list"].buttons.allElementsBoundByIndex.filter { button in
-            let id = button.identifier
-            return !id.hasPrefix("presence-") && id != "voice-room-pill"
-                && !button.label.isEmpty
-                && !kids.contains("\(button.frame)")
-        }
-    }
-
-    private func messageButtonFrames(_ app: XCUIApplication) -> [String] {
-        messageButtons(app).map { "'\($0.label)' \($0.frame)" }
-    }
-
-    private func messageButton(_ app: XCUIApplication, label: String) -> XCUIElement {
-        app.scrollViews["message-list"].buttons.matching(NSPredicate(format: "label == %@", label)).firstMatch
-    }
-
-    /// Scans the open roster for a point inside a hittable message button that no
-    /// roster element covers, with a 4 pt margin on every side.
-    private func emptyRosterPointOverMessageButton(_ app: XCUIApplication) -> RosterTapPoint? {
-        let roster = rosterFrame(app).insetBy(dx: 4, dy: 4)
-        let list = app.scrollViews["message-list"].frame
-        let kids = rosterKidFrames(app).map { $0.insetBy(dx: -4, dy: -4) }
-        for button in messageButtons(app) {
-            let area = roster.intersection(button.frame.insetBy(dx: 4, dy: 4)).intersection(list)
-            guard !area.isNull, !area.isEmpty else { continue }
-            var y = area.minY
-            while y <= area.maxY {
-                var x = area.maxX
-                while x >= area.minX {
-                    let point = CGPoint(x: x, y: y)
-                    if !kids.contains(where: { $0.contains(point) }) {
-                        return RosterTapPoint(point: point, label: button.label)
-                    }
-                    x -= 4
-                }
-                y += 4
-            }
-        }
-        return nil
-    }
-
-    private func tap(_ app: XCUIApplication, at point: CGPoint) {
-        let origin = app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0))
-        origin.withOffset(CGVector(dx: point.x, dy: point.y)).tap()
     }
 
     // MARK: Message polish (redesign S3)
@@ -2245,7 +2041,7 @@ final class AccessibilityUITests: XCTestCase {
         let app = launchChat("chatEmpty")
         let empty = element("chat-empty", in: app)
         XCTAssertTrue(empty.waitForExistence(timeout: 15), "No empty state")
-        XCTAssertEqual(empty.label, "No messages yet. Say hi to the squad.")
+        XCTAssertEqual(empty.label, "No messages yet. Say hi to the group.")
         XCTAssertFalse(app.buttons["jump-to-latest"].exists)
     }
 
@@ -2500,7 +2296,7 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertEqual(leaked.count, 0, "An SF Symbol name is exposed to VoiceOver: \(leaked.allElementsBoundByIndex.map(\.label))")
     }
 
-    // MARK: Call sheet and the keyboard
+    // MARK: Waiting
 
     /// Polls a condition on the main run loop; true as soon as it holds, false at the timeout.
     private func waitUntil(timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
@@ -2512,73 +2308,7 @@ final class AccessibilityUITests: XCTestCase {
         return true
     }
 
-    /// XCUITest's keyboard frame leaves out the QuickType bar (about 43 pt), so
-    /// Call spots must end at least 50 pt above the keyboard's top to clear it.
-    private func assertCallSheetClearsTheKeyboardBar(largeText: Bool, file: StaticString = #filePath, line: UInt = #line) {
-        let app = XCUIApplication()
-        app.launchArguments = ["-backend", "mock", "-scenario", "spotHistory"] + (largeText ? ["-uitest-largeText"] : [])
-        app.launch()
-        tapMenuCallSpots(app, file: file, line: line)
-        let game = app.textFields["spot-sheet-game"]
-        XCTAssertTrue(game.waitForExistence(timeout: 5), "The call sheet's game field was missing", file: file, line: line)
-        // The sheet animates up; at accessibility sizes it must open large enough that the
-        // field is on screen without dragging. Wait for that, and fail with the frame if not.
-        XCTAssertTrue(waitUntil(timeout: 5) { game.isHittable }, "The game field is off screen when the sheet opens: \(game.frame) in window \(app.windows.firstMatch.frame)", file: file, line: line)
-        let keyboard = app.keyboards.firstMatch
-        game.tap()
-        if !keyboard.waitForExistence(timeout: 3) {
-            // One retry covers a tap that landed while the sheet was still settling.
-            game.tap()
-        }
-        XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "The keyboard didn't come up after tapping the game field at \(game.frame)", file: file, line: line)
-        let call = app.buttons["spot-sheet-call"]
-        XCTAssertTrue(call.waitForExistence(timeout: 5), file: file, line: line)
-        // Let the sheet finish moving to the large detent.
-        let deadline = Date().addingTimeInterval(3)
-        while Date() < deadline, call.frame.maxY > keyboard.frame.minY - 50 {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        }
-        XCTAssertTrue(call.isHittable, "Call spots is covered with the keyboard up: \(call.frame)", file: file, line: line)
-        XCTAssertLessThanOrEqual(
-            call.frame.maxY,
-            keyboard.frame.minY - 50,
-            "Call spots \(call.frame) sits on the QuickType bar; keyboard keys start at \(keyboard.frame.minY)",
-            file: file,
-            line: line
-        )
-        XCTAssertGreaterThanOrEqual(call.frame.minY, game.frame.maxY - 1, "Call spots covers the game field", file: file, line: line)
-        XCTAssertTrue(game.isHittable, "The game field went off screen with the keyboard up", file: file, line: line)
-        call.tap()
-        XCTAssertTrue(call.waitForNonExistence(timeout: 5), "Calling from the keyboard-up sheet didn't work", file: file, line: line)
-    }
-
-    func testCallSheetButtonClearsTheKeyboardBarAtLargeText() {
-        assertCallSheetClearsTheKeyboardBar(largeText: true)
-    }
-
-    func testCallSheetButtonClearsTheKeyboardBarAtDefaultSize() {
-        assertCallSheetClearsTheKeyboardBar(largeText: false)
-    }
-
-    // MARK: Who's in (redesign S4)
-
-    /// Opens Who's in from the composer's + menu, which is there at every text size.
-    /// `waitForSheet: false` returns right after the tap, for checks that can't wait.
-    private func openWhosInFromMenu(_ app: XCUIApplication, waitForSheet: Bool = true, file: StaticString = #filePath, line: UInt = #line) {
-        let plus = app.buttons["composer-plus"]
-        XCTAssertTrue(plus.waitForExistence(timeout: 15), "The composer's + menu was missing", file: file, line: line)
-        plus.tap()
-        let item = app.buttons["composer-whos-in"]
-        if item.waitForExistence(timeout: 3) {
-            item.tap()
-        } else {
-            let fallback = app.collectionViews.buttons["Who's in"]
-            XCTAssertTrue(fallback.waitForExistence(timeout: 3), "Who's in was not in the + menu", file: file, line: line)
-            fallback.tap()
-        }
-        guard waitForSheet else { return }
-        XCTAssertTrue(element("whos-in-sheet", in: app).waitForExistence(timeout: 5), "Who's in didn't open", file: file, line: line)
-    }
+    // MARK: Hit sizes
 
     /// Floating point puts a 44pt frame at 43.99999999999994, so every 44pt size
     /// check goes through here and allows 0.5pt.
@@ -2590,241 +2320,6 @@ final class AccessibilityUITests: XCTestCase {
 
     private func assertHitTarget(_ target: XCUIElement, _ what: String, file: StaticString = #filePath, line: UInt = #line) {
         assertHitSize(target.frame.height, "\(what) is too short to hit: \(target.frame)", file: file, line: line)
-    }
-
-    /// Drags Who's in up to its large detent. iOS 26 draws a medium sheet's content
-    /// at about 96% scale (342/354), so a real 44pt button measures 42.25 there;
-    /// at the large detent it measures true. Sizes are checked after this.
-    private func expandWhosIn(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
-        let sheet = element("whos-in-sheet", in: app)
-        let window = app.windows.firstMatch
-        let tall = { sheet.frame.height >= window.frame.height * 0.7 }
-        for _ in 0..<3 where !tall() {
-            // Grab just inside the sheet's top. Never above it: that's the dimmed
-            // background, and a tap there dismisses the sheet. Pulling up on the
-            // content at its top resizes a medium sheet before it scrolls.
-            let origin = window.coordinate(withNormalizedOffset: .zero)
-            let grab = origin.withOffset(CGVector(dx: window.frame.midX, dy: sheet.frame.minY + 8))
-            let top = origin.withOffset(CGVector(dx: window.frame.midX, dy: 60))
-            grab.press(forDuration: 0.05, thenDragTo: top, withVelocity: .fast, thenHoldForDuration: 0.2)
-            _ = waitUntil(timeout: 2, tall)
-        }
-        XCTAssertTrue(tall(), "Who's in didn't reach its large detent: \(sheet.frame)", file: file, line: line)
-    }
-
-    private func whosInRow(_ name: String, in app: XCUIApplication) -> XCUIElement {
-        element("whos-in-row-\(name)", in: app)
-    }
-
-    /// Short slow drags inside the sheet until the element is hittable. Bounded.
-    @discardableResult
-    private func scrollSheet(to target: XCUIElement, in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) -> Bool {
-        let sheet = element("whos-in-sheet", in: app)
-        for step in 0..<16 {
-            if target.exists && target.isHittable { return true }
-            let towardTop = step >= 10
-            let upper = sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.35))
-            let lower = sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.92, dy: 0.7))
-            let (from, to) = towardTop ? (upper, lower) : (lower, upper)
-            from.press(forDuration: 0.05, thenDragTo: to, withVelocity: .slow, thenHoldForDuration: 0.1)
-        }
-        let found = target.exists && target.isHittable
-        XCTAssertTrue(found, "Couldn't scroll the sheet to \(target)", file: file, line: line)
-        return found
-    }
-
-    func testWhosInShowsEachSourceWithItsLabel() {
-        let app = launchChat("whosIn")
-        let pill = app.buttons["whos-in-open"]
-        XCTAssertTrue(pill.waitForExistence(timeout: 15), "No Who's in pill in the strip")
-        XCTAssertTrue(waitForLabel(pill, "label == \"Who's in, 2 on\""), "The pill should count who's on: \(pill.label)")
-        pill.tap()
-        XCTAssertTrue(element("whos-in-sheet", in: app).waitForExistence(timeout: 5))
-        XCTAssertTrue(element("whos-in-section-now", in: app).waitForExistence(timeout: 5), "No On now section")
-        XCTAssertEqual(element("whos-in-section-now", in: app).label, "On now · 2")
-
-        let alex = whosInRow("Alex", in: app)
-        guard scrollSheet(to: alex, in: app) else { return }
-        XCTAssertTrue(alex.label.contains("on now until"), alex.label)
-        XCTAssertTrue(alex.label.contains("says Halo Infinite on Xbox, from their check-in"), "A typed console must say it's a check-in: \(alex.label)")
-        let jordan = whosInRow("Jordan", in: app)
-        guard scrollSheet(to: jordan, in: app) else { return }
-        XCTAssertTrue(jordan.label.contains("playing Counter-Strike 2 on Steam"), jordan.label)
-        let sam = whosInRow("Sam", in: app)
-        guard scrollSheet(to: sam, in: app) else { return }
-        XCTAssertTrue(sam.label.contains("on later, around"), sam.label)
-        let casey = whosInRow("Casey", in: app)
-        guard scrollSheet(to: casey, in: app) else { return }
-        XCTAssertTrue(casey.label.contains("can't play"), casey.label)
-        XCTAssertTrue(casey.label.contains("Steam profile private"), casey.label)
-
-        let rows = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'whos-in-row-'"))
-        XCTAssertEqual(rows.count, 4, "Everyone but you gets one row, each one element")
-        for row in rows.allElementsBoundByIndex {
-            XCTAssertFalse(row.label.lowercased().contains("online"), "Who's in claimed online: \(row.label)")
-        }
-        let steamLine = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Steam: '")).firstMatch
-        guard scrollSheet(to: steamLine, in: app) else { return }
-        XCTAssertEqual(steamLine.label, "Steam: the game on linked public profiles. PC only.")
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Xbox and PlayStation: no presence'")).firstMatch.exists)
-        app.buttons["whos-in-done"].tap()
-        XCTAssertTrue(element("whos-in-sheet", in: app).waitForNonExistence(timeout: 5))
-    }
-
-    func testCheckInNowOnALiveLikeServer() {
-        let app = launchChat("whosInBasic")
-        openWhosInFromMenu(app)
-        let status = element("check-in-status", in: app)
-        XCTAssertTrue(status.waitForExistence(timeout: 5))
-        XCTAssertEqual(status.label, "You haven't checked in.")
-        expandWhosIn(app)
-        XCTAssertTrue(element("check-in-details-missing", in: app).exists, "This server can't keep a game; the sheet should say so")
-        XCTAssertFalse(app.textFields["check-in-game"].exists, "No game field without 0022")
-        XCTAssertTrue(element("check-in-honor", in: app).exists, "The honor-system note is missing")
-        let now = app.buttons["check-in-now"]
-        XCTAssertTrue(now.isHittable)
-        assertHitTarget(now, "I'm on now")
-        now.tap()
-        XCTAssertTrue(waitForLabel(status, "label BEGINSWITH \"You're on until\""), "Checking in didn't update your status: \(status.label)")
-        let clear = app.buttons["check-in-clear"]
-        XCTAssertTrue(clear.waitForExistence(timeout: 5), "No Clear after checking in")
-        XCTAssertTrue(element("whos-in-sources", in: app).exists)
-        app.buttons["whos-in-done"].tap()
-        let pill = app.buttons["whos-in-open"]
-        XCTAssertTrue(waitForLabel(pill, "label == \"Who's in, 3 on\""), "Your check-in didn't reach the strip: \(pill.label)")
-        let me = app.buttons["presence-You"]
-        XCTAssertTrue(me.label.contains("on now, from their check-in"), me.label)
-        pill.tap()
-        XCTAssertTrue(clear.waitForExistence(timeout: 5))
-        clear.tap()
-        XCTAssertTrue(waitForLabel(status, "label == \"You haven't checked in.\""), "Clear didn't remove your check-in")
-    }
-
-    func testCheckInLaterWithGameAndConsole() {
-        let app = launchChat("whosIn")
-        openWhosInFromMenu(app)
-        let game = app.textFields["check-in-game"]
-        XCTAssertTrue(game.waitForExistence(timeout: 5), "No game field on a server with 0022")
-        expandWhosIn(app)
-        game.tap()
-        game.typeText("Apex")
-        app.buttons["check-in-later"].tap()
-        let options = app.buttons.matching(identifier: "check-in-later-option")
-        XCTAssertTrue(options.firstMatch.waitForExistence(timeout: 5), "Later didn't offer times")
-        XCTAssertGreaterThanOrEqual(options.count, 3)
-        for option in options.allElementsBoundByIndex where option.isHittable {
-            assertHitTarget(option, "A later time")
-        }
-        let first = options.firstMatch
-        XCTAssertTrue(first.label.hasPrefix("In 30 min, around "), first.label)
-        first.tap()
-        let status = element("check-in-status", in: app)
-        XCTAssertTrue(waitForLabel(status, "label BEGINSWITH \"You said around\""), "Later didn't save: \(status.label)")
-        XCTAssertEqual((game.value as? String) ?? "", "Apex", "The typed game should stay in the field")
-    }
-
-    func testWhosInLoadingThenRows() {
-        // The mock's read takes 9s (whosInSlow), so the loading row is up well past
-        // the first look. Look straight after the tap, not after waiting for the sheet.
-        let app = launchChat("whosInSlow")
-        openWhosInFromMenu(app, waitForSheet: false)
-        let loading = element("whos-in-loading", in: app)
-        XCTAssertTrue(loading.waitForExistence(timeout: 5), "No loading row")
-        XCTAssertTrue(loading.label.contains("Loading who's in"), loading.label)
-        XCTAssertFalse(element("whos-in-section-none", in: app).exists, "Loading must not claim nobody checked in")
-        XCTAssertTrue(element("whos-in-section-now", in: app).waitForExistence(timeout: 20), "Check-ins never arrived")
-        XCTAssertTrue(loading.waitForNonExistence(timeout: 5))
-    }
-
-    func testWhosInErrorOffersRetryThenLoads() {
-        let app = launchChat("whosInFailed")
-        openWhosInFromMenu(app)
-        let error = element("whos-in-error", in: app)
-        XCTAssertTrue(error.waitForExistence(timeout: 5), "No error row")
-        XCTAssertEqual(error.label, "Who's in couldn't load. The server didn't answer.")
-        XCTAssertFalse(element("whos-in-section-none", in: app).exists, "A failed read must not look like nobody checked in")
-        expandWhosIn(app)
-        let retry = app.buttons["whos-in-retry"]
-        XCTAssertTrue(waitUntil(timeout: 5) { retry.isHittable }, "Retry isn't on screen: \(retry.frame)")
-        assertHitTarget(retry, "Retry")
-        retry.tap()
-        XCTAssertTrue(element("whos-in-section-now", in: app).waitForExistence(timeout: 5), "Retry didn't load")
-        XCTAssertTrue(error.waitForNonExistence(timeout: 5))
-    }
-
-    func testWhosInSquadOfOneSaysSo() {
-        let app = launchChat("whosInEmpty")
-        openWhosInFromMenu(app)
-        let empty = element("whos-in-empty", in: app)
-        XCTAssertTrue(empty.waitForExistence(timeout: 5), "No empty state")
-        XCTAssertEqual(empty.label, "Just you so far. Invite the squad from the squad panel.")
-        XCTAssertTrue(app.buttons["check-in-now"].exists, "You can still check in alone")
-    }
-
-    func testWithoutCheckInsOnTheServerNothingIsClaimed() {
-        let app = launchChat("whosInNoServer")
-        let note = element("presence-untracked", in: app)
-        XCTAssertTrue(note.waitForExistence(timeout: 15), "The untracked pill should stay without check-ins")
-        XCTAssertEqual(note.label, "Presence isn't live yet")
-        openWhosInFromMenu(app)
-        let unavailable = element("check-in-unavailable", in: app)
-        XCTAssertTrue(unavailable.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["check-in-now"].exists, "No check-in buttons without the table")
-        let line = app.staticTexts["Check-ins: not set up on this server."]
-        XCTAssertTrue(scrollSheet(to: line, in: app))
-    }
-
-    func testWhosInStaysUsableAtLargeText() {
-        let app = launchChat("whosIn", largeText: true)
-        let toggle = app.buttons["presence-toggle"]
-        XCTAssertTrue(toggle.waitForExistence(timeout: 15))
-        toggle.tap()
-        let open = app.buttons["whos-in-open"]
-        XCTAssertTrue(open.waitForExistence(timeout: 5), "No Who's in in the large-text roster")
-        open.tap()
-        XCTAssertTrue(element("whos-in-sheet", in: app).waitForExistence(timeout: 5))
-        let width = app.windows.firstMatch.frame.width
-        let now = app.buttons["check-in-now"]
-        guard scrollSheet(to: now, in: app) else { return }
-        assertHitTarget(now, "I'm on now")
-        XCTAssertLessThanOrEqual(now.frame.maxX, width + 1, "I'm on now runs off screen at AX5: \(now.frame)")
-        let cant = app.buttons["check-in-cant"]
-        guard scrollSheet(to: cant, in: app) else { return }
-        XCTAssertLessThanOrEqual(cant.frame.maxX, width + 1, "Can't play runs off screen at AX5: \(cant.frame)")
-        let alex = whosInRow("Alex", in: app)
-        guard scrollSheet(to: alex, in: app) else { return }
-        XCTAssertLessThanOrEqual(alex.frame.maxX, width + 1, "Alex's row runs off screen: \(alex.frame)")
-        XCTAssertGreaterThan(alex.frame.height, 60, "Alex's row didn't wrap at AX5: \(alex.frame)")
-        XCTAssertTrue(alex.label.contains("from their check-in"), alex.label)
-        let jordan = whosInRow("Jordan", in: app)
-        guard scrollSheet(to: jordan, in: app) else { return }
-        XCTAssertLessThanOrEqual(jordan.frame.maxX, width + 1)
-        let done = app.buttons["whos-in-done"]
-        XCTAssertTrue(done.isHittable, "Done isn't reachable at AX5")
-        done.tap()
-        XCTAssertTrue(element("whos-in-sheet", in: app).waitForNonExistence(timeout: 5))
-    }
-
-    func testWhosInCheckInWorksAtLargeText() {
-        let app = launchChat("whosInBasic", largeText: true)
-        openWhosInFromMenu(app)
-        let now = app.buttons["check-in-now"]
-        guard scrollSheet(to: now, in: app) else { return }
-        now.tap()
-        let status = element("check-in-status", in: app)
-        guard scrollSheet(to: status, in: app) else { return }
-        XCTAssertTrue(waitForLabel(status, "label BEGINSWITH \"You're on until\""), status.label)
-        XCTAssertLessThanOrEqual(status.frame.maxX, app.windows.firstMatch.frame.width + 1)
-    }
-
-    func testWhosInErrorRetryIsInViewAtLargeText() {
-        let app = launchChat("whosInFailed", largeText: true)
-        openWhosInFromMenu(app)
-        let retry = app.buttons["whos-in-retry"]
-        XCTAssertTrue(retry.waitForExistence(timeout: 5))
-        XCTAssertTrue(waitUntil(timeout: 5) { retry.isHittable }, "Retry starts off screen at AX5: \(retry.frame)")
-        assertHitTarget(retry, "Retry")
-        XCTAssertLessThanOrEqual(retry.frame.maxX, app.windows.firstMatch.frame.width + 1)
     }
 
 
@@ -2907,7 +2402,7 @@ final class AccessibilityUITests: XCTestCase {
         save.tap()
         let squadName = app.textFields["squad-name"]
         XCTAssertTrue(squadName.waitForExistence(timeout: 5), "No squad step after the profile")
-        XCTAssertEqual(element("onboarding-header", in: app).label, "Find your squad, Step 4 of 4")
+        XCTAssertEqual(element("onboarding-header", in: app).label, "Find your group, Step 4 of 4")
         squadName.tap()
         squadName.typeText("Friday")
         let create = app.buttons["create-squad"]
@@ -3025,7 +2520,7 @@ final class AccessibilityUITests: XCTestCase {
         save.tap()
         let error = element("onboarding-name-error", in: app)
         XCTAssertTrue(error.waitForExistence(timeout: 3), "An empty name moved on")
-        XCTAssertEqual(error.label, "Add the name your squad will see.")
+        XCTAssertEqual(error.label, "Add the name your group will see.")
         XCTAssertFalse(app.textFields["squad-name"].exists)
     }
 
@@ -3104,7 +2599,7 @@ final class AccessibilityUITests: XCTestCase {
         let create = app.buttons["create-squad"]
         XCTAssertTrue(create.waitForExistence(timeout: 5), "No squad step at AX5")
         guard revealInOnboarding(create, in: app, container: "onboarding-squad") else { return }
-        assertHitTarget(create, "Create squad")
+        assertHitTarget(create, "Create group")
         XCTAssertLessThanOrEqual(create.frame.maxX, width + 1)
     }
 
@@ -3162,7 +2657,7 @@ final class AccessibilityUITests: XCTestCase {
         save.tap()
         let error = element("onboarding-name-error", in: app)
         XCTAssertTrue(error.waitForExistence(timeout: 3), "An empty name moved on")
-        XCTAssertEqual(error.label, "Add the name your squad will see.")
+        XCTAssertEqual(error.label, "Add the name your group will see.")
         assertErrorAboveKeyboard(error, focusing: name, in: app)
     }
 }

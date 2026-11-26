@@ -7,7 +7,7 @@ enum BackendMode: String {
 
 enum BackendFeature: String, Equatable {
     case profile = "Profiles"
-    case squad = "Squads"
+    case squad = "Groups"
     case messages = "Chat"
     case readState = "Read markers"
     case checkIns = "Check-ins"
@@ -176,7 +176,7 @@ enum SignInCode {
 enum SquadTitle {
     static func line(name: String, memberCount: Int, cap: Int = 8) -> String {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let title = trimmed.isEmpty ? "Your squad" : trimmed
+        let title = trimmed.isEmpty ? "Your group" : trimmed
         return "\(title) · \(memberCount) of \(cap)"
     }
 }
@@ -190,7 +190,7 @@ enum SquadName {
 
     static func validationError(_ raw: String) -> String? {
         let name = normalized(raw)
-        if name.isEmpty { return "Enter a squad name." }
+        if name.isEmpty { return "Enter a group name." }
         if name.count > maxLength { return "Use 40 characters or fewer." }
         return nil
     }

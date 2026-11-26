@@ -260,7 +260,7 @@ struct OnboardingProfileStep: View {
 
     private var form: some View {
         VStack(alignment: .leading, spacing: SQSpace.m) {
-            Text("This is how your squad sees you. You can change it later in the squad panel.")
+            Text("This is how your group sees you. You can change it later in Members.")
                 .font(SQType.detail)
                 .foregroundStyle(SQColor.muted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -302,7 +302,7 @@ struct OnboardingProfileStep: View {
                 .foregroundStyle(SQColor.ink)
                 .accessibilityAddTraits(.isHeader)
             if draft.games.isEmpty {
-                Text("No games yet. Add the ones you play so your squad knows what to call.")
+                Text("No games yet. Add the ones you play so your group knows what to call.")
                     .font(SQType.caption)
                     .foregroundStyle(SQColor.subtle)
                     .fixedSize(horizontal: false, vertical: true)
@@ -411,7 +411,7 @@ struct OnboardingSquadStep: View {
                     offline
                 } else {
                     OnboardingHeader(step: .squad, showsProgress: model.onboardedThisSession)
-                    Text("You're not in a squad yet.")
+                    Text("You're not in a group yet.")
                         .font(SQType.detail)
                         .foregroundStyle(SQColor.muted)
                         .fixedSize(horizontal: false, vertical: true)
@@ -444,7 +444,7 @@ struct OnboardingSquadStep: View {
                 .foregroundStyle(SQColor.ink)
                 .accessibilityAddTraits(.isHeader)
                 .accessibilityIdentifier("reconnecting")
-            Text("You're offline or the server didn't answer. Your squad will load when the connection is back.")
+            Text("You're offline or the server didn't answer. Your group will load when the connection is back.")
                 .font(SQType.detail)
                 .foregroundStyle(SQColor.muted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -480,18 +480,18 @@ struct OnboardingSquadStep: View {
 
     private var create: some View {
         VStack(alignment: .leading, spacing: SQSpace.s) {
-            Text("Or start a squad")
+            Text("Or start a group")
                 .font(SQType.section)
                 .foregroundStyle(SQColor.ink)
                 .accessibilityAddTraits(.isHeader)
-            OnboardingField(label: "Squad name") {
+            OnboardingField(label: "Group name") {
                 TextField("Friday crew", text: Binding(get: { model.squadName }, set: { model.squadName = $0 }))
                     .submitLabel(.done)
                     .onSubmit { Task { await model.createSquad() } }
                     .accessibilityIdentifier("squad-name")
             }
             OnboardingError(text: model.squadNameError, identifier: "squad-name-error", motion: motion)
-            OnboardingPrimaryButton(title: "Create squad", busyTitle: "Creating squad…", busy: model.onboardingAction == .creating, identifier: "create-squad") {
+            OnboardingPrimaryButton(title: "Create group", busyTitle: "Creating group…", busy: model.onboardingAction == .creating, identifier: "create-squad") {
                 Task { await model.createSquad() }
             }
             .disabled(model.busy)

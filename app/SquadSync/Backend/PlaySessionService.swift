@@ -329,6 +329,17 @@ enum PlaySessionSeed {
     static let cancelledId = UUID(uuidString: "00000000-0000-0000-0000-000000000502")!
     static let pastId = UUID(uuidString: "00000000-0000-0000-0000-000000000503")!
     static let laterId = UUID(uuidString: "00000000-0000-0000-0000-000000000504")!
+    static let startingId = UUID(uuidString: "00000000-0000-0000-0000-000000000505")!
+
+    /// Alex's Warzone session started two minutes ago; Alex is in, you haven't answered.
+    static func startingNow(squadId: UUID, creator: UUID, now: Date) -> PlaySession {
+        PlaySession(
+            id: startingId, squadId: squadId, creatorId: creator, game: "Warzone",
+            startsAt: now.addingTimeInterval(-2 * 60), durationMinutes: nil, note: nil,
+            cancelledAt: nil, createdAt: now.addingTimeInterval(-6 * 60 * 60),
+            rsvps: [PlaySessionRSVP(userId: creator, response: .going, updatedAt: nil)]
+        )
+    }
 
     /// Alex scheduled tonight (two in, one out, you haven't answered), plus a
     /// later one, a cancelled one and one that's over.

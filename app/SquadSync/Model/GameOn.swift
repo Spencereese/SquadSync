@@ -389,3 +389,67 @@ enum HomePrompts {
     static let addPhoto = "Add photo"
     static let notNow = "Not now"
 }
+
+/// Mock Game ons for the launch scenarios and UI tests.
+enum GameOnSeed {
+    static let alexCall = UUID(uuidString: "00000000-0000-0000-0000-00000000C001")!
+    static let jordanCall = UUID(uuidString: "00000000-0000-0000-0000-00000000C002")!
+    static let mineCall = UUID(uuidString: "00000000-0000-0000-0000-00000000C003")!
+
+    /// Alex is on Warzone and needs one more. `full` adds Jordan; `idle` has sat
+    /// untouched past the three hours.
+    static func alexWarzone(squadId: UUID, now: Date, full: Bool = false, idle: Bool = false) -> GameOn {
+        let calledAt = now.addingTimeInterval(idle ? -4 * 3600 : -4 * 60)
+        var seats = [GameOnSeat(userId: SpotSeed.alex, isIn: true, starter: true, ready: false, updatedAt: calledAt)]
+        if full {
+            seats.append(GameOnSeat(userId: SpotSeed.jordan, isIn: true, starter: false, ready: true, updatedAt: calledAt.addingTimeInterval(60)))
+        }
+        return GameOn(
+            id: alexCall,
+            squadId: squadId,
+            callerId: SpotSeed.alex,
+            game: "Warzone",
+            calledAt: calledAt,
+            idleUntil: calledAt.addingTimeInterval(GameOnRules.idleWindow),
+            seatTarget: 2,
+            status: .open,
+            closedAt: nil,
+            seats: seats
+        )
+    }
+
+    static func jordanApex(squadId: UUID, now: Date) -> GameOn {
+        let calledAt = now.addingTimeInterval(-2 * 60)
+        return GameOn(
+            id: jordanCall,
+            squadId: squadId,
+            callerId: SpotSeed.jordan,
+            game: "Apex Legends",
+            calledAt: calledAt,
+            idleUntil: calledAt.addingTimeInterval(GameOnRules.idleWindow),
+            seatTarget: 3,
+            status: .open,
+            closedAt: nil,
+            seats: [GameOnSeat(userId: SpotSeed.jordan, isIn: true, starter: true, ready: false, updatedAt: calledAt)]
+        )
+    }
+
+    static func mine(viewerId: UUID, squadId: UUID, now: Date) -> GameOn {
+        let calledAt = now.addingTimeInterval(-3 * 60)
+        return GameOn(
+            id: mineCall,
+            squadId: squadId,
+            callerId: viewerId,
+            game: "Call of Duty",
+            calledAt: calledAt,
+            idleUntil: calledAt.addingTimeInterval(GameOnRules.idleWindow),
+            seatTarget: 4,
+            status: .open,
+            closedAt: nil,
+            seats: [
+                GameOnSeat(userId: viewerId, isIn: true, starter: true, ready: false, updatedAt: calledAt),
+                GameOnSeat(userId: SpotSeed.sam, isIn: true, starter: false, ready: false, updatedAt: calledAt.addingTimeInterval(30))
+            ]
+        )
+    }
+}

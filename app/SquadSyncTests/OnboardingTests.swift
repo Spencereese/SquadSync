@@ -29,7 +29,7 @@ final class OnboardingTests: XCTestCase {
         XCTAssertEqual(OnboardingStep.squad.progress, "Step 4 of 4")
         XCTAssertNil(OnboardingStep.home.progress)
         XCTAssertEqual(OnboardingStep.code.spokenHeader(), "Enter your code, Step 2 of 4")
-        XCTAssertEqual(OnboardingStep.squad.spokenHeader(showsProgress: false), "Find your squad")
+        XCTAssertEqual(OnboardingStep.squad.spokenHeader(showsProgress: false), "Find your group")
         XCTAssertEqual(OnboardingStep.home.spokenHeader(), "SquadSync")
     }
 
@@ -163,7 +163,7 @@ final class OnboardingTests: XCTestCase {
 
     func testProfileNeedsANameAndAGame() {
         var draft = ProfileDraft(name: "  ", defaultGame: "")
-        XCTAssertEqual(draft.nameError, "Add the name your squad will see.")
+        XCTAssertEqual(draft.nameError, "Add the name your group will see.")
         XCTAssertEqual(draft.gameError, "Pick a default game.")
         XCTAssertFalse(draft.isValid)
         draft.name = String(repeating: "x", count: 41)

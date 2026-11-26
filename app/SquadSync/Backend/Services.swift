@@ -57,6 +57,8 @@ struct BackendConfig: Equatable {
     /// Info.plist `SQ8SteamPresence`. Off until sq8-steam-presence is deployed
     /// (that needs Spencer's yes); while off the app never calls it.
     var steamPresence: Bool = false
+    /// Info.plist `SQ8OTPLength`. Default 6, clamped to 6...10.
+    var otpLength: Int = OTPEntry.defaultLength
 
     var url: URL? {
         let text = urlText.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -86,7 +88,8 @@ struct BackendConfig: Equatable {
         BackendConfig(
             urlText: info["SupabaseURL"] as? String ?? "",
             anonKey: info["SupabaseAnonKey"] as? String ?? "",
-            steamPresence: flag(info["SQ8SteamPresence"])
+            steamPresence: flag(info["SQ8SteamPresence"]),
+            otpLength: OTPEntry.length(from: info)
         )
     }
 

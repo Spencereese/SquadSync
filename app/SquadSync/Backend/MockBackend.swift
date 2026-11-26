@@ -17,8 +17,9 @@ final class MockAuthService: AuthService {
     private let store: SessionStoring
     private let lock = NSLock()
     private var pendingEmail: String?
-    /// nil accepts any well-formed code (the older mock behavior).
-    private let acceptedCode: String?
+    /// nil accepts any well-formed code (the older mock behavior). Tests can
+    /// point this at an 8-digit code when the configured length is 8.
+    var acceptedCode: String?
     /// Thrown by every send, e.g. `.reconnecting` for offline.
     private let sendFailure: BackendFailure?
     private let delay: TimeInterval

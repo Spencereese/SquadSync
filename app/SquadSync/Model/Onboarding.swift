@@ -67,17 +67,55 @@ enum SignInEmail {
 }
 
 /// The code field. Supabase sends 6 digits by default; a project can send up to 10.
+/// The expected length comes from Info.plist `SQ8OTPLength` (default 6, clamped
+/// to 6...10). Auto-submit only fires at that length, so a longer server setting
+/// is a config change and does not break sign-in.
 enum OTPEntry {
-    static let length = 6
+    static let defaultLength = 6
+    static let minLength = 6
     static let maxLength = 10
 
     /// Digits only, so a pasted "123 456" or "Your code is 123456" still works.
+    /// Keeps the whole code up to `maxLength`, not only the configured length.
     static func digits(_ raw: String) -> String {
         String(raw.filter { ("0"..."9").contains($0) }.prefix(maxLength))
     }
 
-    static func isComplete(_ raw: String) -> Bool {
-        SignInCode.isValid(digits(raw))
+    /// Missing, unexpanded `$(...)`, or unreadable values stay 6.
+    static func length(from info: [String: Any]) -> Int {
+        let raw: Int?
+        if let number = info["SQ8OTPLength"] as? Int {
+            raw = number
+        } else if let number = info["SQ8OTPLength"] as? NSNumber {
+            raw = number.intValue
+        } else if let text = info["SQ8OTPLength"] as? String {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            raw = trimmed.contains("$(") ? nil : Int(trimmed)
+        } else {
+            raw = nil
+        }
+        guard let value = raw else { return defaultLength }
+        return min(max(value, minLength), maxLength)
+    }
+
+    static func isComplete(_ raw: String, length: Int = defaultLength) -> Bool {
+        let code = digits(raw)
+        return (length...maxLength).contains(code.count)
+    }
+
+    /// Auto-submit only when the field first reaches the configured length.
+    static func shouldAutoSubmit(before: Int, after: Int, length: Int, busy: Bool) -> Bool {
+        after == length && before < length && !busy
+    }
+
+    static func fieldLabel(length: Int) -> String { "\(length)-digit code" }
+
+    static func emailBlurb(length: Int) -> String {
+        "We'll email you a \(length)-digit code. No password needed."
+    }
+
+    static func incompleteMessage(length: Int) -> String {
+        "Enter the \(length)-digit code from your email."
     }
 }
 

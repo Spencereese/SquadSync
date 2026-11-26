@@ -145,7 +145,7 @@ struct OnboardingView: View {
 
     private var emailStep: some View {
         VStack(alignment: .leading, spacing: SQSpace.m) {
-            Text("We'll email you a 6-digit code. No password needed.")
+            Text(OTPEntry.emailBlurb(length: model.otpLength))
                 .font(SQType.detail)
                 .foregroundStyle(SQColor.muted)
                 .fixedSize(horizontal: false, vertical: true)
@@ -186,7 +186,7 @@ struct OnboardingView: View {
                 .foregroundStyle(SQColor.muted)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("signin-sent-to")
-            OnboardingField(label: "6-digit code") {
+            OnboardingField(label: OTPEntry.fieldLabel(length: model.otpLength)) {
                 TextField("Code", text: Binding(
                     get: { model.code },
                     set: { model.codeChanged($0) }

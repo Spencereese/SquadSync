@@ -23,5 +23,7 @@
 	<string>$(SUPABASE_ANON_KEY)</string>
 	<key>SQ8SteamPresence</key>
 	<false/>
+	<key>SQ8OTPLength</key>
+	<integer>6</integer>
 </dict>
 </plist>

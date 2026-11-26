@@ -471,7 +471,11 @@ enum Seed {
         case .noSquad, .invite, .spotCall, .spotCallMine, .spotCallNearlyFull, .spotCallExpired, .almostFull, .spotHistory, .spotServerMissing,
              .chatPolish, .chatNoReplies, .chatEmpty, .chatHistoryFailed, .chatHistorySlow, .chatLongHistory,
              .whosIn, .whosInBasic, .whosInEmpty, .whosInFailed, .whosInSlow, .whosInNoServer,
-             .onboarding, .onboardingOffline, .onboardingSlow, .onboardingProfile:
+             .onboarding, .onboardingOffline, .onboardingSlow, .onboardingProfile,
+             .playSessions, .playSessionsEmpty, .playSessionsMissing, .playSessionsFailed,
+             .gameOn, .gameOnFull, .gameOnMine, .gameOnTwo, .gameOnExpired, .gameOnServerMissing, .gameOnFailed,
+             .welcome, .smallGroup, .plannedStarting:
+            // Chat, Game on and play-session seeds don't use the prototype party card.
             seats = []
         }
         return Party(

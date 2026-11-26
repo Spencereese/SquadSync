@@ -790,7 +790,7 @@ struct MemberAvatar: View {
     var body: some View {
         ZStack {
             Circle().fill(SQColor.surface3)
-            Text(SpotThread.initial(name))
+            Text(ChatBubbleSide.initial(name))
                 .font(.system(size: size * 0.45, weight: .semibold))
                 .foregroundStyle(SQColor.ink)
             if let url {

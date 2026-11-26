@@ -47,10 +47,41 @@ final class OnboardingTests: XCTestCase {
 
     func testCodeFieldKeepsDigitsFromAPaste() {
         XCTAssertEqual(OTPEntry.digits("Your code is 123 456"), "123456")
+        XCTAssertEqual(OTPEntry.digits("12-34-56-78"), "12345678", "A pasted 8-digit code is kept in full")
         XCTAssertEqual(OTPEntry.digits("12-34-56-78-90-12"), "1234567890", "Capped at 10 digits")
+        XCTAssertEqual(OTPEntry.digits("12ab34cd56"), "123456", "Non-digits are stripped")
         XCTAssertEqual(OTPEntry.digits("١٢٣"), "", "Only ASCII digits; the server wants 0-9")
         XCTAssertTrue(OTPEntry.isComplete("123456"))
         XCTAssertFalse(OTPEntry.isComplete("12345"))
+        XCTAssertTrue(OTPEntry.isComplete("12345678"))
+        XCTAssertFalse(OTPEntry.isComplete("123456", length: 8), "6 digits is not enough when the length is 8")
+        XCTAssertTrue(OTPEntry.isComplete("12345678", length: 8))
+    }
+
+    func testOTPLengthComesFromThePlistAndDefaultsToSix() {
+        XCTAssertEqual(OTPEntry.length(from: [:]), 6)
+        XCTAssertEqual(OTPEntry.length(from: ["SQ8OTPLength": 6]), 6)
+        XCTAssertEqual(OTPEntry.length(from: ["SQ8OTPLength": 8]), 8)
+        XCTAssertEqual(OTPEntry.length(from: ["SQ8OTPLength": "8"]), 8)
+        XCTAssertEqual(OTPEntry.length(from: ["SQ8OTPLength": "$(SQ8_OTP_LENGTH)"]), 6)
+        XCTAssertEqual(OTPEntry.length(from: ["SQ8OTPLength": 4]), 6, "Shorter than 6 is clamped")
+        XCTAssertEqual(OTPEntry.length(from: ["SQ8OTPLength": 12]), 10, "Longer than 10 is clamped")
+        XCTAssertEqual(BackendConfig.parse([:]).otpLength, 6)
+        XCTAssertEqual(BackendConfig.parse(["SQ8OTPLength": 8]).otpLength, 8)
+        XCTAssertEqual(OTPEntry.fieldLabel(length: 6), "6-digit code")
+        XCTAssertEqual(OTPEntry.emailBlurb(length: 6), "We'll email you a 6-digit code. No password needed.")
+        XCTAssertEqual(OTPEntry.incompleteMessage(length: 6), "Enter the 6-digit code from your email.")
+        XCTAssertEqual(OTPEntry.fieldLabel(length: 8), "8-digit code")
+    }
+
+    func testAutoSubmitWaitsForTheConfiguredLength() {
+        XCTAssertTrue(OTPEntry.shouldAutoSubmit(before: 5, after: 6, length: 6, busy: false))
+        XCTAssertFalse(OTPEntry.shouldAutoSubmit(before: 5, after: 6, length: 8, busy: false), "Don't submit at 6 when the length is 8")
+        XCTAssertTrue(OTPEntry.shouldAutoSubmit(before: 7, after: 8, length: 8, busy: false))
+        XCTAssertTrue(OTPEntry.shouldAutoSubmit(before: 0, after: 8, length: 8, busy: false), "A pasted 8-digit code submits at length 8")
+        XCTAssertFalse(OTPEntry.shouldAutoSubmit(before: 0, after: 8, length: 6, busy: false), "A longer paste does not auto-submit at a shorter configured length")
+        XCTAssertFalse(OTPEntry.shouldAutoSubmit(before: 5, after: 6, length: 6, busy: true))
+        XCTAssertFalse(OTPEntry.shouldAutoSubmit(before: 6, after: 6, length: 6, busy: false))
     }
 
     // MARK: Sign-in problems
@@ -414,12 +445,20 @@ final class OnboardingTestStore: SessionStoring {
 @MainActor
 final class OnboardingModelTests: XCTestCase {
     private static let mockUser = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
-    private func model(_ scenario: LaunchScenario) -> LiveSessionModel {
+    private func model(_ scenario: LaunchScenario, otpLength: Int = OTPEntry.defaultLength) -> LiveSessionModel {
         LiveSessionModel(
-            config: BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test"),
+            config: BackendConfig(urlText: "https://example.supabase.co", anonKey: "anon-test", otpLength: otpLength),
             backend: .mock,
             scenario: scenario
         )
+    }
+
+    private func waitUntil(_ timeout: TimeInterval = 2, _ check: () -> Bool) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if check() { return }
+            try? await Task.sleep(nanoseconds: 20_000_000)
+        }
     }
 
     func testOnboardingRunsFromEmailToHome() async {
@@ -451,6 +490,31 @@ final class OnboardingModelTests: XCTestCase {
         model.squadName = "Friday"
         await model.createSquad()
         XCTAssertEqual(model.onboardingStep, .home)
+    }
+
+    func testSixthDigitChecksTheCodeOnItsOwn() async {
+        let model = model(.onboarding)
+        model.email = "a@b.co"
+        await model.sendCode()
+        model.codeChanged("123456")
+        await waitUntil { model.onboardingStep == .profile }
+        XCTAssertEqual(model.onboardingStep, .profile)
+    }
+
+    func testConfiguredEightDigitCodeDoesNotSubmitAtSix() async {
+        let model = model(.onboarding, otpLength: 8)
+        model.mockAuth?.acceptedCode = "12345678"
+        model.email = "a@b.co"
+        await model.sendCode()
+        model.codeChanged("123456")
+        await waitUntil(0.4) { model.onboardingStep == .profile }
+        XCTAssertEqual(model.code, "123456")
+        XCTAssertEqual(model.onboardingStep, .code, "Typing 6 digits must not auto-submit when the length is 8")
+        XCTAssertEqual(model.signInError, "")
+        model.codeChanged("12 34 56 78")
+        XCTAssertEqual(model.code, "12345678", "A pasted 8-digit code is kept in full")
+        await waitUntil { model.onboardingStep == .profile }
+        XCTAssertEqual(model.onboardingStep, .profile)
     }
 
     func testWrongCodeClearsTheFieldAndSaysWhy() async {

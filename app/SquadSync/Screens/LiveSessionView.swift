@@ -164,6 +164,9 @@ final class LiveSessionModel {
     /// counts "Step 4 of 4". Someone who left a squad later sees no count.
     var onboardedThisSession = false
 
+    /// The expected sign-in code length from `SQ8OTPLength` (default 6).
+    var otpLength: Int { config.otpLength }
+
     /// Which onboarding step the screen shows.
     var onboardingStep: OnboardingStep {
         OnboardingStep.current(
@@ -503,22 +506,22 @@ final class LiveSessionModel {
         resend = ResendClock(cooldown: resend.cooldown)
     }
 
-    /// The code field keeps digits only. The sixth digit checks the code on its own.
+    /// The code field keeps digits only. Reaching the configured length checks the code on its own.
     func codeChanged(_ raw: String) {
         let digits = OTPEntry.digits(raw)
         let before = code.count
         guard digits != code else { return }
         code = digits
         if !digits.isEmpty { signInError = "" }
-        if digits.count == OTPEntry.length, before < OTPEntry.length, onboardingAction == nil {
+        if OTPEntry.shouldAutoSubmit(before: before, after: digits.count, length: otpLength, busy: onboardingAction != nil) {
             Task { await verify() }
         }
     }
 
     func verify() async {
         let digits = OTPEntry.digits(code)
-        guard OTPEntry.isComplete(digits) else {
-            signInError = "Enter the 6-digit code from your email."
+        guard OTPEntry.isComplete(digits, length: otpLength) else {
+            signInError = OTPEntry.incompleteMessage(length: otpLength)
             return
         }
         code = digits

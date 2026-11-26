@@ -903,7 +903,9 @@ final class AccessibilityUITests: XCTestCase {
         let card = element("game-on-card", in: app)
         XCTAssertTrue(card.waitForExistence(timeout: 10), "Alex's Game on was not pinned")
         let headerButtons = app.buttons.allElementsBoundByIndex.filter {
-            $0.exists && $0.frame.height > 0 && $0.frame.minY >= title.frame.minY - 4 && $0.frame.maxY <= card.frame.minY
+            // Anything from the title's row down to the card: a 44 pt button centred on
+            // the row starts above the shorter title, so the row is matched by overlap.
+            $0.exists && $0.frame.height > 0 && $0.frame.maxY > title.frame.minY && $0.frame.maxY <= card.frame.minY
         }
         XCTAssertEqual(Set(headerButtons.map(\.identifier)).subtracting(["squad-title"]), ["members"], "Unexpected buttons above the card: \(headerButtons.map(\.identifier))")
         XCTAssertLessThanOrEqual(card.frame.maxY, list.frame.minY + 1, "The card overlaps the chat")

@@ -80,7 +80,15 @@ struct GroupHomeHeader: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Members")
+            // The drawn label's symbol still surfaced as a child Image named
+            // "person.2.fill" even when hidden, so the button's accessibility tree is
+            // replaced outright: one button named Members, no children.
+            .accessibilityRepresentation {
+                Button("Members") {
+                    SQHaptics.play(.tap)
+                    onMembers()
+                }
+            }
             .accessibilityHint("Invite, voice, side threads, your profile and sign out")
             .accessibilityIdentifier("members")
         }

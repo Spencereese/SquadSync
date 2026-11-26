@@ -3590,7 +3590,10 @@ struct LiveSessionView: View {
                 }
                 .contentMargins(.bottom, listBottomMargin, for: .scrollContent)
                 .coordinateSpace(name: ChatRowGeometry.listSpace)
-                .scrollDismissesKeyboard(.interactively)
+                // At accessibility sizes the list is a sliver above the keyboard, too short
+                // to drag down into it, so any scroll puts the keyboard away (and Game on
+                // comes back). Elsewhere it follows your finger, like Messages.
+                .scrollDismissesKeyboard(typeSize.isAccessibilitySize ? .immediately : .interactively)
                 .modifier(ChatPinModifier(pinned: $pinnedToBottom))
                 .accessibilityIdentifier("message-list")
                 .overlay(alignment: .top) {

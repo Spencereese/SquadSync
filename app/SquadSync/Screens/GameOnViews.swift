@@ -62,6 +62,7 @@ struct GroupHomeHeader: View {
                     if large {
                         Image(systemName: "person.2.fill")
                             .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                            .accessibilityHidden(true)
                     } else {
                         Label("Members", systemImage: "person.2.fill")
                             .labelStyle(.titleAndIcon)
@@ -75,6 +76,10 @@ struct GroupHomeHeader: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            // One element: the symbol inside the label was exposed on its own, so
+            // VoiceOver met "person.2.fill" and the tree had a second, unnamed button.
+            .accessibilityElement(children: .ignore)
+            .accessibilityAddTraits(.isButton)
             .accessibilityLabel("Members")
             .accessibilityHint("Invite, voice, side threads, your profile and sign out")
             .accessibilityIdentifier("members")
@@ -100,10 +105,14 @@ struct GameOnPinnedArea: View {
             if typeSize.isAccessibilitySize {
                 // At accessibility sizes two cards could push the chat off screen, so the
                 // pinned area stops at a fixed height and scrolls inside it.
+                // The cards' text stops growing at the first accessibility size, so one
+                // card (with its Join, Ready, End) fits under the cap at AX5 and its
+                // buttons stay on screen instead of scrolled out of the clipped area.
                 ViewThatFits(in: .vertical) {
                     content(now: context.date)
                     ScrollView { content(now: context.date) }
                 }
+                .dynamicTypeSize(...DynamicTypeSize.accessibility1)
                 .frame(maxHeight: Self.largeTextMaxHeight)
             } else {
                 content(now: context.date)
@@ -181,10 +190,15 @@ struct GameOnPinnedArea: View {
                     .font(SQType.caption)
                     .foregroundStyle(SQColor.subtle)
                     .fixedSize(horizontal: false, vertical: true)
-                Button("Retry") { Task { await model.retryGameOns() } }
-                    .font(SQType.label)
-                    .frame(minHeight: 44)
-                    .accessibilityIdentifier("game-on-retry")
+                // The frame sits on the label, not the Button, so the hit target and
+                // the accessibility frame are both at least 44 pt.
+                Button { Task { await model.retryGameOns() } } label: {
+                    Text("Retry")
+                        .font(SQType.label)
+                        .frame(minWidth: 44, minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityIdentifier("game-on-retry")
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("game-on-failed")

@@ -1214,7 +1214,10 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertTrue(retry.isHittable)
         assertHitTarget(retry, "Retry")
         retry.tap()
-        XCTAssertTrue(failed.waitForExistence(timeout: 8), "The server is still down, so the error stays")
+        // gameOnFailed reads fail until Retry (like chatHistoryFailed), so Retry has to
+        // work: the error goes and Alex's Game on, there all along, shows.
+        XCTAssertTrue(failed.waitForNonExistence(timeout: 8), "Retry left the error up")
+        XCTAssertTrue(element("game-on-card", in: app).waitForExistence(timeout: 8), "Retry did not load the Game on")
     }
 
     func testGameOnSheetStaysUsableAtLargeText() {
@@ -1276,7 +1279,9 @@ final class AccessibilityUITests: XCTestCase {
         reveal(imOn, in: app)
         XCTAssertTrue(app.buttons["welcome-game-on"].exists, "Game on was not offered next to I'm on")
         imOn.tap()
-        let sent = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "I'm on")).matching(NSPredicate(format: "identifier BEGINSWITH 'message-row-'")).firstMatch
+        // The row (message-row-*) is a container with no label; the bubble inside
+        // (chat.bubble.*) carries what VoiceOver reads.
+        let sent = app.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "I'm on")).matching(NSPredicate(format: "identifier BEGINSWITH 'chat.bubble.'")).firstMatch
         XCTAssertTrue(sent.waitForExistence(timeout: 5), "I'm on was not sent to the group")
         XCTAssertTrue(prompt.waitForNonExistence(timeout: 5), "The welcome stayed after answering")
     }

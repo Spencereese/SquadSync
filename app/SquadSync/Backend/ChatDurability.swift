@@ -597,6 +597,63 @@ enum ChatReveal {
         }
     }
 
+    /// Where a pushed message sits against the part of the chat already loaded.
+    enum Placement: Equatable {
+        /// The server doesn't have it for this squad.
+        case missing
+        /// Sent after the newest loaded message: a warm tap usually beats the socket.
+        case newer
+        /// Inside the loaded window (or the chat is empty) but not in it: one row is missing.
+        case gap
+        /// Sent before the oldest loaded message: page back for it.
+        case older
+    }
+
+    /// `sentAt` of the pushed message on the server (nil when it isn't there),
+    /// against the oldest and newest messages already loaded.
+    static func placement(sentAt: Date?, oldestLoaded: Date?, newestLoaded: Date?) -> Placement {
+        guard let sentAt else { return .missing }
+        guard let oldestLoaded, let newestLoaded else { return .gap }
+        if sentAt > newestLoaded { return .newer }
+        if sentAt >= oldestLoaded { return .gap }
+        return .older
+    }
+
+    /// Opens a pushed message wherever it is. A newer one catches the chat up
+    /// (falling back to inserting just that row), a missing row in the window is
+    /// inserted, and an older one pages back up to `maxPages` pages.
+    /// `locate` asks the server once; `catchUpNewer` reads what came after the
+    /// newest loaded message; `insert` adds the located row itself.
+    @MainActor
+    static func run(
+        loaded: () -> Bool,
+        locate: () async throws -> Placement,
+        catchUpNewer: () async throws -> Void,
+        insert: () -> Void,
+        loadOlderPage: () async throws -> Bool,
+        maxPages: Int = ChatReveal.maxPages
+    ) async -> Outcome {
+        if loaded() { return .found }
+        do {
+            switch try await locate() {
+            case .missing:
+                return .notInChat
+            case .newer:
+                try await catchUpNewer()
+                if loaded() { return .found }
+                insert()
+                return loaded() ? .found : .failed
+            case .gap:
+                insert()
+                return loaded() ? .found : .failed
+            case .older:
+                return try await pageBack(loaded: loaded, loadOlderPage: loadOlderPage, maxPages: maxPages)
+            }
+        } catch {
+            return .failed
+        }
+    }
+
     /// Pages older history until the message is loaded, up to `maxPages` pages.
     /// `loaded` says whether it's in the thread now; `exists` asks the server once;
     /// `loadOlderPage` adds one page and returns false when the start is reached.
@@ -610,15 +667,24 @@ enum ChatReveal {
         if loaded() { return .found }
         do {
             guard try await exists() else { return .notInChat }
-            for _ in 0..<maxPages {
-                let more = try await loadOlderPage()
-                if loaded() { return .found }
-                if !more { return .notInChat }
-            }
-            return loaded() ? .found : .tooFarBack
+            return try await pageBack(loaded: loaded, loadOlderPage: loadOlderPage, maxPages: maxPages)
         } catch {
             return .failed
         }
+    }
+
+    @MainActor
+    private static func pageBack(
+        loaded: () -> Bool,
+        loadOlderPage: () async throws -> Bool,
+        maxPages: Int
+    ) async throws -> Outcome {
+        for _ in 0..<maxPages {
+            let more = try await loadOlderPage()
+            if loaded() { return .found }
+            if !more { return .notInChat }
+        }
+        return loaded() ? .found : .tooFarBack
     }
 }
 

@@ -542,6 +542,163 @@ final class ChatDurabilityTests: XCTestCase {
         XCTAssertEqual(midway, .failed)
     }
 
+    // MARK: Opening a pushed message that is newer than the loaded chat
+
+    func testPlacementPutsAPushedMessageAgainstTheLoadedWindow() {
+        let oldest = base
+        let newest = base.addingTimeInterval(600)
+        XCTAssertEqual(ChatReveal.placement(sentAt: nil, oldestLoaded: oldest, newestLoaded: newest), .missing)
+        XCTAssertEqual(ChatReveal.placement(sentAt: newest.addingTimeInterval(1), oldestLoaded: oldest, newestLoaded: newest), .newer)
+        XCTAssertEqual(ChatReveal.placement(sentAt: newest, oldestLoaded: oldest, newestLoaded: newest), .gap)
+        XCTAssertEqual(ChatReveal.placement(sentAt: base.addingTimeInterval(300), oldestLoaded: oldest, newestLoaded: newest), .gap)
+        XCTAssertEqual(ChatReveal.placement(sentAt: oldest, oldestLoaded: oldest, newestLoaded: newest), .gap)
+        XCTAssertEqual(ChatReveal.placement(sentAt: oldest.addingTimeInterval(-1), oldestLoaded: oldest, newestLoaded: newest), .older)
+        XCTAssertEqual(ChatReveal.placement(sentAt: base, oldestLoaded: nil, newestLoaded: nil), .gap, "An empty chat takes the one row")
+    }
+
+    /// The app's wiring of `ChatReveal.run`, against the mock server and a log box.
+    private func revealLikeTheApp(
+        _ target: UUID,
+        chat: MockChatService,
+        box: LogBox,
+        catchUpFails: Bool = false,
+        catchUpReturnsNothing: Bool = false
+    ) async -> (ChatReveal.Outcome, newerReads: Int, inserts: Int) {
+        let squadId = squad
+        var newerReads = 0
+        var inserts = 0
+        var located: RemoteMessage?
+        let outcome = await ChatReveal.run(
+            loaded: { box.log.entries.contains { $0.id == target } },
+            locate: {
+                located = try await chat.message(squadId: squadId, id: target)
+                let onServer = box.log.ordered.filter { $0.delivery == .sent }
+                return ChatReveal.placement(sentAt: located?.sentAt, oldestLoaded: onServer.first?.sentAt, newestLoaded: onServer.last?.sentAt)
+            },
+            catchUpNewer: {
+                newerReads += 1
+                if catchUpFails { throw BackendFailure.reconnecting }
+                if catchUpReturnsNothing { return }
+                let newest = box.log.ordered.last { $0.delivery == .sent }?.sentAt ?? .distantPast
+                box.log.ingest(try await chat.newer(squadId: squadId, after: newest).map { $0.entry() })
+            },
+            insert: {
+                inserts += 1
+                if let located { box.log.ingest([located.entry()]) }
+            },
+            loadOlderPage: {
+                guard let cursor = ChatOlderPaging.cursor(box.log) else { return false }
+                let page = try await chat.older(squadId: squadId, before: cursor, limit: ChatOlderPaging.pageSize)
+                box.log.ingest(page.map { $0.entry() })
+                return page.count == ChatOlderPaging.pageSize
+            }
+        )
+        return (outcome, newerReads, inserts)
+    }
+
+    func testAWarmTapOnAMessageTheSocketHasNotDeliveredCatchesUpInsteadOfPagingBack() async throws {
+        // The chat is loaded; then two messages land on the server before the
+        // socket brings them. The push is for the second one.
+        let chat = await longMock()
+        let box = LogBox()
+        box.log.adopt(replacingSquad: true, history: try await chat.history(squadId: squad).map { $0.entry() })
+        let before = box.log.entries.count
+        let first = RemoteMessage(id: UUID(), squadId: squad, senderId: ChatSeed.otherId, body: "first new", sentAt: base.addingTimeInterval(10))
+        let pushed = RemoteMessage(id: UUID(), squadId: squad, senderId: ChatSeed.otherId, body: "pushed", sentAt: base.addingTimeInterval(20))
+        await MainActor.run {
+            chat.seed(first)
+            chat.seed(pushed)
+        }
+        let result = await revealLikeTheApp(pushed.id, chat: chat, box: box)
+        XCTAssertEqual(result.0, .found, "The pushed message opens")
+        let pages = await olderReads(chat)
+        XCTAssertEqual(pages, 0, "A newer message never pages back through older history")
+        XCTAssertEqual(result.newerReads, 1)
+        XCTAssertEqual(result.inserts, 0, "The catch-up brought it")
+        XCTAssertEqual(box.log.entries.count, before + 2, "The message before it came too, so there's no gap")
+        XCTAssertEqual(box.log.ordered.suffix(2).map(\.id), [first.id, pushed.id])
+    }
+
+    func testAWarmTapStillOpensWhenTheCatchUpMissesTheMessage() async throws {
+        let chat = await longMock()
+        let box = LogBox()
+        box.log.adopt(replacingSquad: true, history: try await chat.history(squadId: squad).map { $0.entry() })
+        let pushed = RemoteMessage(id: UUID(), squadId: squad, senderId: ChatSeed.otherId, body: "pushed", sentAt: base.addingTimeInterval(20))
+        await MainActor.run { chat.seed(pushed) }
+        let result = await revealLikeTheApp(pushed.id, chat: chat, box: box, catchUpReturnsNothing: true)
+        XCTAssertEqual(result.0, .found)
+        XCTAssertEqual(result.inserts, 1, "The located row goes in on its own")
+        XCTAssertEqual(box.log.ordered.last?.id, pushed.id)
+        let pages = await olderReads(chat)
+        XCTAssertEqual(pages, 0)
+    }
+
+    func testAFailedCatchUpSaysSoAndDoesNotPageBack() async throws {
+        let chat = await longMock()
+        let box = LogBox()
+        box.log.adopt(replacingSquad: true, history: try await chat.history(squadId: squad).map { $0.entry() })
+        let pushed = RemoteMessage(id: UUID(), squadId: squad, senderId: ChatSeed.otherId, body: "pushed", sentAt: base.addingTimeInterval(20))
+        await MainActor.run { chat.seed(pushed) }
+        let result = await revealLikeTheApp(pushed.id, chat: chat, box: box, catchUpFails: true)
+        XCTAssertEqual(result.0, .failed)
+        XCTAssertEqual(ChatReveal.text(result.0), ChatReveal.failedText)
+        XCTAssertFalse(box.log.entries.contains { $0.id == pushed.id })
+        let pages = await olderReads(chat)
+        XCTAssertEqual(pages, 0)
+    }
+
+    func testAMissingRowInsideTheLoadedWindowIsInsertedInPlace() async throws {
+        let chat = await longMock()
+        let box = LogBox()
+        let history = try await chat.history(squadId: squad)
+        // The window is loaded except message 250, which the socket dropped.
+        let dropped = ChatLongSeed.id(250)
+        box.log.adopt(replacingSquad: true, history: history.filter { $0.id != dropped }.map { $0.entry() })
+        let result = await revealLikeTheApp(dropped, chat: chat, box: box)
+        XCTAssertEqual(result.0, .found)
+        XCTAssertEqual(result.newerReads, 0)
+        XCTAssertEqual(result.inserts, 1)
+        XCTAssertEqual(box.log.ordered.map(\.id), history.map(\.id), "It sits in order")
+        let pages = await olderReads(chat)
+        XCTAssertEqual(pages, 0)
+    }
+
+    func testAnOlderPushedMessageStillPagesBackOnTheNewPath() async throws {
+        let chat = await longMock()
+        let box = LogBox()
+        box.log.adopt(replacingSquad: true, history: try await chat.history(squadId: squad).map { $0.entry() })
+        let result = await revealLikeTheApp(ChatLongSeed.id(3), chat: chat, box: box)
+        XCTAssertEqual(result.0, .found)
+        XCTAssertEqual(result.newerReads, 0)
+        XCTAssertEqual(result.inserts, 0)
+        let pages = await olderReads(chat)
+        XCTAssertEqual(pages, 2, "Two pages reach message 3")
+        XCTAssertEqual(box.log.ordered.map(\.id), (0..<260).map(ChatLongSeed.id), "The window stays contiguous")
+    }
+
+    func testAPushedMessageTheServerDoesNotHaveSaysSoWithoutReading() async throws {
+        let chat = await longMock()
+        let box = LogBox()
+        box.log.adopt(replacingSquad: true, history: try await chat.history(squadId: squad).map { $0.entry() })
+        let result = await revealLikeTheApp(UUID(), chat: chat, box: box)
+        XCTAssertEqual(result.0, .notInChat)
+        XCTAssertEqual(result.newerReads, 0)
+        XCTAssertEqual(result.inserts, 0)
+        let pages = await olderReads(chat)
+        XCTAssertEqual(pages, 0)
+    }
+
+    func testALocateFailureSaysSo() async {
+        let outcome = await ChatReveal.run(
+            loaded: { false },
+            locate: { throw BackendFailure.reconnecting },
+            catchUpNewer: {},
+            insert: {},
+            loadOlderPage: { true }
+        )
+        XCTAssertEqual(outcome, .failed)
+    }
+
     // MARK: Staying at the bottom
 
     private func pinnedAtBottom() -> (ChatBottomPin, ChatScrollMetrics) {
@@ -1253,6 +1410,21 @@ final class ChatDurabilityModelTests: XCTestCase {
         XCTAssertEqual(model.followSend, ChatLongSeed.id(0))
         await model.reveal(messageId: UUID())
         XCTAssertEqual(model.chatToast, ChatReveal.notInChatText)
+    }
+
+    func testWarmPushForAMessageTheChatHasNotReceivedYetOpensIt() async throws {
+        let model = model(.chatLongHistory, outbox: tempOutbox())
+        await model.reloadChat()
+        let mock = try XCTUnwrap(model.mockChatService)
+        let newest = try XCTUnwrap(model.log.ordered.last?.sentAt)
+        let pushed = RemoteMessage(id: UUID(), squadId: ChatSeed.squadId, senderId: ChatSeed.otherId, body: "beat the socket", sentAt: newest.addingTimeInterval(5))
+        mock.seed(pushed)
+        let before = model.log.entries.count
+        await model.reveal(messageId: pushed.id)
+        XCTAssertEqual(model.followSend, pushed.id, "The pushed message opens")
+        XCTAssertEqual(model.chatToast, "", "No 'too far back' or 'not in this chat' line")
+        XCTAssertEqual(model.log.entries.count, before + 1)
+        XCTAssertEqual(mock.olderReads, 0, "A newer message doesn't page back")
     }
 
     func testPushArrivingBeforeTheFirstLoadOpensTheOldMessage() async {

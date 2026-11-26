@@ -597,6 +597,33 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["push-notice"].exists)
     }
 
+    func testWarmPushClosesTheMembersSheetAndOpensTheMessage() {
+        // A tap while the app is open and a sheet covers the chat: the sheet closes
+        // and the pushed message is on screen. The tap is delivered 12 s after launch.
+        let app = XCUIApplication()
+        let payload = #"{"type":"squad_message","squad_id":"00000000-0000-0000-0000-000000000010","message_id":"00000000-0000-0000-0000-00000000A001"}"#
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-debug-push-open", payload, "-debug-push-open-after", "12"]
+        app.launch()
+
+        let members = app.buttons["members"]
+        XCTAssertTrue(members.waitForExistence(timeout: 10), "Members button was not in the bar")
+        members.tap()
+        let count = app.descendants(matching: .any)["squad-count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 5), "The members sheet did not open")
+        let opened = app.descendants(matching: .any)["push-opened-chat"]
+        XCTAssertFalse(opened.exists, "The tap landed before the sheet was open, so this run proves nothing")
+
+        XCTAssertTrue(opened.waitForExistence(timeout: 25), "The warm tap did not open the chat")
+        XCTAssertTrue(waitUntil(timeout: 5) { !count.exists }, "The members sheet stayed over the chat")
+        XCTAssertEqual(opened.label, "Opened this chat.")
+        XCTAssertTrue(opened.isHittable, "Opened this chat. was not on screen")
+        let row = app.descendants(matching: .any)["message-row-seed-1"]
+        XCTAssertTrue(row.waitForExistence(timeout: 5), "The pushed message was not in the chat")
+        let list = app.scrollViews["message-list"]
+        XCTAssertTrue(waitUntil(timeout: 5) { row.frame.intersects(list.frame) }, "The pushed message was not scrolled into view: \(row.frame)")
+        XCTAssertFalse(app.descendants(matching: .any)["push-notice"].exists)
+    }
+
     func testPushBeforeASquadSaysYouAreNotInIt() {
         let app = XCUIApplication()
         let payload = #"{"type":"squad_message","squad_id":"00000000-0000-0000-0000-000000000010","message_id":"00000000-0000-0000-0000-00000000A001"}"#

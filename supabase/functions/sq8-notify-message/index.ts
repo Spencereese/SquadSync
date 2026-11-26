@@ -1,5 +1,7 @@
 // Deployed on sfckxrnoiwetmzdycqaa (Nov 26, 2026) for sq8_messages. The side-thread
 // path below is not deployed, and needs 0026 plus its own webhook (README.md).
+// The Game on path (a sq8_spot_calls INSERT with kind = 'game_on') is not
+// deployed either, and needs 0028 plus its own webhook (README.md).
 // A new sq8_messages row notifies the other current members of that squad.
 // Recipients come from sq8.message_push_targets, which drops the sender.
 // A new sq8_thread_messages row (a side-thread reply, its own webhook) notifies
@@ -28,6 +30,16 @@ import {
   threadApnsHeaders,
   threadBanner,
 } from "./thread.ts";
+import {
+  type GameOnContext,
+  buildGameOnApnsPayload,
+  buildGameOnFcmMessage,
+  gameOnApnsHeaders,
+  gameOnBanner,
+  isGameOnInsert,
+  isGameOnWebhook,
+  readGameOnRecord,
+} from "./gameon.ts";
 
 const cors = { "content-type": "application/json" };
 const cache = new AccessTokenCache();
@@ -185,7 +197,51 @@ Deno.serve(async (request) => {
 
   let rows: Array<{ token: string; platform: string }>;
   let content: Delivery;
-  if (isThreadWebhook(payload)) {
+  if (isGameOnWebhook(payload)) {
+    // A Game on: the group's other members, like a chat message, with its own banner.
+    const call = readGameOnRecord(payload);
+    if (!call) {
+      return new Response(JSON.stringify({ ok: false, reason: "bad payload" }), {
+        status: 400,
+        headers: cors,
+      });
+    }
+    if (!isGameOnInsert(payload, call)) {
+      // An old build's spot call, or an update: nothing to send.
+      return new Response(JSON.stringify({ ok: true, sent: 0, reason: "not a new game on" }), {
+        status: 200,
+        headers: cors,
+      });
+    }
+    const targets = await rpc(url, key, "sq8_message_push_targets", {
+      squad: call.squad_id,
+      sender: call.caller_id,
+    });
+    if (!targets.ok) {
+      return new Response(
+        JSON.stringify({ ok: false, reason: "target lookup failed" }),
+        { status: 502, headers: cors },
+      );
+    }
+    rows = await targets.json() as Array<{ token: string; platform: string }>;
+    let context: GameOnContext | null = null;
+    if (rows.length > 0) {
+      // The banner still goes out (with plain wording) if this read fails.
+      const lookup = await rpc(url, key, "sq8_game_on_push_context", { call_id: call.id });
+      if (lookup.ok) {
+        const found = await lookup.json().catch(() => []) as GameOnContext[];
+        context = found[0] ?? null;
+      } else {
+        await lookup.body?.cancel();
+      }
+    }
+    const banner = gameOnBanner(context, call);
+    content = {
+      apns: () => buildGameOnApnsPayload(call, banner),
+      apnsHeaders: gameOnApnsHeaders(call),
+      fcm: (token) => buildGameOnFcmMessage({ token, record: call, banner }),
+    };
+  } else if (isThreadWebhook(payload)) {
     // A side-thread reply: its thread's members (not the whole squad), by thread.
     const reply = readThreadRecord(payload);
     if (!reply) {

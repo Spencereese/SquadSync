@@ -267,3 +267,81 @@ Deno.test("a dead APNs token from a thread push is dropped", async () => {
   const drop = calls.find((call) => call.url.endsWith("/rpc/sq8_drop_device_token"))!;
   assertEquals(drop.body, { device_token: "gone-token" });
 });
+
+const gameOnCall = "00000000-0000-0000-0000-00000000c001";
+
+Deno.test("a Game on asks the group's targets and its context, and sends the banner", async () => {
+  const { status, result, calls } = await run(
+    {
+      type: "INSERT",
+      table: "sq8_spot_calls",
+      schema: "public",
+      record: { id: gameOnCall, squad_id: squad, caller_id: sender, kind: "game_on", game: "Warzone", seat_target: 2, status: "open" },
+    },
+    (call) => {
+      if (call.url.endsWith("/rpc/sq8_game_on_push_context")) {
+        return json([{ caller_name: "Riley", game: "Warzone", need: 1, kind: "game_on" }]);
+      }
+      return standardRespond([{ token: "ios-token", platform: "ios" }, { token: "android-token", platform: "android" }], [])(call);
+    },
+  );
+  assertEquals(status, 200);
+  assertEquals(result.sent, 2);
+  const rpcs = calls.filter((call) => call.url.includes("/rest/v1/rpc/"));
+  assertEquals(rpcs.map((call) => call.url.split("/rpc/")[1]), ["sq8_message_push_targets", "sq8_game_on_push_context"]);
+  assertEquals(rpcs[0].body, { squad, sender }, "the starter is left out");
+  assertEquals(rpcs[1].body, { call_id: gameOnCall });
+  const apns = calls.find((call) => call.url.includes("/3/device/"))!;
+  assertEquals(apns.headers["apns-collapse-id"], `game_on:${gameOnCall}`);
+  assertEquals(apns.body, {
+    aps: {
+      alert: { title: "Game on", body: "Riley's on Warzone, need 1" },
+      "thread-id": `squad:${squad}`,
+      sound: "default",
+    },
+    type: "game_on",
+    squad_id: squad,
+    call_id: gameOnCall,
+  });
+  const fcm = calls.find((call) => call.url.includes("fcm.googleapis.com"))!;
+  const message = (fcm.body as { message: Record<string, unknown> }).message;
+  assertEquals(message.data, { type: "game_on", squad_id: squad, call_id: gameOnCall });
+});
+
+Deno.test("an old build's spot call sends nothing and reads nothing", async () => {
+  const { status, result, calls } = await run(
+    {
+      type: "INSERT",
+      table: "sq8_spot_calls",
+      schema: "public",
+      record: { id: gameOnCall, squad_id: squad, caller_id: sender, kind: "spot", game: "Halo" },
+    },
+    standardRespond([{ token: "ios-token", platform: "ios" }], []),
+  );
+  assertEquals(status, 200);
+  assertEquals(result.sent, 0);
+  assertEquals(calls.length, 0);
+});
+
+Deno.test("a Game on body missing its caller is a 400", async () => {
+  const { status, calls } = await run(
+    { type: "INSERT", table: "sq8_spot_calls", schema: "public", record: { id: gameOnCall, squad_id: squad, kind: "game_on" } },
+    standardRespond([{ token: "ios-token", platform: "ios" }], []),
+  );
+  assertEquals(status, 400);
+  assertEquals(calls.length, 0);
+});
+
+Deno.test("a failed Game on context read still sends, from the row", async () => {
+  const { result, calls } = await run(
+    { type: "INSERT", table: "sq8_spot_calls", schema: "public", record: { id: gameOnCall, squad_id: squad, caller_id: sender, kind: "game_on", game: "Apex", seat_target: 4 } },
+    (call) => {
+      if (call.url.endsWith("/rpc/sq8_game_on_push_context")) return new Response("nope", { status: 500 });
+      return standardRespond([{ token: "ios-token", platform: "ios" }], [])(call);
+    },
+  );
+  assertEquals(result.sent, 1);
+  const apns = calls.find((call) => call.url.includes("/3/device/"))!;
+  const aps = (apns.body as { aps: { alert: { title: string; body: string } } }).aps;
+  assertEquals(aps.alert, { title: "Game on", body: "Someone's on Apex, need 3" });
+});

@@ -87,3 +87,10 @@ step is the minimal LazyVStack repro below, and this change can be reverted.
   `HStack`, a flexible frame around a `VStack`, the outer min-height frame).
 - Bisect on a minimal LazyVStack repro at AX5 and file a Feedback if it
   reproduces without app code.
+
+## Chat-first round 1 (PR #45)
+
+- Written and tested on Linux only (unit tests through the Foundation harness, SQL and Deno tests). The SwiftUI views, the home model changes and the UI tests have not been compiled on the Mac yet.
+- Old app builds read `sq8_read_open_spot`, so once 0028 is live they can show a Game on as a spot call. Its `join_until` is the idle deadline, so it expires on the same clock.
+- The spot card, Who's in board and presence strip code is still in the app, unused, for the round 2 cleanup.
+- The invite link is a custom scheme (`squadsync://join/CODE`). Some apps don't make it tappable, so the share text includes the code. A universal link needs a domain, an apple-app-site-association file and the Associated Domains entitlement.

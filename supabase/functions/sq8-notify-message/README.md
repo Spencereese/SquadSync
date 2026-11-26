@@ -32,6 +32,18 @@ The banner is `Riley in Ranked` (side group) or `Riley · Direct message` (DM), 
 
 The same four fields sit next to `aps`. Android `collapse_key` / `tag`, APNs `apns-collapse-id`, and `thread-id` are `thread:<thread id>`, so replies group (and collapse) by side thread, apart from the squad chat. A dead token is dropped the same way as on the squad path. The iOS app opens that side thread over the chat with the reply on screen, and doesn't banner a reply for the side thread that's open.
 
+## Game on
+
+A third Database Webhook, on `public.sq8_spot_calls` INSERT, sends a new Game on (file 0028, `kind = 'game_on'`). A spot-call row that isn't a Game on (an old build's spot call) is acknowledged with nothing sent, and bodies for `sq8_messages` and `sq8_thread_messages` take their paths exactly as before. Only INSERT fires it: joins, Ready and End don't push.
+
+It reuses `sq8_message_push_targets(squad, starter)` (0012), so everyone in the group with a token except the starter gets it, then `sq8_game_on_push_context(call_id)` (0028, service role only) for the starter's name, the game and how many more they need. The banner is `Alex's on Warzone, need 1`. The data payload is:
+
+```json
+{ "type": "game_on", "squad_id": "<uuid>", "call_id": "<uuid>" }
+```
+
+The app opens the group chat with the card pinned. Tests: `gameon_test.ts`.
+
 If FCM answers `UNREGISTERED` or `INVALID_ARGUMENT`, the function calls `sq8_drop_device_token` with the service role and deletes that token. It does not trust a client-supplied recipient list.
 
 The `x-sq8-webhook-secret` header is checked first. A request without the right value (or any request while `SQ8_PUSH_WEBHOOK_SECRET` is unset) gets a 401 `unauthorized` and nothing else: no secret names, no body read. After that, the webhook secret, `SUPABASE_URL`, and `SUPABASE_SERVICE_ROLE_KEY` are required. If both the FCM service account and the APNs key are missing, the function returns `notifications off` and sends nothing. If only one sender is configured, the other platform is counted as `skipped`.
@@ -82,6 +94,7 @@ Android needs `google-services.json`. iOS needs `GoogleService-Info.plist`. Both
 6. Deploy only when those secrets exist: `supabase functions deploy sq8-notify-message --no-verify-jwt`. The webhook is authenticated by `SQ8_PUSH_WEBHOOK_SECRET`, not by a user JWT.
 7. In the Supabase dashboard, add a Database Webhook on `public.sq8_messages` INSERT. Point it at the function URL. Header: `x-sq8-webhook-secret: <the same secret>`.
    For side-thread replies: apply `20261126_0026_thread_push_targets.sql`, redeploy the function, and add a second Database Webhook on `public.sq8_thread_messages` INSERT to the same URL with the same header.
+   For Game on: apply `20261126_0027_spot_reconcile.sql` and `20261126_0028_game_on.sql`, redeploy the function (`--no-verify-jwt` as above), and add a third Database Webhook on `public.sq8_spot_calls` INSERT to the same URL with the same header. None of this is done; each step needs Spencer's yes.
 8. The iOS app asks for notification permission after the person is signed in and has a squad, not on first launch. It registers the APNs device token and calls `sq8_register_device_token`. A changed token unregisters the previous one and then registers the new one. Sign-out calls `sq8_unregister_device_token`. A tap opens that squad's chat when `type` is `squad_message`, or the squad card when `type` is `squad`. A squad the person is not in says "You're not in that squad." Android still needs `google-services.json` on the build machine if you send through FCM. Do not commit it.
 
 ## Spot nudges, design only

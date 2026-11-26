@@ -60,7 +60,7 @@ struct SideThreadView: View {
                 }
             }
             Spacer(minLength: SQSpace.s)
-            Button(SideThreadCopy.close) {
+            Button(model.sideThreadsOpen ? SideThreadCopy.back : SideThreadCopy.close) {
                 composerFocused = false
                 model.closeSideThread()
             }

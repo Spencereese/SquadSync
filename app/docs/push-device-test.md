@@ -51,21 +51,26 @@ function log line for that message and a screenshot.
 
 ## Side-thread replies
 
-Not run on a phone yet. Before these steps, confirm (don't assume):
+Not run on a phone yet (nothing in this section has been run on a Mac or a phone). Before these steps, confirm (don't assume):
 
 1. `supabase/migrations/20261126_0026_thread_push_targets.sql` is applied.
 2. `sq8-notify-message` is redeployed from this branch with `--no-verify-jwt`.
 3. A second Database Webhook on `public.sq8_thread_messages` INSERT points at
    the same function URL with the same `x-sq8-webhook-secret` header.
-4. A side thread exists with A and B in it, and a third squad member C who is
-   not in it. The app can't create side threads yet: make one in the SQL
-   editor (an `sq8_threads` row plus `sq8_thread_members` rows for A and B),
-   or reuse one that already exists.
+4. Everyone is in one squad: A, B, and a third member C.
 
-A replies in the side thread. The app can reply only inside a side thread a
-push opened, so the first reply comes from the SQL editor (an
-`sq8_thread_messages` row with A as `sender_id`) or from a side thread B
-opened.
+No SQL editor is needed. Make the thread in the app, and reply from the app.
+
+- **Make it.** On A tap the side threads button in the squad bar (at large
+  text it's Members, then "Open side threads"), then New. Pick B only: that is a
+  direct message, with no name. Tap Start and the new thread opens. C isn't in
+  it, so C is the "outsider" in the steps below. Repeat with B and C picked and
+  a name for a group, if you want the group wording ("A in <name>") checked too.
+- **Check the list.** The thread shows in B's list (the last reply and its
+  time) and not in C's. Starting the same DM again opens the one A has.
+- **Replies come from the app.** A sends "thread 0" in the thread; whoever
+  replies later opens the thread from their list. B's list shows the new
+  preview within about 8 seconds.
 
 8. **Banner.** B on the home screen. A reply "thread 1" arrives on B as
    "A in <title>" (or "A · Direct message"), body "thread 1". C gets nothing.
@@ -88,8 +93,10 @@ opened.
 
 ## Not covered
 
-- The app has no list of side threads and can't start one. A side thread opens
-  only from its reply's notification.
+- The list shows no unread dot: the only read state is per squad
+  (`sq8_chat_read_state`), so a dot would be a guess.
+- A thread only exists for people who were seated when it was made; adding
+  someone later isn't in the app.
 - The `squad` payload type (squad card) is parsed and routed, but no server
   path sends it yet.
 - Spot nudges are a design note in `supabase/functions/sq8-notify-message/README.md`.

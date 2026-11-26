@@ -11,6 +11,8 @@ struct SideThreadInfo: Equatable, Identifiable, Decodable {
     /// "side_group" or "dm".
     let kind: String
     var title: String?
+    /// Only the list read selects it; a push open doesn't.
+    var createdAt: Date? = nil
 
     var isDirect: Bool { kind == "dm" }
 
@@ -19,7 +21,30 @@ struct SideThreadInfo: Equatable, Identifiable, Decodable {
         case squadId = "squad_id"
         case kind
         case title
+        case createdAt = "created_at"
     }
+}
+
+struct SideThreadMembership: Equatable, Decodable {
+    let threadId: UUID
+    let userId: UUID
+
+    enum CodingKeys: String, CodingKey {
+        case threadId = "thread_id"
+        case userId = "user_id"
+    }
+}
+
+/// What a new side thread is made of. `memberIds` are the other people; the
+/// creator is added too. One other person is a DM, more is a side group.
+struct NewSideThread: Equatable {
+    let id: UUID
+    let squadId: UUID
+    let createdBy: UUID
+    let memberIds: [UUID]
+    let title: String?
+
+    var kind: String { memberIds.count == 1 ? "dm" : "side_group" }
 }
 
 struct SideThreadMessage: Equatable, Identifiable, Codable {
@@ -50,6 +75,14 @@ protocol SideThreadServing: AnyObject {
     /// One message by id in this thread, or nil.
     func message(threadId: UUID, id: UUID) async throws -> SideThreadMessage?
     func send(_ message: SideThreadMessage) async throws
+    /// Every side thread of this squad the signed-in person is in (RLS shows no others).
+    func threads(squadId: UUID) async throws -> [SideThreadInfo]
+    /// Who is in each of these threads.
+    func memberships(threadIds: [UUID]) async throws -> [SideThreadMembership]
+    /// The newest message of each thread that has one.
+    func lastMessages(threadIds: [UUID]) async throws -> [UUID: SideThreadMessage]
+    /// Makes the thread and seats its creator and the others. Safe to repeat with the same id.
+    func create(_ thread: NewSideThread) async throws
 }
 
 enum SideThreadCopy {
@@ -169,6 +202,207 @@ enum SideThreadIdentifiers {
     static func row(_ id: UUID) -> String {
         "side-thread-message-\(id.uuidString.lowercased())"
     }
+
+    // The list and the new-thread form.
+    static let listPanel = "side-threads"
+    static let listClose = "side-threads-close"
+    static let listNew = "side-threads-new"
+    static let listLoading = "side-threads-loading"
+    static let listEmpty = "side-threads-empty"
+    static let listError = "side-threads-error"
+    static let listRetry = "side-threads-retry"
+    static let listNote = "side-threads-note"
+    static let listScroll = "side-threads-list"
+    static let formCancel = "side-thread-cancel"
+    static let formName = "side-thread-name"
+    static let formStart = "side-thread-start"
+    static let formError = "side-thread-create-error"
+    static let formEmpty = "side-thread-pick-empty"
+
+    static func listRow(_ id: UUID) -> String {
+        "side-threads-row-\(id.uuidString.lowercased())"
+    }
+
+    /// Named like the Remove buttons: by the person's display name.
+    static func pick(_ name: String) -> String {
+        "side-thread-pick-\(name)"
+    }
+}
+
+// MARK: The list of side threads
+
+/// One line of the list: a thread, who is in it, and its newest reply.
+struct SideThreadRow: Equatable, Identifiable {
+    let info: SideThreadInfo
+    let memberIds: [UUID]
+    let last: SideThreadMessage?
+
+    var id: UUID { info.id }
+    var isDirect: Bool { info.isDirect }
+    /// Newest reply, else when the thread was made, else nothing.
+    var activity: Date? { last?.sentAt ?? info.createdAt }
+}
+
+enum SideThreadList {
+    /// Newest activity first; a thread with no date sorts last, ties by id so the order is stable.
+    static func rows(
+        threads: [SideThreadInfo],
+        memberships: [SideThreadMembership],
+        last: [UUID: SideThreadMessage],
+        squadId: UUID?
+    ) -> [SideThreadRow] {
+        var members: [UUID: [UUID]] = [:]
+        for membership in memberships where !(members[membership.threadId] ?? []).contains(membership.userId) {
+            members[membership.threadId, default: []].append(membership.userId)
+        }
+        let rows = threads
+            .filter { squadId == nil || $0.squadId == squadId }
+            .map { SideThreadRow(info: $0, memberIds: members[$0.id] ?? [], last: last[$0.id]) }
+        return rows.sorted { lhs, rhs in
+            switch (lhs.activity, rhs.activity) {
+            case let (a?, b?) where a != b: return a > b
+            case (nil, _?): return false
+            case (_?, nil): return true
+            default: return lhs.id.uuidString < rhs.id.uuidString
+            }
+        }
+    }
+
+    /// The existing DM between exactly these two people, if there is one.
+    static func directThread(in rows: [SideThreadRow], between a: UUID, and b: UUID) -> SideThreadRow? {
+        rows.first { $0.isDirect && Set($0.memberIds) == Set([a, b]) }
+    }
+}
+
+/// What the list shows. Unread dots are not here: side threads have no read state
+/// (`sq8_chat_read_state` is one row per squad), and a local guess would lie.
+struct SideThreadListState: Equatable {
+    enum Load: Equatable {
+        case idle
+        case loading
+        case ready
+        case failed
+    }
+
+    var load: Load = .idle
+    var rows: [SideThreadRow] = []
+
+    var isEmpty: Bool { load == .ready && rows.isEmpty }
+}
+
+/// The "new side thread" form: who, and a name when it's a group.
+struct SideThreadDraft: Equatable {
+    static let titleLimit = 40
+
+    /// Chosen in tap order.
+    private(set) var selected: [UUID] = []
+    var title = ""
+    var creating = false
+    var error = ""
+    /// Fixed for the draft, so a retry after a lost response reuses the same thread.
+    let threadId: UUID
+
+    init(threadId: UUID = UUID()) {
+        self.threadId = threadId
+    }
+
+    mutating func toggle(_ id: UUID) {
+        if let index = selected.firstIndex(of: id) {
+            selected.remove(at: index)
+        } else {
+            selected.append(id)
+        }
+        error = ""
+    }
+
+    func isSelected(_ id: UUID) -> Bool { selected.contains(id) }
+
+    /// One person is a DM; two or more is a side group.
+    var isDirect: Bool { selected.count == 1 }
+    var isGroup: Bool { selected.count >= 2 }
+
+    var trimmedTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
+    var titleTooLong: Bool { trimmedTitle.count > Self.titleLimit }
+
+    var canCreate: Bool { !selected.isEmpty && !creating && !(isGroup && titleTooLong) }
+
+    /// A group with no typed name is called by its members ("Riley, Sam, Jordan").
+    func resolvedTitle(names: [UUID: String]) -> String? {
+        guard isGroup else { return nil }
+        if !trimmedTitle.isEmpty { return trimmedTitle }
+        let joined = selected.map { SideThreadCopy.displayName($0, names: names) }.joined(separator: ", ")
+        return joined.count <= Self.titleLimit ? joined : String(joined.prefix(Self.titleLimit - 1)) + "…"
+    }
+
+    func newThread(squadId: UUID, creator: UUID, names: [UUID: String]) -> NewSideThread? {
+        guard canCreate else { return nil }
+        return NewSideThread(
+            id: threadId,
+            squadId: squadId,
+            createdBy: creator,
+            memberIds: selected.filter { $0 != creator },
+            title: resolvedTitle(names: names)
+        )
+    }
+}
+
+extension SideThreadCopy {
+    static let listTitle = "Side threads"
+    static let listLoading = "Loading side threads…"
+    static let listFailed = "Couldn't load your side threads."
+    static let listEmpty = "No side threads yet. Start one to talk with part of the squad."
+    static let noUnread = "Unread dots aren't shown yet."
+    static let newThread = "New"
+    static let newTitle = "New side thread"
+    static let pickPrompt = "Who's in it?"
+    static let noOneToPick = "Invite someone to your squad first. A side thread needs at least one other person."
+    static let directHint = "One person starts a direct message."
+    static let groupHint = "Two or more people start a side group."
+    static let namePlaceholder = "Group name (optional)"
+    static let start = "Start"
+    static let createFailed = "Couldn't start the side thread. Check your connection and try again."
+    static let back = "Back"
+
+    static func displayName(_ id: UUID, names: [UUID: String]) -> String {
+        guard let name = names[id], !name.isEmpty else { return "Player" }
+        return name
+    }
+
+    /// The row's second line: who said it, then what. Your own reply says "You".
+    /// A DM leaves the other person's name out because the title is their name.
+    static func preview(_ row: SideThreadRow, viewerId: UUID?, names: [UUID: String]) -> String {
+        guard let last = row.last else { return "No messages yet" }
+        let text = last.body.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        if last.senderId == viewerId { return "You: \(text)" }
+        if row.isDirect { return text }
+        return "\(displayName(last.senderId, names: names)): \(text)"
+    }
+
+    /// "9:02 AM" today, "Wed" within the last week, else "Nov 20".
+    static func when(_ date: Date, now: Date, calendar: Calendar = .current, locale: Locale = .current) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.locale = locale
+        formatter.timeZone = calendar.timeZone
+        if calendar.isDate(date, inSameDayAs: now) {
+            formatter.timeStyle = .short
+            formatter.dateStyle = .none
+        } else if let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: date), to: calendar.startOfDay(for: now)).day,
+                  days > 0, days < 7 {
+            formatter.setLocalizedDateFormatFromTemplate("EEE")
+        } else {
+            formatter.setLocalizedDateFormatFromTemplate("MMM d")
+        }
+        return formatter.string(from: date)
+    }
+
+    /// One spoken line for the row.
+    static func spoken(_ row: SideThreadRow, title: String, viewerId: UUID?, names: [UUID: String], now: Date) -> String {
+        var parts = [row.isDirect ? "Direct message with \(title)" : "Side group \(title)"]
+        parts.append(preview(row, viewerId: viewerId, names: names))
+        if let date = row.last?.sentAt { parts.append(when(date, now: now)) }
+        return parts.joined(separator: ". ")
+    }
 }
 
 final class SupabaseSideThreadService: SideThreadServing {
@@ -248,6 +482,138 @@ final class SupabaseSideThreadService: SideThreadServing {
         return try BackendJSON.decoder.decode([SideThreadMessage].self, from: data).first
     }
 
+    static let listLimit = 100
+    static let lastBatch = 300
+    /// A thread whose newest message is older than the batch is read on its own, up to this many.
+    static let lastFallbacks = 20
+
+    func threads(squadId: UUID) async throws -> [SideThreadInfo] {
+        let data = try await http.send(
+            path: "rest/v1/sq8_threads",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "squad_id", value: "eq.\(squadId.uuidString)"),
+                URLQueryItem(name: "select", value: "id,squad_id,kind,title,created_at"),
+                URLQueryItem(name: "order", value: "created_at.desc"),
+                URLQueryItem(name: "limit", value: "\(Self.listLimit)")
+            ],
+            feature: .messages
+        )
+        return try BackendJSON.decoder.decode([SideThreadInfo].self, from: data)
+    }
+
+    private static func inList(_ ids: [UUID]) -> String {
+        "in.(\(ids.map { $0.uuidString.lowercased() }.joined(separator: ",")))"
+    }
+
+    func memberships(threadIds: [UUID]) async throws -> [SideThreadMembership] {
+        guard !threadIds.isEmpty else { return [] }
+        let data = try await http.send(
+            path: "rest/v1/sq8_thread_members",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "thread_id", value: Self.inList(threadIds)),
+                URLQueryItem(name: "select", value: "thread_id,user_id"),
+                URLQueryItem(name: "order", value: "added_at.asc")
+            ],
+            feature: .messages
+        )
+        return try BackendJSON.decoder.decode([SideThreadMembership].self, from: data)
+    }
+
+    func lastMessages(threadIds: [UUID]) async throws -> [UUID: SideThreadMessage] {
+        guard !threadIds.isEmpty else { return [:] }
+        let data = try await http.send(
+            path: "rest/v1/sq8_thread_messages",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "thread_id", value: Self.inList(threadIds)),
+                URLQueryItem(name: "select", value: Self.messageColumns),
+                URLQueryItem(name: "order", value: "sent_at.desc,id.desc"),
+                URLQueryItem(name: "limit", value: "\(Self.lastBatch)")
+            ],
+            feature: .messages
+        )
+        let rows = try BackendJSON.decoder.decode([SideThreadMessage].self, from: data)
+        var last: [UUID: SideThreadMessage] = [:]
+        for row in rows where last[row.threadId] == nil { last[row.threadId] = row }
+        // A full batch may have crowded out a quiet thread's only message.
+        if rows.count >= Self.lastBatch {
+            for id in threadIds.filter({ last[$0] == nil }).prefix(Self.lastFallbacks) {
+                if let newest = try await messages(threadId: id, limit: 1).last { last[id] = newest }
+            }
+        }
+        return last
+    }
+
+    private struct ThreadWrite: Encodable {
+        let id: UUID
+        let squadId: UUID
+        let kind: String
+        let title: String?
+        let createdBy: UUID
+
+        enum CodingKeys: String, CodingKey {
+            case id
+            case squadId = "squad_id"
+            case kind
+            case title
+            case createdBy = "created_by"
+        }
+
+        func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(id, forKey: .id)
+            try container.encode(squadId, forKey: .squadId)
+            try container.encode(kind, forKey: .kind)
+            try container.encodeIfPresent(title, forKey: .title)
+            try container.encode(createdBy, forKey: .createdBy)
+        }
+    }
+
+    private struct MemberWrite: Encodable {
+        let threadId: UUID
+        let userId: UUID
+        let addedBy: UUID
+
+        enum CodingKeys: String, CodingKey {
+            case threadId = "thread_id"
+            case userId = "user_id"
+            case addedBy = "added_by"
+        }
+    }
+
+    /// 0017/0024 have no create function. The creator may insert the thread row (they
+    /// can't read it back until they're a member, so `return=minimal`), then seats
+    /// everyone in one statement: the creator first among them. Both inserts ignore a
+    /// duplicate, so repeating the same id after a lost response is safe.
+    func create(_ thread: NewSideThread) async throws {
+        let row = ThreadWrite(
+            id: thread.id,
+            squadId: thread.squadId,
+            kind: thread.kind,
+            title: thread.kind == "dm" ? nil : thread.title,
+            createdBy: thread.createdBy
+        )
+        _ = try await http.send(
+            path: "rest/v1/sq8_threads",
+            method: "POST",
+            body: try BackendJSON.encoder.encode(row),
+            prefer: "return=minimal,resolution=ignore-duplicates",
+            feature: .messages
+        )
+        let seated = ([thread.createdBy] + thread.memberIds.filter { $0 != thread.createdBy }).map {
+            MemberWrite(threadId: thread.id, userId: $0, addedBy: thread.createdBy)
+        }
+        _ = try await http.send(
+            path: "rest/v1/sq8_thread_members",
+            method: "POST",
+            body: try BackendJSON.encoder.encode(seated),
+            prefer: "return=minimal,resolution=ignore-duplicates",
+            feature: .messages
+        )
+    }
+
     /// The id is the client's, so a retried send can't post twice.
     func send(_ message: SideThreadMessage) async throws {
         let body = try BackendJSON.encoder.encode(message)
@@ -268,15 +634,24 @@ final class MockSideThreadService: SideThreadServing {
     /// The newest seeded reply: the one the UI test's push opens.
     static let replyId = UUID(uuidString: "00000000-0000-0000-0000-00000000B103")!
 
-    private var threads: [UUID: SideThreadInfo] = [:]
+    private var byId: [UUID: SideThreadInfo] = [:]
     private var memberIds: [UUID: [UUID]] = [:]
     private var stored: [SideThreadMessage] = []
     private(set) var sent: [SideThreadMessage] = []
+    private(set) var created: [NewSideThread] = []
     var failsReads = false
+    var failsCreate = false
+
+    /// Tests: an empty server.
+    func removeAll() {
+        byId = [:]
+        memberIds = [:]
+        stored = []
+    }
 
     func seed(viewerId: UUID, otherId: UUID, squadId: UUID) {
         let thread = Self.threadId
-        threads[thread] = SideThreadInfo(id: thread, squadId: squadId, kind: "side_group", title: "Ranked")
+        byId[thread] = SideThreadInfo(id: thread, squadId: squadId, kind: "side_group", title: "Ranked")
         memberIds[thread] = [viewerId, otherId]
         let base = Date(timeIntervalSince1970: 1_700_000_500)
         let lines: [(String, UUID, String)] = [
@@ -298,7 +673,7 @@ final class MockSideThreadService: SideThreadServing {
 
     func thread(id: UUID) async throws -> SideThreadInfo? {
         if failsReads { throw BackendFailure.reconnecting }
-        return threads[id]
+        return byId[id]
     }
 
     func members(threadId: UUID) async throws -> [UUID] {
@@ -317,8 +692,40 @@ final class MockSideThreadService: SideThreadServing {
         return stored.first { $0.threadId == threadId && $0.id == id }
     }
 
+    func threads(squadId: UUID) async throws -> [SideThreadInfo] {
+        if failsReads { throw BackendFailure.reconnecting }
+        return byId.values.filter { $0.squadId == squadId }.sorted { $0.id.uuidString < $1.id.uuidString }
+    }
+
+    func memberships(threadIds: [UUID]) async throws -> [SideThreadMembership] {
+        if failsReads { throw BackendFailure.reconnecting }
+        return threadIds.flatMap { id in (memberIds[id] ?? []).map { SideThreadMembership(threadId: id, userId: $0) } }
+    }
+
+    func lastMessages(threadIds: [UUID]) async throws -> [UUID: SideThreadMessage] {
+        if failsReads { throw BackendFailure.reconnecting }
+        var last: [UUID: SideThreadMessage] = [:]
+        for id in threadIds {
+            if let newest = stored.filter({ $0.threadId == id }).max(by: { $0.sentAt < $1.sentAt }) { last[id] = newest }
+        }
+        return last
+    }
+
+    func create(_ thread: NewSideThread) async throws {
+        if failsCreate { throw BackendFailure.reconnecting }
+        created.append(thread)
+        byId[thread.id] = SideThreadInfo(
+            id: thread.id,
+            squadId: thread.squadId,
+            kind: thread.kind,
+            title: thread.kind == "dm" ? nil : thread.title,
+            createdAt: Date()
+        )
+        memberIds[thread.id] = [thread.createdBy] + thread.memberIds.filter { $0 != thread.createdBy }
+    }
+
     func send(_ message: SideThreadMessage) async throws {
-        guard threads[message.threadId] != nil else { throw BackendFailure.rejected("No such thread.") }
+        guard byId[message.threadId] != nil else { throw BackendFailure.rejected("No such thread.") }
         sent.append(message)
         if !stored.contains(where: { $0.id == message.id }) { stored.append(message) }
     }

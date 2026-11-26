@@ -201,6 +201,13 @@ final class LiveSessionModel {
     private var loadedSquad: UUID?
     /// The side thread a reply's push opened, shown over the chat. Nil when closed.
     var sideThread: SideThreadPanel?
+    /// The list of side threads, shown over the chat. A thread opened from the list
+    /// sits over the list, so closing it comes back here; a push tap clears this.
+    var sideThreadsOpen = false
+    var sideThreadList = SideThreadListState()
+    /// The new-thread form; nil when not making one.
+    var sideThreadDraft: SideThreadDraft?
+    @ObservationIgnored private var sideThreadsLoad: Task<Void, Never>?
     /// Mock only: the side-thread server (one seeded side group).
     @ObservationIgnored private var mockSideThreads: MockSideThreadService?
     @ObservationIgnored private var sideThreadLoad: Task<Void, Never>?
@@ -271,7 +278,12 @@ final class LiveSessionModel {
             self.mockSquads = squads
             self.mockChat = chat
             let sideThreads = MockSideThreadService()
-            sideThreads.seed(viewerId: session.userId, otherId: ChatSeed.otherId, squadId: ChatSeed.squadId)
+            // `-mock-side-threads empty|down` (UI tests): no threads at all, or a server that's down.
+            let sideMode = LaunchOptions.flag("-mock-side-threads", in: ProcessInfo.processInfo.arguments)
+            if sideMode != "empty" {
+                sideThreads.seed(viewerId: session.userId, otherId: ChatSeed.otherId, squadId: ChatSeed.squadId)
+            }
+            if sideMode == "down" { sideThreads.failsReads = true }
             self.mockSideThreads = sideThreads
             self.mockInvites = MockInviteService(squads: squads)
             if !signedOut {
@@ -1489,6 +1501,8 @@ final class LiveSessionModel {
         olderHoldAnchor = nil
         pendingOpen.clear()
         closeSideThread()
+        closeSideThreadList()
+        sideThreadList = SideThreadListState()
         FunctionPresence.shared.reset()
         gamesEditor = ProfileGamesEditor()
         realtime?.stop()
@@ -1664,10 +1678,13 @@ final class LiveSessionModel {
         let landed = PushCoordinator.shared.coverSerial != lastPushCover
         lastPushCover = PushCoordinator.shared.coverSerial
         if let thread = PushCoordinator.shared.takeThreadOpen() {
+            // A push goes straight to its thread; closing it returns to the chat, not the list.
+            closeSideThreadList()
             openSideThread(thread.thread, reply: thread.reply)
-        } else if landed, sideThread != nil {
+        } else if landed, sideThread != nil || sideThreadsOpen {
             // A squad-chat tap (or "not in that squad") landed: the chat has to show.
             closeSideThread()
+            closeSideThreadList()
         }
         guard signedIn else { return }
         PushCoordinator.shared.askIfReady(signedIn: true, hasSquad: squad != nil)
@@ -2167,10 +2184,113 @@ final class LiveSessionModel {
     }
 
     func closeSideThread() {
+        let wasOpen = sideThread != nil
         sideThreadLoad?.cancel()
         sideThreadLoad = nil
         sideThread = nil
         PushCoordinator.shared.viewingThread = nil
+        // Back on the list: it picks up what was just said.
+        if wasOpen && sideThreadsOpen { reloadSideThreads() }
+    }
+
+    // MARK: Side-thread list and new thread
+
+    func openSideThreadList() {
+        guard squad != nil else { return }
+        sideThreadsOpen = true
+        sideThreadDraft = nil
+        reloadSideThreads(showLoading: sideThreadList.load != .ready)
+    }
+
+    func closeSideThreadList() {
+        sideThreadsLoad?.cancel()
+        sideThreadsLoad = nil
+        sideThreadsOpen = false
+        sideThreadDraft = nil
+    }
+
+    private func reloadSideThreads(showLoading: Bool = false) {
+        sideThreadsLoad?.cancel()
+        sideThreadsLoad = Task { [weak self] in await self?.loadSideThreads(showLoading: showLoading) }
+    }
+
+    /// The signed-in person's side threads for this squad, newest activity first. RLS
+    /// is the filter: a thread you aren't in never comes back.
+    func loadSideThreads(showLoading: Bool = true) async {
+        guard let squad, let session = try? requiredSession() else {
+            sideThreadList.load = .failed
+            return
+        }
+        let squadId = squad.id
+        // A refresh keeps the rows on screen; only the first read shows "Loading".
+        if showLoading || sideThreadList.load == .idle { sideThreadList.load = .loading }
+        let service = sideThreadService(session)
+        do {
+            let threads = try await service.threads(squadId: squadId)
+            let ids = threads.map(\.id)
+            let memberships = try await service.memberships(threadIds: ids)
+            let last = try await service.lastMessages(threadIds: ids)
+            guard self.squad?.id == squadId else { return }
+            sideThreadList.rows = SideThreadList.rows(threads: threads, memberships: memberships, last: last, squadId: squadId)
+            sideThreadList.load = .ready
+        } catch {
+            if RequestNoise.isCancellation(error) { return }
+            sideThreadLog.info("side thread list failed: \(String(describing: error), privacy: .public)")
+            // A failed refresh over rows already shown keeps them rather than blanking the list.
+            if sideThreadList.rows.isEmpty || showLoading { sideThreadList.load = .failed }
+        }
+    }
+
+    func openThreadFromList(_ id: UUID) {
+        openSideThread(id, reply: nil)
+    }
+
+    /// People you can put in a side thread: the squad except you, by name.
+    var sideThreadCandidates: [SquadMemberRecord] {
+        let me = profile?.id ?? viewerId
+        return (squad?.members ?? []).filter { $0.id != me }.sorted {
+            $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
+        }
+    }
+
+    func beginNewSideThread() {
+        sideThreadDraft = SideThreadDraft()
+    }
+
+    func cancelNewSideThread() {
+        sideThreadDraft = nil
+    }
+
+    func toggleSideThreadMember(_ id: UUID) {
+        sideThreadDraft?.toggle(id)
+    }
+
+    /// Opens the DM you already have with that person, or makes the thread and opens it.
+    func createSideThread() async {
+        guard let draft = sideThreadDraft, let squad, let session = try? requiredSession() else { return }
+        let me = session.userId
+        if draft.isDirect, let other = draft.selected.first,
+           let existing = SideThreadList.directThread(in: sideThreadList.rows, between: me, and: other) {
+            sideThreadDraft = nil
+            openSideThread(existing.id, reply: nil)
+            return
+        }
+        guard let thread = draft.newThread(squadId: squad.id, creator: me, names: memberNames) else { return }
+        sideThreadDraft?.creating = true
+        sideThreadDraft?.error = ""
+        do {
+            try await sideThreadService(session).create(thread)
+            sideThreadDraft = nil
+            openSideThread(thread.id, reply: nil)
+        } catch {
+            if RequestNoise.isCancellation(error) {
+                sideThreadDraft?.creating = false
+                return
+            }
+            sideThreadLog.info("side thread create failed: \(String(describing: error), privacy: .public)")
+            sideThreadDraft?.creating = false
+            sideThreadDraft?.error = SideThreadCopy.createFailed
+        }
     }
 
     /// Thread, members, the newest page, and the tapped reply if it's older than that page.
@@ -2241,6 +2361,8 @@ final class LiveSessionModel {
     #if DEBUG
     /// Tests: what the mock side-thread server was sent.
     var mockSideThreadSends: [SideThreadMessage] { mockSideThreads?.sent ?? [] }
+    var mockSideThreadCreates: [NewSideThread] { mockSideThreads?.created ?? [] }
+    var mockSideThreadServer: MockSideThreadService? { mockSideThreads }
     #endif
 
     private func handleSessionError(_ error: Error) {
@@ -2367,10 +2489,15 @@ struct LiveSessionView: View {
                 if model.sideThread != nil {
                     SideThreadView(model: model)
                         .transition(systemReduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .bottom))
+                        .zIndex(3)
+                } else if model.sideThreadsOpen {
+                    SideThreadListView(model: model)
+                        .transition(systemReduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .bottom))
                         .zIndex(2)
                 }
             }
             .animation(systemReduceMotion ? nil : Animation.easeOut(duration: 0.25), value: model.sideThread?.threadId)
+            .animation(systemReduceMotion ? nil : Animation.easeOut(duration: 0.25), value: model.sideThreadsOpen)
             .navigationTitle(squadTitle ?? "SquadSync")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)
@@ -2587,6 +2714,7 @@ struct LiveSessionView: View {
                 onAccount: { confirmSignOut = true },
                 onVoice: { Task { await model.toggleVoice() } },
                 onOpenWhosIn: { model.openWhosIn() },
+                onOpenSideThreads: { model.openSideThreadList() },
                 rosterOpen: $rosterOpen
             )
         }
@@ -3473,6 +3601,21 @@ struct LiveSessionView: View {
                                     .foregroundStyle(SQColor.muted)
                                     .accessibilityIdentifier("invite-empty")
                             }
+                        }
+                    }
+                }
+                if model.squad != nil {
+                    SQCardSurface {
+                        VStack(alignment: .leading, spacing: SQSpace.s) {
+                            panelHeading(SideThreadCopy.listTitle)
+                            Button {
+                                showMembers = false
+                                model.openSideThreadList()
+                            } label: {
+                                Text("Open side threads")
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            }
+                            .accessibilityIdentifier("panel-side-threads")
                         }
                     }
                 }

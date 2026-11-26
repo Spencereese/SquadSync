@@ -101,6 +101,8 @@ xcrun simctl launch "$UDID" com.spencereese.squadsync -backend mock -scenario sp
 
 `-backend mock -scenario spotCallMine` opens that card with you as the caller, so Cancel and Lock are on it.
 
+`-backend mock -scenario playSessions` opens the chat with play sessions: Alex's Warzone session tonight (Alex and Jordan in, Sam out, you haven't answered), your Halo Infinite session in two days, a cancelled one, and one that's over. The next one sits in a bar above the chat; tap it for the list. Schedule a session is in the composer's + menu. `playSessionsEmpty` starts with none, `playSessionsMissing` acts like a server without the `sq8_sessions` tables (the sheet says so and Schedule is off), and `playSessionsFailed` fails every read until you tap Try again. Play sessions use the live `sq8_sessions` and `sq8_session_rsvps` tables from migration 0016; 0025 adds server-side guards and is not applied live yet.
+
 The voice lounge is mock-only. `VoiceRoomService` is the seam for a later hosted room: join, leave, mute, participants, speaking levels, and a connection state of idle, connecting, connected, reconnecting, or failed. `InMemoryVoiceRoomService` is the fake. The live squad room is separate and uses Stream; see [Voice](#voice).
 
 The prototype starts in the inbox. The States menu shows loading, empty, and error. Tap a thread for bubbles, tapbacks, swipe-to-reply, the party card, voice, and handoff.

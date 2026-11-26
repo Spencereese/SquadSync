@@ -880,6 +880,30 @@ final class SupabaseInviteService: InviteServing {
         return InviteTicket(code: code, squadId: squadId)
     }
 
+    func memberInvite() async throws -> InviteTicket {
+        let data: Data
+        do {
+            data = try await http.send(
+                path: "rest/v1/rpc/sq8_member_invite",
+                method: "POST",
+                body: Data("{}".utf8),
+                feature: .squad
+            )
+        } catch BackendFailure.notSetUp {
+            // 0029 isn't applied: the owner can still make one the old way.
+            do {
+                return try await createInvite()
+            } catch InviteProblem.notOwner {
+                throw InviteProblem.memberInvitesNotSetUp
+            }
+        }
+        let payload = try JSONDecoder().decode(InvitePayload.self, from: data)
+        guard payload.ok, let code = payload.code, let squadId = payload.squadId else {
+            throw InviteProblem.from(serverCode: payload.error ?? "not_member")
+        }
+        return InviteTicket(code: code, squadId: squadId, expiresAt: payload.expiresAt.flatMap(BackendJSON.parse))
+    }
+
     func join(code: String) async throws -> UUID {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
@@ -906,9 +930,11 @@ final class SupabaseInviteService: InviteServing {
         let error: String?
         let code: String?
         let squadId: UUID?
+        let expiresAt: String?
         enum CodingKeys: String, CodingKey {
             case ok, error, code
             case squadId = "squad_id"
+            case expiresAt = "expires_at"
         }
     }
 }

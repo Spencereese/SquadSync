@@ -22,18 +22,21 @@ enum SpotCardPhase: Equatable {
     case history(SpotOutcome)
 }
 
-/// One row of the chat thread: a message, a finished spot call, or a play
-/// session card (PlaySessions.swift).
+/// One row of the chat thread: a message, a finished spot call, a play
+/// session card (PlaySessions.swift), or a Game on line.
 enum SpotThreadItem: Identifiable, Equatable {
     case message(ChatEntry)
     case spot(SpotCall)
     case session(PlaySession)
+    /// The line where a Game on started (GameOn.swift).
+    case gameOn(GameOn)
 
     var id: String {
         switch self {
         case .message(let entry): "message-\(entry.id.uuidString)"
         case .spot(let call): "spot-\(call.id.uuidString)"
         case .session(let session): "session-\(session.id.uuidString)"
+        case .gameOn(let call): "gameon-\(call.id.uuidString)"
         }
     }
 }

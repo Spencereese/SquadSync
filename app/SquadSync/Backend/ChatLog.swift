@@ -469,6 +469,8 @@ enum InviteProblem: Error, Equatable {
     case notInSquad
     case alreadyLeft
     case signedOut
+    /// Server without 0029: only the owner can make a link until it's updated.
+    case memberInvitesNotSetUp
     case other(String)
 
     var message: String {
@@ -493,6 +495,8 @@ enum InviteProblem: Error, Equatable {
             "You already left this squad."
         case .signedOut:
             "Sign in again before leaving."
+        case .memberInvitesNotSetUp:
+            "Only the owner can make an invite until the server is updated."
         case .other(let text):
             text
         }
@@ -506,6 +510,7 @@ enum InviteProblem: Error, Equatable {
         case "already_in_squad": .alreadyInASquad
         case "owns_squad_with_members": .ownsSquadWithMembers
         case "not_owner": .notOwner
+        case "not_member": .notInSquad
         case "owner_must_transfer": .ownerMustTransfer
         case "not_in_squad": .notInSquad
         case "already_left": .alreadyLeft

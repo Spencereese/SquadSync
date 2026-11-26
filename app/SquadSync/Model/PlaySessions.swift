@@ -505,6 +505,7 @@ enum PlaySessionThread {
         case .message(let entry): entry.sentAt
         case .spot(let call): SpotThread.endedAt(call)
         case .session(let session): session.createdAt
+        case .gameOn(let call): call.calledAt
         }
     }
 }

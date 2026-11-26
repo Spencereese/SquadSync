@@ -554,6 +554,13 @@ final class MockInviteService: InviteServing {
         return InviteTicket(code: "ABCD2345", squadId: squad.id)
     }
 
+    /// Any member, like 0029. Same code until it's close to expiring.
+    func memberInvite() async throws -> InviteTicket {
+        guard let squad = try await squads.currentSquad(userId: UUID()) else { throw InviteProblem.notInSquad }
+        if squad.members.count >= 8 { throw InviteProblem.full }
+        return InviteTicket(code: "ABCD2345", squadId: squad.id, expiresAt: Date().addingTimeInterval(7 * 86_400))
+    }
+
     func join(code: String) async throws -> UUID {
         if let problem = Self.problem(for: code) { throw problem }
         if try await squads.currentSquad(userId: UUID()) == nil {

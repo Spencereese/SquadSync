@@ -12,6 +12,8 @@ enum BackendFeature: String, Equatable {
     case readState = "Read markers"
     case checkIns = "Check-ins"
     case sessions = "Play sessions"
+    case gameOn = "Game on"
+    case avatars = "Profile photos"
 }
 
 enum BackendFailure: Error, Equatable {
@@ -354,6 +356,7 @@ struct MemberRead: Equatable {
 struct InviteTicket: Equatable {
     var code: String
     var squadId: UUID
+    var expiresAt: Date? = nil
 }
 
 protocol SpotServing: AnyObject {
@@ -372,6 +375,9 @@ protocol SpotServing: AnyObject {
 
 protocol InviteServing: AnyObject {
     func createInvite() async throws -> InviteTicket
+    /// The share link any member can make (0029). Falls back to the owner-only
+    /// `createInvite` on a server without 0029, and says so if you're not the owner.
+    func memberInvite() async throws -> InviteTicket
     func join(code: String) async throws -> UUID
 }
 

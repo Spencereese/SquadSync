@@ -344,6 +344,7 @@ final class PlaySessionTests: XCTestCase {
             case .message(let bubble): return bubble.startsGroup ? "start" : "more"
             case .spot: return "spot"
             case .session: return "session"
+            case .gameOn: return "gameOn"
             }
         }
         XCTAssertEqual(kinds, ["day", "start", "session", "start"])

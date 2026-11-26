@@ -79,6 +79,13 @@
 		A10000000000000000003206 /* PlaySessionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003205 /* PlaySessionViews.swift */; };
 		A10000000000000000003204 /* PlaySessionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003203 /* PlaySessionService.swift */; };
 		A10000000000000000003202 /* PlaySessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003201 /* PlaySessions.swift */; };
+		A10000000000000000003402 /* GameOn.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003401 /* GameOn.swift */; };
+		A10000000000000000003404 /* GroupInvite.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003403 /* GroupInvite.swift */; };
+		A10000000000000000003406 /* CopyCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003405 /* CopyCheck.swift */; };
+		A10000000000000000003408 /* GameOnService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003407 /* GameOnService.swift */; };
+		A1000000000000000000340A /* AvatarService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003409 /* AvatarService.swift */; };
+		A1000000000000000000340C /* GameOnTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000340B /* GameOnTests.swift */; };
+		A1000000000000000000340E /* InviteLinkTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1000000000000000000340D /* InviteLinkTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -177,6 +184,13 @@
 		A10000000000000000003205 /* PlaySessionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaySessionViews.swift; sourceTree = "<group>"; };
 		A10000000000000000003203 /* PlaySessionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaySessionService.swift; sourceTree = "<group>"; };
 		A10000000000000000003201 /* PlaySessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaySessions.swift; sourceTree = "<group>"; };
+		A10000000000000000003401 /* GameOn.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameOn.swift; sourceTree = "<group>"; };
+		A10000000000000000003403 /* GroupInvite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupInvite.swift; sourceTree = "<group>"; };
+		A10000000000000000003405 /* CopyCheck.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CopyCheck.swift; sourceTree = "<group>"; };
+		A10000000000000000003407 /* GameOnService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameOnService.swift; sourceTree = "<group>"; };
+		A10000000000000000003409 /* AvatarService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AvatarService.swift; sourceTree = "<group>"; };
+		A1000000000000000000340B /* GameOnTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameOnTests.swift; sourceTree = "<group>"; };
+		A1000000000000000000340D /* InviteLinkTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InviteLinkTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -238,6 +252,9 @@
 				A10000000000000000000074 /* SquadPresence.swift */,
 				A10000000000000000000970 /* WhosIn.swift */,
 				A10000000000000000003201 /* PlaySessions.swift */,
+				A10000000000000000003405 /* CopyCheck.swift */,
+				A10000000000000000003403 /* GroupInvite.swift */,
+				A10000000000000000003401 /* GameOn.swift */,
 				A10000000000000000000980 /* Onboarding.swift */,
 				A10000000000000000000077 /* SpotThread.swift */,
 				A1000000000000000000007A /* ChatThread.swift */,
@@ -292,6 +309,8 @@
 				A10000000000000000000076 /* SquadHomeTests.swift */,
 				A10000000000000000000973 /* WhosInTests.swift */,
 				A10000000000000000003207 /* PlaySessionTests.swift */,
+				A1000000000000000000340D /* InviteLinkTests.swift */,
+				A1000000000000000000340B /* GameOnTests.swift */,
 				A10000000000000000000985 /* OnboardingTests.swift */,
 				A10000000000000000000987 /* LaunchTests.swift */,
 				A10000000000000000001000 /* ChatDurabilityTests.swift */,
@@ -316,6 +335,8 @@
 				A10000000000000000000050 /* ChatLog.swift */,
 				A10000000000000000000971 /* CheckInService.swift */,
 				A10000000000000000003203 /* PlaySessionService.swift */,
+				A10000000000000000003409 /* AvatarService.swift */,
+				A10000000000000000003407 /* GameOnService.swift */,
 				A10000000000000000002001 /* SquadVoice.swift */,
 				A10000000000000000000983 /* ProfileGames.swift */,
 				A10000000000000000000986 /* LaunchBackend.swift */,
@@ -509,7 +530,12 @@
 				A10000000000000000000974 /* WhosIn.swift in Sources */,
 				A10000000000000000003206 /* PlaySessionViews.swift in Sources */,
 				A10000000000000000003204 /* PlaySessionService.swift in Sources */,
+				A1000000000000000000340A /* AvatarService.swift in Sources */,
+				A10000000000000000003408 /* GameOnService.swift in Sources */,
 				A10000000000000000003202 /* PlaySessions.swift in Sources */,
+				A10000000000000000003406 /* CopyCheck.swift in Sources */,
+				A10000000000000000003404 /* GroupInvite.swift in Sources */,
+				A10000000000000000003402 /* GameOn.swift in Sources */,
 				A10000000000000000000994 /* OnboardingView.swift in Sources */,
 				A10000000000000000000993 /* ProfileGames.swift in Sources */,
 				A10000000000000000000996 /* LaunchBackend.swift in Sources */,
@@ -542,6 +568,8 @@
 				A10000000000000000000086 /* SquadHomeTests.swift in Sources */,
 				A10000000000000000000977 /* WhosInTests.swift in Sources */,
 				A10000000000000000003208 /* PlaySessionTests.swift in Sources */,
+				A1000000000000000000340E /* InviteLinkTests.swift in Sources */,
+				A1000000000000000000340C /* GameOnTests.swift in Sources */,
 				A10000000000000000000995 /* OnboardingTests.swift in Sources */,
 				A10000000000000000000997 /* LaunchTests.swift in Sources */,
 				A10000000000000000000999 /* ChatDurabilityTests.swift in Sources */,

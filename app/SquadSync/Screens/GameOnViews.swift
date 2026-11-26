@@ -18,54 +18,58 @@ struct GroupHomeHeader: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: SQSpace.s) {
-            Button {
+            // The name is a header, not a button: one element, no Button inside it (a
+            // Button wrapped in its own accessibility element left a second, unnamed
+            // "Friday" button in the tree). A tap still opens Members, and so does
+            // VoiceOver's activate; the Members button is the button.
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: SQSpace.xs) {
+                    if linkNote != nil {
+                        Circle()
+                            .fill(SQColor.warning)
+                            .frame(width: 8, height: 8)
+                            .accessibilityHidden(true)
+                    }
+                    Text(SquadHeader.title(squad: squad))
+                        .font(SQType.display)
+                        .foregroundStyle(SQColor.ink)
+                        .lineLimit(large ? 2 : 1)
+                        .minimumScaleFactor(0.6)
+                }
+                if let linkNote, !large {
+                    Text(linkNote)
+                        .font(SQType.caption)
+                        .foregroundStyle(SQColor.subtle)
+                        .lineLimit(1)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture {
                 SQHaptics.play(.tap)
                 onMembers()
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: SQSpace.xs) {
-                        if linkNote != nil {
-                            Circle()
-                                .fill(SQColor.warning)
-                                .frame(width: 8, height: 8)
-                                .accessibilityHidden(true)
-                        }
-                        Text(SquadHeader.title(squad: squad))
-                            .font(SQType.display)
-                            .foregroundStyle(SQColor.ink)
-                            .lineLimit(large ? 2 : 1)
-                            .minimumScaleFactor(0.6)
-                    }
-                    if let linkNote, !large {
-                        Text(linkNote)
-                            .font(SQType.caption)
-                            .foregroundStyle(SQColor.subtle)
-                            .lineLimit(1)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(SquadHeader.spoken(squad: squad) ?? SquadHeader.noSquadTitle)
             .accessibilityValue(linkNote ?? "")
-            .accessibilityHint("Opens members")
             .accessibilityAddTraits(.isHeader)
+            .accessibilityAction { onMembers() }
             .accessibilityIdentifier(squad == nil ? "squad-header-empty" : "squad-title")
 
+            // Exactly one button: the label is drawn from a hidden symbol and a Text,
+            // and the Button itself carries the label and identifier. No
+            // accessibilityElement wrapper (that nested the real button inside a new
+            // element, and its symbol was read as "person.2.fill").
             Button {
                 SQHaptics.play(.tap)
                 onMembers()
             } label: {
-                Group {
-                    if large {
-                        Image(systemName: "person.2.fill")
-                            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                            .accessibilityHidden(true)
-                    } else {
-                        Label("Members", systemImage: "person.2.fill")
-                            .labelStyle(.titleAndIcon)
+                HStack(spacing: SQSpace.xs) {
+                    Image(systemName: "person.2.fill")
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                        .accessibilityHidden(true)
+                    if !large {
+                        Text("Members")
                     }
                 }
                 .font(SQType.label)
@@ -76,10 +80,6 @@ struct GroupHomeHeader: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            // One element: the symbol inside the label was exposed on its own, so
-            // VoiceOver met "person.2.fill" and the tree had a second, unnamed button.
-            .accessibilityElement(children: .ignore)
-            .accessibilityAddTraits(.isButton)
             .accessibilityLabel("Members")
             .accessibilityHint("Invite, voice, side threads, your profile and sign out")
             .accessibilityIdentifier("members")
@@ -90,6 +90,11 @@ struct GroupHomeHeader: View {
 
 // MARK: Pinned area
 
+private struct PinnedContentHeight: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
 /// Over the chat: open Game on cards (two at most), planned sessions that are
 /// starting, and a small Game on button. With nothing on, only the button shows.
 /// At accessibility sizes with the keyboard up it all steps aside for the composer.
@@ -98,24 +103,36 @@ struct GameOnPinnedArea: View {
     let onInvite: () -> Void
 
     @Environment(\.dynamicTypeSize) private var typeSize
+    /// The pinned content's own height, measured, so the capped area is exactly as
+    /// tall as what it shows (up to the cap) and the chat starts below it.
+    @State private var contentHeight: CGFloat = 0
 
     var body: some View {
         // Idle expiry and planned starts are minutes apart, so a 30-second tick is plenty.
         TimelineView(.periodic(from: .now, by: 30)) { context in
             if typeSize.isAccessibilitySize {
                 // At accessibility sizes two cards could push the chat off screen, so the
-                // pinned area stops at a fixed height and scrolls inside it.
-                // The cards' text stops growing at the first accessibility size, so one
-                // card (with its Join, Ready, End) fits under the cap at AX5 and its
-                // buttons stay on screen instead of scrolled out of the clipped area.
-                ViewThatFits(in: .vertical) {
+                // pinned area stops at a fixed height and scrolls inside it. The height is
+                // explicit (the content's measured height, capped): a ViewThatFits/maxHeight
+                // pair let the chat (layout priority 1) squeeze the area to ~20 pt while the
+                // card still drew at full height under the list, so Join and End were
+                // covered. The cards' text also stops growing at the first accessibility
+                // size, so one card with its buttons fits under the cap.
+                ScrollView {
                     content(now: context.date)
-                    ScrollView { content(now: context.date) }
+                        .background {
+                            GeometryReader { proxy in
+                                Color.clear.preference(key: PinnedContentHeight.self, value: proxy.size.height)
+                            }
+                        }
                 }
+                .scrollBounceBehavior(.basedOnSize)
                 .dynamicTypeSize(...DynamicTypeSize.accessibility1)
-                .frame(maxHeight: Self.largeTextMaxHeight)
+                .frame(height: min(contentHeight, Self.largeTextMaxHeight))
+                .onPreferenceChange(PinnedContentHeight.self) { contentHeight = $0 }
             } else {
                 content(now: context.date)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }

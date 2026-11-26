@@ -105,6 +105,9 @@ struct SquadSyncApp: App {
         } else if launch.scenario == .invite || launch.scenario == .almostFull || launch.scenario == .spotHistory || launch.scenario == .spotServerMissing || launch.scenario.isChatScenario || launch.scenario.isWhosInScenario || launch.scenario.isOnboardingScenario {
             LiveSessionView(backend: .mock, scenario: launch.scenario)
                 .modifier(LargeTextLaunch(enabled: launch.largeText))
+        } else if launch.scenario.isPlaySessionScenario {
+            LiveSessionView(backend: .mock, scenario: launch.scenario)
+                .modifier(LargeTextLaunch(enabled: launch.largeText))
         } else if launch.scenario == .noSquad {
             LiveSessionView(backend: .mock)
                 .modifier(LargeTextLaunch(enabled: launch.largeText))

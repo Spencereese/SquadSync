@@ -1068,6 +1068,137 @@ final class AccessibilityUITests: XCTestCase {
             .firstMatch
     }
 
+    // MARK: Play sessions
+
+    private func tapMenuScheduleSession(_ app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let plus = app.buttons["composer-plus"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 15), "The composer's + menu was missing", file: file, line: line)
+        XCTAssertTrue(plus.isHittable, "The composer's + menu was not hittable, frame \(plus.frame)", file: file, line: line)
+        plus.tap()
+        let item = app.buttons["composer-schedule-session"]
+        if item.waitForExistence(timeout: 3) {
+            item.tap()
+            return
+        }
+        let fallback = app.collectionViews.buttons["Schedule a session"]
+        XCTAssertTrue(fallback.waitForExistence(timeout: 3), "Schedule a session was not in the + menu", file: file, line: line)
+        fallback.tap()
+    }
+
+    private func playSummary(_ game: String, in app: XCUIApplication) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "play-session-summary-", game))
+            .firstMatch
+    }
+
+    func testScheduleASessionThenAnswerAndCancelFromTheChatCard() {
+        let app = launchChat("playSessionsEmpty")
+        XCTAssertFalse(element("play-next-bar", in: app).waitForExistence(timeout: 3), "There is nothing scheduled yet")
+
+        tapMenuScheduleSession(app)
+        let game = app.textFields["play-form-game"]
+        XCTAssertTrue(game.waitForExistence(timeout: 5), "The schedule sheet did not open from the + menu")
+        let tomorrow = app.buttons["play-pick-tomorrow"]
+        XCTAssertTrue(tomorrow.waitForExistence(timeout: 3), "Tomorrow was not offered as a quick pick")
+        tomorrow.tap()
+        XCTAssertTrue(tomorrow.isSelected, "The tomorrow pick did not show as chosen")
+        game.tap()
+        game.typeText("Rocket League")
+        let schedule = app.buttons["play-schedule"]
+        XCTAssertTrue(schedule.isHittable, "Schedule was not hittable, frame \(schedule.frame)")
+        schedule.tap()
+        XCTAssertTrue(schedule.waitForNonExistence(timeout: 5), "The sheet stayed open after a successful schedule")
+
+        let summary = playSummary("Rocket League", in: app)
+        XCTAssertTrue(summary.waitForExistence(timeout: 5), "The new session's card did not show in the chat")
+        XCTAssertTrue(summary.label.contains("Tomorrow"), "Card label: \(summary.label)")
+        XCTAssertTrue(summary.label.contains("In: You"), "The scheduler was not put down as In: \(summary.label)")
+        XCTAssertEqual(summary.value as? String, "You're in")
+        let id = String(summary.identifier.dropFirst("play-session-summary-".count))
+
+        let bar = element("play-next-bar", in: app)
+        XCTAssertTrue(bar.waitForExistence(timeout: 5), "The next-session bar did not appear")
+        XCTAssertTrue(bar.label.contains("Rocket League"), "Bar label: \(bar.label)")
+
+        let goIn = app.buttons["play-session-in-\(id)"]
+        let goOut = app.buttons["play-session-out-\(id)"]
+        XCTAssertTrue(goOut.waitForExistence(timeout: 5), "The card had no Out button")
+        reveal(goOut, in: app)
+        XCTAssertTrue(goIn.isSelected, "In was not marked as your answer")
+        goOut.tap()
+        let answeredOut = NSPredicate(format: "value == %@", "You're out")
+        expectation(for: answeredOut, evaluatedWith: summary)
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(goOut.isSelected, "Out was not marked as your answer")
+        XCTAssertFalse(goIn.isSelected, "In stayed marked after answering Out")
+
+        let cancel = app.buttons["play-session-cancel-\(id)"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 3), "The creator had no Cancel on their card")
+        reveal(cancel, in: app)
+        cancel.tap()
+        let confirm = app.alerts.buttons["Cancel session"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 3), "Cancel did not ask to confirm")
+        confirm.tap()
+        XCTAssertTrue(goOut.waitForNonExistence(timeout: 5), "A cancelled session still offered In and Out")
+        XCTAssertTrue(playSummary("Rocket League", in: app).label.contains("Cancelled"), "The card did not say it was cancelled")
+        XCTAssertFalse(cancel.exists, "A cancelled session still offered Cancel")
+        XCTAssertTrue(bar.waitForNonExistence(timeout: 5), "The next-session bar stayed for a cancelled session")
+    }
+
+    func testSeededSessionCardShowsWhoIsInAndTakesYourAnswer() {
+        let app = launchChat("playSessions")
+        let id = "00000000-0000-0000-0000-000000000501"
+        let summary = element("play-session-summary-\(id)", in: app)
+        XCTAssertTrue(summary.waitForExistence(timeout: 15), "Alex's session card was not in the chat")
+        XCTAssertTrue(summary.label.contains("Warzone"), "Card label: \(summary.label)")
+        XCTAssertTrue(summary.label.contains("In: Alex and Jordan"), "Card label: \(summary.label)")
+        XCTAssertTrue(summary.label.contains("Out: Sam"), "Card label: \(summary.label)")
+        XCTAssertEqual(summary.value as? String, "You haven't answered")
+        XCTAssertFalse(app.buttons["play-session-cancel-\(id)"].exists, "Someone else's session offered you Cancel")
+
+        let goIn = app.buttons["play-session-in-\(id)"]
+        XCTAssertTrue(goIn.waitForExistence(timeout: 5))
+        reveal(goIn, in: app)
+        goIn.tap()
+        expectation(for: NSPredicate(format: "value == %@", "You're in"), evaluatedWith: summary)
+        waitForExpectations(timeout: 5)
+        XCTAssertTrue(summary.label.contains("In: You, Alex and Jordan"), "Card label after In: \(summary.label)")
+
+        XCTAssertFalse(app.buttons["play-session-in-00000000-0000-0000-0000-000000000503"].exists, "A session that's over still took answers")
+        XCTAssertFalse(app.buttons["play-session-in-00000000-0000-0000-0000-000000000502"].exists, "A cancelled session still took answers")
+        XCTAssertTrue(element("play-next-bar", in: app).label.contains("Warzone"), "The bar did not lead with the next session")
+    }
+
+    func testPlaySessionsSayWhenTheServerIsNotSetUp() {
+        let app = launchChat("playSessionsMissing")
+        tapMenuScheduleSession(app)
+        let note = element("play-unavailable", in: app)
+        XCTAssertTrue(note.waitForExistence(timeout: 5), "The sheet did not say play sessions aren't set up")
+        XCTAssertEqual(note.label, "Play sessions aren't set up on this server yet.")
+        XCTAssertFalse(app.buttons["play-schedule"].isEnabled, "Schedule stayed enabled with no server support")
+        XCTAssertFalse(element("play-next-bar", in: app).exists)
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "play-session-card").count, 0)
+    }
+
+    func testScheduleSheetStaysUsableAtLargeText() {
+        let app = launchChat("playSessionsEmpty", largeText: true)
+        tapMenuScheduleSession(app)
+        let schedule = app.buttons["play-schedule"]
+        XCTAssertTrue(schedule.waitForExistence(timeout: 5), "The schedule sheet did not open at large text")
+        var tries = 0
+        while !schedule.isHittable, tries < 8 {
+            app.swipeUp()
+            tries += 1
+        }
+        XCTAssertTrue(schedule.isHittable, "Schedule was out of reach at large text, frame \(schedule.frame)")
+        schedule.tap()
+        XCTAssertTrue(schedule.waitForNonExistence(timeout: 5), "The sheet stayed open after scheduling at large text")
+        let card = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier BEGINSWITH %@", "play-session-summary-"))
+            .firstMatch
+        XCTAssertTrue(card.waitForExistence(timeout: 5), "The card did not show in the non-lazy chat at large text")
+    }
+
     func testPlusMenuCallsSpotsFromTheComposer() {
         let app = XCUIApplication()
         app.launchArguments = ["-backend", "mock", "-scenario", "spotHistory"]

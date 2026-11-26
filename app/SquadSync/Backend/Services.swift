@@ -11,6 +11,7 @@ enum BackendFeature: String, Equatable {
     case messages = "Chat"
     case readState = "Read markers"
     case checkIns = "Check-ins"
+    case sessions = "Play sessions"
 }
 
 enum BackendFailure: Error, Equatable {

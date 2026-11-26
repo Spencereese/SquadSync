@@ -55,6 +55,12 @@ Run these in order, in one project, as the migration role:
     - A thread message's `squad_id` must be its thread's squad (policy plus trigger), and the sender must be a thread member. Under 0017, someone who moved to another squad could still file messages in the old squad's thread under the new squad.
 
     Apply after file 17. Running it again is safe. It does not grant `anon` or `public`. The two preflight queries in the file header should return no rows. Local check: `supabase/tests/sq8_side_thread_guards.sql` (in `tests/run.sh`).
+25. `20261126_0025_session_guards.sql` — **NOT applied. Needs Spencer's yes.** Server-side guards for play sessions (file 16). The app's schedule and RSVP slice works on file 16 alone; this only tightens it:
+    - Puts the table privileges back to what file 16 meant. Supabase's default privileges left `authenticated` with DELETE, TRUNCATE, REFERENCES and TRIGGER on both session tables (read-only check, Nov 26, 2026). TRUNCATE skips RLS.
+    - A session's squad, creator and `created_at` can't change. A time that's set or moved must be no more than 5 minutes ago and at most 60 days ahead. A game is at most 60 characters. Cancelling is final and stamped with the server's clock.
+    - An RSVP only goes in or changes while its session isn't cancelled or over (start plus duration, or 2 hours), and only for someone still in that squad. `updated_at` is the server's clock.
+
+    Apply after file 16. Running it again is safe. It does not grant `anon` or `public` and touches no non-sq8 table. Existing rows aren't rewritten. Local check: `supabase/tests/sq8_session_guards.sql` (in `tests/run.sh`, after `sq8_session_guards_pre.sql` gives `authenticated` the live default privileges so the revoke is tested).
 
 ## What each file does
 

@@ -9,6 +9,8 @@ final class RealtimeClient {
         case reaction(ReactionMark, removed: Bool)
         case read(MemberRead)
         case spots
+        /// 0016 publishes `sq8_sessions` and `sq8_session_rsvps`; any change rereads the squad's sessions.
+        case sessions
         /// 0009 publishes `sq8_check_ins`; an insert or update in this squad rereads its rows.
         case checkIns
         /// A check-in was deleted (Clear, or the trigger when someone leaves). It may
@@ -120,6 +122,9 @@ final class RealtimeClient {
             change("sq8_message_reactions", filter: nil),
             change("sq8_spot_calls", filter: "squad_id=eq.\(squad)"),
             change("sq8_spot_rsvps", filter: nil),
+            change("sq8_sessions", filter: "squad_id=eq.\(squad)"),
+            // RSVP rows carry no squad id; RLS only delivers this squad's (0016 select policy).
+            change("sq8_session_rsvps", filter: nil),
             change("sq8_check_ins", filter: "squad_id=eq.\(squad)"),
             // Supabase doesn't deliver DELETEs to a filtered subscription, so Clear
             // would never reach the others. Listen to every check-in delete instead.
@@ -289,6 +294,8 @@ final class RealtimeClient {
             onEvent(.reaction(ReactionMark(messageId: message, userId: user, emoji: emoji), removed: removed))
         case "sq8_spot_calls", "sq8_spot_rsvps":
             onEvent(.spots)
+        case "sq8_sessions", "sq8_session_rsvps":
+            onEvent(.sessions)
         case "sq8_check_ins":
             switch CheckInChange.parse(kind: kind, record: record, previous: previous, squadId: squadId) {
             case .changed: onEvent(.checkIns)

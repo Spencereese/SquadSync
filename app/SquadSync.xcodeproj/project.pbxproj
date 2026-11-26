@@ -70,6 +70,10 @@
 		A10000000000000000002002 /* SquadVoice.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000002001 /* SquadVoice.swift */; };
 		A10000000000000000002004 /* SquadVoiceSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000002003 /* SquadVoiceSheet.swift */; };
 		A10000000000000000002006 /* SquadVoiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000002005 /* SquadVoiceTests.swift */; };
+		A10000000000000000003008 /* PlaySessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003007 /* PlaySessionTests.swift */; };
+		A10000000000000000003006 /* PlaySessionViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003005 /* PlaySessionViews.swift */; };
+		A10000000000000000003004 /* PlaySessionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003003 /* PlaySessionService.swift */; };
+		A10000000000000000003002 /* PlaySessions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003001 /* PlaySessions.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -159,6 +163,10 @@
 		A10000000000000000002001 /* SquadVoice.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadVoice.swift; sourceTree = "<group>"; };
 		A10000000000000000002003 /* SquadVoiceSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadVoiceSheet.swift; sourceTree = "<group>"; };
 		A10000000000000000002005 /* SquadVoiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SquadVoiceTests.swift; sourceTree = "<group>"; };
+		A10000000000000000003007 /* PlaySessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaySessionTests.swift; sourceTree = "<group>"; };
+		A10000000000000000003005 /* PlaySessionViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaySessionViews.swift; sourceTree = "<group>"; };
+		A10000000000000000003003 /* PlaySessionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaySessionService.swift; sourceTree = "<group>"; };
+		A10000000000000000003001 /* PlaySessions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaySessions.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -219,6 +227,7 @@
 				A10000000000000000000060 /* PushRoute.swift */,
 				A10000000000000000000074 /* SquadPresence.swift */,
 				A10000000000000000000970 /* WhosIn.swift */,
+				A10000000000000000003001 /* PlaySessions.swift */,
 				A10000000000000000000980 /* Onboarding.swift */,
 				A10000000000000000000077 /* SpotThread.swift */,
 				A1000000000000000000007A /* ChatThread.swift */,
@@ -239,6 +248,7 @@
 				A10000000000000000000056 /* LiveSessionView.swift */,
 				A10000000000000000000075 /* SquadHomeHeader.swift */,
 				A10000000000000000000972 /* WhosInSheet.swift */,
+				A10000000000000000003005 /* PlaySessionViews.swift */,
 				A10000000000000000000984 /* OnboardingView.swift */,
 				A10000000000000000000078 /* SpotCardViews.swift */,
 				A1000000000000000000007B /* ChatRows.swift */,
@@ -267,6 +277,7 @@
 				A10000000000000000000062 /* PushRouteTests.swift */,
 				A10000000000000000000076 /* SquadHomeTests.swift */,
 				A10000000000000000000973 /* WhosInTests.swift */,
+				A10000000000000000003007 /* PlaySessionTests.swift */,
 				A10000000000000000000985 /* OnboardingTests.swift */,
 				A10000000000000000000987 /* LaunchTests.swift */,
 				A10000000000000000001000 /* ChatDurabilityTests.swift */,
@@ -290,6 +301,7 @@
 			children = (
 				A10000000000000000000050 /* ChatLog.swift */,
 				A10000000000000000000971 /* CheckInService.swift */,
+				A10000000000000000003003 /* PlaySessionService.swift */,
 				A10000000000000000002001 /* SquadVoice.swift */,
 				A10000000000000000000983 /* ProfileGames.swift */,
 				A10000000000000000000986 /* LaunchBackend.swift */,
@@ -477,6 +489,9 @@
 				A10000000000000000002002 /* SquadVoice.swift in Sources */,
 				A10000000000000000002004 /* SquadVoiceSheet.swift in Sources */,
 				A10000000000000000000974 /* WhosIn.swift in Sources */,
+				A10000000000000000003006 /* PlaySessionViews.swift in Sources */,
+				A10000000000000000003004 /* PlaySessionService.swift in Sources */,
+				A10000000000000000003002 /* PlaySessions.swift in Sources */,
 				A10000000000000000000994 /* OnboardingView.swift in Sources */,
 				A10000000000000000000993 /* ProfileGames.swift in Sources */,
 				A10000000000000000000996 /* LaunchBackend.swift in Sources */,
@@ -506,6 +521,7 @@
 				A10000000000000000000063 /* PushRouteTests.swift in Sources */,
 				A10000000000000000000086 /* SquadHomeTests.swift in Sources */,
 				A10000000000000000000977 /* WhosInTests.swift in Sources */,
+				A10000000000000000003008 /* PlaySessionTests.swift in Sources */,
 				A10000000000000000000995 /* OnboardingTests.swift in Sources */,
 				A10000000000000000000997 /* LaunchTests.swift in Sources */,
 				A10000000000000000000999 /* ChatDurabilityTests.swift in Sources */,

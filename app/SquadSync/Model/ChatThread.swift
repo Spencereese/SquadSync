@@ -72,6 +72,7 @@ enum ChatRow: Equatable {
     case unread(count: Int)
     case message(ChatBubble)
     case spot(SpotCall)
+    case session(PlaySession)
 
     var identity: String {
         switch self {
@@ -79,6 +80,7 @@ enum ChatRow: Equatable {
         case .unread: "unread-divider"
         case .message(let bubble): "message-\(bubble.entry.id.uuidString)"
         case .spot(let call): "spot-\(call.id.uuidString)"
+        case .session(let session): "session-\(session.id.uuidString)"
         }
     }
 }
@@ -267,6 +269,8 @@ enum ChatThread {
             switch item {
             case .spot(let call):
                 rows.append(.spot(call))
+            case .session(let session):
+                rows.append(.session(session))
             case .message(let entry):
                 if entry.id == context.unreadAnchor, unreadCount > 0 {
                     rows.append(.unread(count: unreadCount))
@@ -362,6 +366,7 @@ enum ChatThread {
         switch item {
         case .message(let entry): entry.sentAt
         case .spot(let call): SpotThread.endedAt(call)
+        case .session(let session): session.createdAt
         }
     }
 }

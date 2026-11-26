@@ -95,6 +95,26 @@ final class LiveSessionModel {
     /// Set when the history read fails. The thread says so instead of looking empty.
     var spotHistoryNote = ""
     var spotLoad = SpotLoadState.idle
+    // Play sessions (PlaySessions.swift): a time to play, with In and Out.
+    var playSessions: [PlaySession] = []
+    var playLoad = PlaySessionLoad.idle
+    var playSheetOpen = false
+    /// The sheet opens straight on the form (the + menu) instead of the list.
+    var playSheetSchedules = false
+    var playDraft = PlaySessionDraft(startsAt: Date(), game: "", note: "")
+    var playScheduling = false
+    /// Why the form didn't schedule, in plain words.
+    var playScheduleError = ""
+    /// The last thing that happened ("Scheduled …", "Cancelled …").
+    var playNote = ""
+    /// Per session: why the last answer or cancel didn't save.
+    var playErrors: [UUID: String] = [:]
+    /// Sessions with a write in flight. Their buttons wait.
+    var playBusy: Set<UUID> = []
+    /// Bumped when you schedule one, so the chat brings its card into view.
+    var playScheduledSerial = 0
+    var playScheduledId: UUID?
+    @ObservationIgnored private var playSquad: UUID?
     /// The call sheet opened from the composer's + menu or a bare `/spots`.
     var spotSheetOpen = false
     var spotSheet = SpotSheetState.editing
@@ -187,6 +207,8 @@ final class LiveSessionModel {
     private let mockSpots: SpotServing?
     /// Internal so model tests can change what the mock server holds.
     let mockCheckIns: MockCheckInService?
+    /// Mock play-session server. Internal so model tests can change what it holds.
+    let mockPlay: MockPlaySessionService?
     /// Internal so model tests can read what the mock auth and games servers saw.
     let mockAuth: MockAuthService?
     let mockGames: MockProfileGames?
@@ -259,6 +281,7 @@ final class LiveSessionModel {
                 self.resend = ResendClock(cooldown: 5)
             }
             self.mockCheckIns = Self.mockCheckIns(for: scenario, viewerId: session.userId)
+            self.mockPlay = Self.mockPlay(for: scenario, viewerId: session.userId, now: Date())
             self.mockProfiles = MockProfileService()
             self.mockSquads = squads
             self.mockChat = chat
@@ -302,6 +325,26 @@ final class LiveSessionModel {
                     for message in thread.messages { chat.seed(message) }
                     for read in thread.reads { chat.seedRead(userId: read.userId, at: read.lastReadAt) }
                     for mark in thread.reactions { chat.seedReaction(mark) }
+                }
+            } else if scenario.isPlaySessionScenario {
+                let seeded = squads.seedSpotSquad(ownerId: session.userId)
+                self.squad = seeded
+                self.mockSpots = MockSpotService(viewerId: session.userId, ownerId: session.userId, call: nil)
+                let now = Date()
+                let lines: [(String, TimeInterval, UUID)] = [
+                    ("Who's on tonight?", -35 * 60, SpotSeed.alex),
+                    ("I can do 8", -15 * 60, SpotSeed.jordan),
+                    ("Same", -5 * 60, session.userId)
+                ]
+                for (index, line) in lines.enumerated() {
+                    let message = RemoteMessage(
+                        id: UUID(uuidString: "00000000-0000-0000-0000-00000000060\(index + 1)")!,
+                        squadId: seeded.id,
+                        senderId: line.2,
+                        body: line.0,
+                        sentAt: now.addingTimeInterval(line.1)
+                    )
+                    chat.seed(message)
                 }
             } else if scenario == .spotHistory || scenario == .spotServerMissing {
                 let seeded = squads.seedSpotSquad(ownerId: session.userId)
@@ -375,6 +418,7 @@ final class LiveSessionModel {
             self.mockInvites = nil
             self.mockSpots = nil
             self.mockCheckIns = nil
+            self.mockPlay = nil
             self.mockAuth = nil
             self.mockGames = nil
             self.marks = OnboardingMarks()
@@ -416,6 +460,31 @@ final class LiveSessionModel {
             return MockCheckInService(caps: .unknown)
         default:
             return MockCheckInService()
+        }
+    }
+
+    /// Mock play-session servers. Every mock squad has the session tables (like
+    /// live since 0016) and nothing scheduled; the play-session scenarios vary that.
+    private static func mockPlay(for scenario: LaunchScenario, viewerId: UUID, now: Date) -> MockPlaySessionService {
+        let members: Set<UUID> = [viewerId, SpotSeed.alex, SpotSeed.jordan, SpotSeed.sam, SpotSeed.casey]
+        switch scenario {
+        case .playSessions:
+            return MockPlaySessionService(
+                sessions: PlaySessionSeed.squad(viewerId: viewerId, squadId: ChatSeed.squadId, alex: SpotSeed.alex, jordan: SpotSeed.jordan, sam: SpotSeed.sam, now: now),
+                memberIds: members
+            )
+        case .playSessionsEmpty:
+            return MockPlaySessionService(memberIds: members)
+        case .playSessionsMissing:
+            return MockPlaySessionService(serverMissing: true)
+        case .playSessionsFailed:
+            return MockPlaySessionService(
+                sessions: PlaySessionSeed.squad(viewerId: viewerId, squadId: ChatSeed.squadId, alex: SpotSeed.alex, jordan: SpotSeed.jordan, sam: SpotSeed.sam, now: now),
+                memberIds: members,
+                readsDown: true
+            )
+        default:
+            return MockPlaySessionService()
         }
     }
 
@@ -1119,6 +1188,189 @@ final class LiveSessionModel {
         await loadSpot(session)
     }
 
+    // MARK: Play sessions
+
+    private func playService(_ session: AuthSession) -> PlaySessionServing {
+        mockPlay ?? SupabasePlaySessionService(config: config, accessToken: session.accessToken, refresher: tokenRefresher)
+    }
+
+    /// Read-only. A failed refresh keeps what's showing and says so; a server
+    /// without the tables turns the feature off with a plain line.
+    func loadPlaySessions(_ session: AuthSession) async {
+        guard let squad else { return }
+        let requested = squad.id
+        if playSquad != requested {
+            playSquad = requested
+            playSessions = []
+            playErrors = [:]
+            playNote = ""
+            playLoad = .idle
+        }
+        quietly(\.playLoad, PlaySessionLoad.beginning(playLoad))
+        do {
+            let since = Date().addingTimeInterval(-PlaySessionRules.readWindow)
+            let rows = try await playService(session).sessions(squadId: requested, since: since)
+            guard self.squad?.id == requested else { return }
+            quietly(\.playSessions, rows)
+            quietly(\.playLoad, PlaySessionLoad.loaded)
+        } catch {
+            if RequestNoise.isCancellation(error) { return }
+            guard self.squad?.id == requested else { return }
+            if PlaySessionProblem.isSessionFailure(error) {
+                handleSessionError(error)
+                return
+            }
+            let problem = PlaySessionProblem.from(error)
+            if problem == .unavailable {
+                quietly(\.playSessions, [])
+                quietly(\.playLoad, PlaySessionLoad.unavailable)
+            } else {
+                let text = problem == .offline ? problem.message : PlaySessionCopy.loadFailed
+                quietly(\.playLoad, PlaySessionLoad.failed(text))
+            }
+        }
+    }
+
+    func retryPlaySessions() async {
+        mockPlay?.recover()
+        await refreshPlaySessions()
+    }
+
+    /// Opening the sheet reads again; only Retry tells the mock server to come back.
+    func refreshPlaySessions() async {
+        guard let session = try? requiredSession() else { return }
+        await loadPlaySessions(session)
+    }
+
+    /// The + menu opens the form; the bar above the chat opens the list.
+    func openPlaySessions(schedule: Bool = false) {
+        if schedule { resetPlayDraft() }
+        playSheetSchedules = schedule
+        playScheduleError = ""
+        playSheetOpen = true
+    }
+
+    /// Tonight at 8 (or soon), your default game, no note.
+    func resetPlayDraft(now: Date = Date()) {
+        playDraft = PlaySessionDraft(
+            startsAt: PlaySessionTime.suggestedStart(now: now, calendar: .autoupdatingCurrent),
+            game: defaultGame.trimmingCharacters(in: .whitespacesAndNewlines),
+            note: ""
+        )
+        playScheduleError = ""
+    }
+
+    /// True when it was scheduled. You're put down as In right after; if that
+    /// part doesn't save, the session still stands and the note says so.
+    @discardableResult
+    func schedulePlaySession(now: Date = Date()) async -> Bool {
+        guard !playScheduling else { return false }
+        if let problem = playDraft.problem(now: now, defaultGame: defaultGame) {
+            playScheduleError = problem.message
+            return false
+        }
+        guard let squad else { return false }
+        playScheduling = true
+        defer { playScheduling = false }
+        playScheduleError = ""
+        do {
+            let session = try requiredSession()
+            let me = viewerId ?? session.userId
+            let service = playService(session)
+            let created = try await service.schedule(PlaySessionRequest(
+                squadId: squad.id,
+                creatorId: me,
+                game: playDraft.resolvedGame(defaultGame: defaultGame),
+                startsAt: playDraft.startsAt,
+                note: playDraft.resolvedNote
+            ))
+            playSessions = PlaySessionRules.replacing(created, in: playSessions)
+            playLoad = .loaded
+            let time = PlaySessionTime.label(created.startsAt, now: now, clock: .current)
+            do {
+                try await service.respond(sessionId: created.id, userId: me, response: .going)
+                playSessions = PlaySessionRules.replacing(PlaySessionRules.setting(.going, for: me, in: created, at: now), in: playSessions)
+                playNote = PlaySessionCopy.scheduledNote(game: created.game, time: time)
+            } catch {
+                playNote = PlaySessionCopy.scheduledButRSVPFailed(game: created.game, time: time)
+            }
+            playScheduledId = created.id
+            playScheduledSerial += 1
+            await loadPlaySessions(session)
+            return true
+        } catch {
+            if PlaySessionProblem.isSessionFailure(error) {
+                handleSessionError(error)
+                return false
+            }
+            let problem = PlaySessionProblem.from(error)
+            if problem == .unavailable { playLoad = .unavailable }
+            playScheduleError = problem.message
+            return false
+        }
+    }
+
+    /// Shows your answer right away. If the server says no, it goes back to what
+    /// it was and the card says why.
+    func respondToPlaySession(_ id: UUID, _ response: PlaySessionResponse, now: Date = Date()) async {
+        guard !playBusy.contains(id), let before = playSessions.first(where: { $0.id == id }) else { return }
+        guard PlaySessionRules.canRespond(before, now: now) else { return }
+        guard let session = try? requiredSession() else { return }
+        let me = viewerId ?? session.userId
+        if before.response(of: me) == response { return }
+        playBusy.insert(id)
+        defer { playBusy.remove(id) }
+        playErrors[id] = nil
+        playSessions = PlaySessionRules.replacing(PlaySessionRules.setting(response, for: me, in: before, at: now), in: playSessions)
+        do {
+            try await playService(session).respond(sessionId: id, userId: me, response: response)
+            // A read that landed while this was saving may not have it yet.
+            if let current = playSessions.first(where: { $0.id == id }), current.response(of: me) != response {
+                playSessions = PlaySessionRules.replacing(PlaySessionRules.setting(response, for: me, in: current, at: now), in: playSessions)
+            }
+        } catch {
+            if let current = playSessions.first(where: { $0.id == id }) {
+                var restored = current
+                restored.rsvps = before.rsvps
+                playSessions = PlaySessionRules.replacing(restored, in: playSessions)
+            }
+            if PlaySessionProblem.isSessionFailure(error) {
+                handleSessionError(error)
+                return
+            }
+            let problem = PlaySessionProblem.from(error)
+            playErrors[id] = problem == .failed ? "Your answer didn't save. Try again." : problem.message
+            if problem == .cancelled || problem == .over || problem == .notAllowed || problem == .full || problem == .unavailable {
+                await loadPlaySessions(session)
+            }
+        }
+    }
+
+    func cancelPlaySession(_ id: UUID, now: Date = Date()) async {
+        guard !playBusy.contains(id), let current = playSessions.first(where: { $0.id == id }) else { return }
+        guard let session = try? requiredSession() else { return }
+        guard PlaySessionRules.canCancel(current, viewerId: viewerId ?? session.userId, now: now) else { return }
+        playBusy.insert(id)
+        defer { playBusy.remove(id) }
+        playErrors[id] = nil
+        do {
+            let cancelled = try await playService(session).cancel(sessionId: id)
+            playSessions = PlaySessionRules.replacing(cancelled, in: playSessions)
+            let time = PlaySessionTime.label(current.startsAt, now: now, clock: .current)
+            playNote = "Cancelled \(current.game) for \(time)."
+        } catch {
+            if PlaySessionProblem.isSessionFailure(error) {
+                handleSessionError(error)
+                return
+            }
+            let problem = PlaySessionProblem.from(error)
+            playErrors[id] = problem == .failed ? "Couldn't cancel. Try again." : problem.message
+            if problem == .cancelled || problem == .notAllowed || problem == .unavailable {
+                await loadPlaySessions(session)
+            }
+        }
+    }
+
     func send() async {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, let squad else { return }
@@ -1510,6 +1762,12 @@ final class LiveSessionModel {
         profileError = ""
         showProfileErrors = false
         gamesHome = nil
+        playSessions = []
+        playLoad = .idle
+        playSquad = nil
+        playErrors = [:]
+        playNote = ""
+        playSheetOpen = false
         if marks != nil { profileConfirmed = true }
         phase = .email
         settlePush(signedIn: false)
@@ -1632,6 +1890,7 @@ final class LiveSessionModel {
             if !profileConfirmed && squad == nil { await loadOnboardingProfile() }
             await loadChat(session)
             await loadSpot(session)
+            await loadPlaySessions(session)
             // The slow mock skips this so the sheet's own read is the one that loads.
             if mockCheckIns?.waitsForSheet != true { await loadWhosIn() }
             settlePush(signedIn: true)
@@ -2019,6 +2278,8 @@ final class LiveSessionModel {
             if removed { board.remove(mark) } else { board.add(mark) }
         case .spots:
             await loadSpot(session)
+        case .sessions:
+            await loadPlaySessions(session)
         case .checkIns:
             await loadWhosIn()
         case .checkInRemoved(let user):
@@ -2074,6 +2335,7 @@ final class LiveSessionModel {
             quietly(\.chatLoad, .loaded)
             connectionProven()
             await loadSpot(session)
+            await loadPlaySessions(session)
             polls += 1
             #if DEBUG
             pollTrace.debug("poll \(self.polls, privacy: .public) rows=\(rows.count, privacy: .public) thread=\(changed ? "changed" : "same", privacy: .public)")
@@ -2216,6 +2478,8 @@ struct LiveSessionView: View {
     /// Large-text presence roster, floated over the chat instead of pushing it down.
     @State private var rosterOpen = false
     @State private var confirmLeave = false
+    /// A play session whose Cancel was tapped in the chat, waiting on the confirm.
+    @State private var playCancelTarget: PlaySession?
     @ScaledMetric(relativeTo: .body) private var composerLine: CGFloat = 22
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.dynamicTypeSize) private var typeSize
@@ -2276,6 +2540,22 @@ struct LiveSessionView: View {
             WhosInSheet(model: model)
                 .adoptingLaunchDynamicType()
         }
+        .sheet(isPresented: Binding(get: { model.playSheetOpen }, set: { model.playSheetOpen = $0 })) {
+            PlaySessionsSheet(model: model)
+                .adoptingLaunchDynamicType()
+        }
+        .alert(
+            playCancelTarget.map { "Cancel \($0.game)?" } ?? "",
+            isPresented: Binding(get: { playCancelTarget != nil }, set: { if !$0 { playCancelTarget = nil } }),
+            presenting: playCancelTarget
+        ) { target in
+            Button("Cancel session", role: .destructive) {
+                Task { await model.cancelPlaySession(target.id) }
+            }
+            Button("Keep it", role: .cancel) {}
+        } message: { _ in
+            Text("Everyone in the squad will see it's cancelled.")
+        }
         .task { await model.restore() }
         .onReceive(NotificationCenter.default.publisher(for: .sq8PushToken)) { note in
             guard let token = note.object as? String else { return }
@@ -2286,6 +2566,9 @@ struct LiveSessionView: View {
         }
         .onChange(of: PushCoordinator.shared.coverSerial) { _, _ in
             for cover in PushCover.allCases { close(cover) }
+            // Not a PushCover case (that list is the push routing's): closed here instead.
+            model.playSheetOpen = false
+            playCancelTarget = nil
         }
         .task(id: pushToastText) {
             guard let message = pushToastText else { return }
@@ -2440,6 +2723,22 @@ struct LiveSessionView: View {
                     }
                 }
             }
+            if showsPlayBar {
+                TimelineView(.everyMinute) { context in
+                    let upcoming = PlaySessionRules.upcoming(model.playSessions, now: context.date)
+                    if let next = upcoming.first {
+                        PlaySessionNextBar(
+                            next: next,
+                            others: upcoming.count - 1,
+                            members: model.squad?.members ?? [],
+                            viewerId: model.chatViewerId,
+                            now: context.date
+                        ) {
+                            model.openPlaySessions()
+                        }
+                    }
+                }
+            }
             if model.squad != nil {
                 chatList
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
@@ -2449,6 +2748,14 @@ struct LiveSessionView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    /// The next play session sits above the chat while one is coming up. At
+    /// accessibility sizes it steps aside for the keyboard and for a spot call.
+    private var showsPlayBar: Bool {
+        guard model.squad != nil, !model.playLoad.isUnavailable else { return false }
+        if typeSize.isAccessibilitySize && (composerFocused || model.spot != nil) { return false }
+        return !PlaySessionRules.upcoming(model.playSessions, now: Date()).isEmpty
     }
 
     private var homeHeader: some View {
@@ -2561,6 +2868,17 @@ struct LiveSessionView: View {
                 if let outcome = SpotThread.outcome(call, viewerId: spotViewer, now: Date()) {
                     SpotHistoryCard(call: call, outcome: outcome)
                 }
+            case .session(let session):
+                PlaySessionCard(
+                    session: session,
+                    members: model.squad?.members ?? [],
+                    viewerId: model.chatViewerId,
+                    busy: model.playBusy.contains(session.id),
+                    error: model.playErrors[session.id],
+                    onRespond: { response in Task { await model.respondToPlaySession(session.id, response) } },
+                    onCancel: { playCancelTarget = session }
+                )
+                .id(PlaySessionAnchor.id(session.id))
             }
         }
     }
@@ -2710,6 +3028,13 @@ struct LiveSessionView: View {
                 withTransaction(transaction) {
                     proxy.scrollTo(restore.id, anchor: UnitPoint(x: 0.5, y: restore.unitY))
                 }
+            }
+            // The viewer scheduled a play session: bring its card into view.
+            .onChange(of: model.playScheduledSerial) { _, _ in
+                guard let id = model.playScheduledId else { return }
+                model.scrollHold.endHold()
+                model.scrollHold.jumped(toBottom: false)
+                proxy.scrollTo(PlaySessionAnchor.id(id), anchor: .center)
             }
             // The viewer called spots: the card is at the top of the thread.
             .onChange(of: model.spotCalledSerial) { _, _ in
@@ -2913,7 +3238,11 @@ struct LiveSessionView: View {
             viewerId: spotViewer,
             now: Date()
         )
-        return SpotThread.items(entries: model.log.ordered, history: history)
+        let base = SpotThread.items(entries: model.log.ordered, history: history)
+        // Play session cards go where they were scheduled. While older messages are
+        // still unread, cards from before the oldest loaded one wait for that page.
+        let earliest = model.olderPaging.state == .reachedStart ? nil : model.log.ordered.first?.sentAt
+        return PlaySessionThread.items(base, sessions: model.playSessions, earliest: earliest)
     }
 
     /// Top of the thread. An active call keeps its full card here (with the pinned bar
@@ -3255,6 +3584,13 @@ struct LiveSessionView: View {
             .accessibilityIdentifier("composer-call-spots")
             Button {
                 SQHaptics.play(.tap)
+                model.openPlaySessions(schedule: true)
+            } label: {
+                Text(PlaySessionCopy.schedule)
+            }
+            .accessibilityIdentifier("composer-schedule-session")
+            Button {
+                SQHaptics.play(.tap)
                 model.openWhosIn()
             } label: {
                 Text("Who's in")
@@ -3269,7 +3605,7 @@ struct LiveSessionView: View {
                 .contentShape(Rectangle())
         }
         .accessibilityLabel("More")
-        .accessibilityHint("Call spots, or see who's in")
+        .accessibilityHint("Call spots, schedule a session, or see who's in")
         .accessibilityIdentifier("composer-plus")
     }
 

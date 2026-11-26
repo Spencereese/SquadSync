@@ -344,6 +344,15 @@ enum LaunchScenario: String {
     case onboardingSlow
     /// Signed in with no squad, before the profile step is done.
     case onboardingProfile
+    /// Play sessions: Alex's session tonight (you haven't answered), your own later
+    /// one, a cancelled one and one that's over, as cards between a few messages.
+    case playSessions
+    /// The same squad with nothing scheduled yet, so the form and the first card can be tried.
+    case playSessionsEmpty
+    /// A server without the session tables (0016): the feature says so and stays off.
+    case playSessionsMissing
+    /// The sessions read fails until Retry.
+    case playSessionsFailed
 
     var isOnboardingScenario: Bool {
         switch self {
@@ -363,6 +372,13 @@ enum LaunchScenario: String {
     var isWhosInScenario: Bool {
         switch self {
         case .whosIn, .whosInBasic, .whosInEmpty, .whosInFailed, .whosInSlow, .whosInNoServer: true
+        default: false
+        }
+    }
+
+    var isPlaySessionScenario: Bool {
+        switch self {
+        case .playSessions, .playSessionsEmpty, .playSessionsMissing, .playSessionsFailed: true
         default: false
         }
     }

@@ -22,6 +22,8 @@ struct SquadHomeHeader: View {
     let onVoice: () -> Void
     /// Opens the who's-in sheet: avatars and the "Who's in" pill.
     let onOpenWhosIn: () -> Void
+    /// Opens the list of side threads (side groups and DMs). Large text finds it in the squad panel.
+    let onOpenSideThreads: () -> Void
     /// Large-text roster state. The roster itself is drawn by the session screen.
     @Binding var rosterOpen: Bool
 
@@ -110,6 +112,17 @@ struct SquadHomeHeader: View {
                 ) {
                     SQHaptics.play(.tap)
                     rosterOpen.toggle()
+                }
+            }
+            if squad != nil && !large {
+                iconButton(
+                    "bubble.left.and.bubble.right.fill",
+                    label: "Side threads",
+                    identifier: "open-side-threads",
+                    hint: "Opens your side groups and direct messages"
+                ) {
+                    SQHaptics.play(.tap)
+                    onOpenSideThreads()
                 }
             }
             iconButton("person.3.fill", label: "Members", identifier: "members", hint: "Opens invite, join, and remove") {

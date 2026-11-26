@@ -1,6 +1,6 @@
 # Squad message push
 
-This function is not deployed. It does not contain a key. Applying the migration, creating the Firebase apps, and setting the secrets are Spencer's steps.
+The squad-message path is deployed on `sfckxrnoiwetmzdycqaa` (Nov 26, 2026). The side-thread path is not deployed yet (see step 7). The function does not contain a key. Applying the migration, creating the Firebase apps, and setting the secrets are Spencer's steps.
 
 ## What it does
 
@@ -17,6 +17,20 @@ The data payload is:
 ```
 
 The same three fields are copied next to `aps` so an iOS tap still has them. Android `collapse_key` and APNs `apns-collapse-id` / `thread-id` are `squad:<squad id>`.
+
+## Side-thread replies
+
+A second Database Webhook, on `public.sq8_thread_messages` INSERT, sends the same function a side-thread reply (a side group or a DM, 0017 and 0024). The function tells the two apart by the webhook body's `table`; a body for `sq8_messages`, or one with no `table`, takes the squad path above exactly as before.
+
+For a reply it asks `sq8_thread_push_targets(thread, sender)` (0026, service role only). That returns the tokens of the people in that side thread who are still in its squad, never the sender, and never a device the sender has also registered. Nobody outside the thread is notified: only thread members can read it. Then `sq8_thread_push_context(thread, sender)` gives the sender's name and the thread's kind and title for the banner. If that read fails the push still goes out with plain wording.
+
+The banner is `Riley in Ranked` (side group) or `Riley · Direct message` (DM), and the body is the reply text, whitespace folded and cut at 140 characters. The data payload is:
+
+```json
+{ "type": "thread_message", "squad_id": "<uuid>", "thread_id": "<uuid>", "message_id": "<uuid>" }
+```
+
+The same four fields sit next to `aps`. Android `collapse_key` / `tag`, APNs `apns-collapse-id`, and `thread-id` are `thread:<thread id>`, so replies group (and collapse) by side thread, apart from the squad chat. A dead token is dropped the same way as on the squad path. The iOS app opens that side thread over the chat with the reply on screen, and doesn't banner a reply for the side thread that's open.
 
 If FCM answers `UNREGISTERED` or `INVALID_ARGUMENT`, the function calls `sq8_drop_device_token` with the service role and deletes that token. It does not trust a client-supplied recipient list.
 
@@ -67,6 +81,7 @@ Android needs `google-services.json`. iOS needs `GoogleService-Info.plist`. Both
 5. From a machine that is already logged into the Supabase CLI, set the secrets without echoing them: `supabase secrets set SQ8_PUSH_WEBHOOK_SECRET=...`, the four `APNS_*` values, and, for Android, `supabase secrets set FCM_SERVICE_ACCOUNT_JSON="$(cat the-service-account.json)"`. The JSON and the `.p8` text are secret values, not files in git.
 6. Deploy only when those secrets exist: `supabase functions deploy sq8-notify-message --no-verify-jwt`. The webhook is authenticated by `SQ8_PUSH_WEBHOOK_SECRET`, not by a user JWT.
 7. In the Supabase dashboard, add a Database Webhook on `public.sq8_messages` INSERT. Point it at the function URL. Header: `x-sq8-webhook-secret: <the same secret>`.
+   For side-thread replies: apply `20261126_0026_thread_push_targets.sql`, redeploy the function, and add a second Database Webhook on `public.sq8_thread_messages` INSERT to the same URL with the same header.
 8. The iOS app asks for notification permission after the person is signed in and has a squad, not on first launch. It registers the APNs device token and calls `sq8_register_device_token`. A changed token unregisters the previous one and then registers the new one. Sign-out calls `sq8_unregister_device_token`. A tap opens that squad's chat when `type` is `squad_message`, or the squad card when `type` is `squad`. A squad the person is not in says "You're not in that squad." Android still needs `google-services.json` on the build machine if you send through FCM. Do not commit it.
 
 ## Spot nudges, design only
@@ -77,4 +92,4 @@ When someone calls a spot (`sq8_spot_calls` insert, status `open`), notify the m
 
 ## Tests
 
-`deno test --allow-env --allow-read supabase/functions/sq8-notify-message` runs `apns_test.ts`, `fcm_test.ts`, and `auth_test.ts`. The last one drives the real handler with no header and with every secret unset, and expects a 401.
+`deno test --allow-env --allow-read supabase/functions/sq8-notify-message` runs `apns_test.ts`, `fcm_test.ts`, `auth_test.ts`, `thread_test.ts`, and `handler_test.ts`. `auth_test.ts` drives the real handler with no header and with every secret unset, and expects a 401. `handler_test.ts` drives the real handler with `fetch` stubbed and throwaway keys: a squad message still asks `sq8_message_push_targets` and sends the old payload; a side-thread reply asks `sq8_thread_push_targets`, then the context, and sends by thread to APNs and FCM.

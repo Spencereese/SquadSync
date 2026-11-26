@@ -3,12 +3,16 @@ import Foundation
 enum PushKind: String, Equatable {
     case chat = "squad_message"
     case squad = "squad"
+    /// A reply in a side thread (a side group or DM, `sq8_thread_messages`).
+    case thread = "thread_message"
 }
 
 struct PushPayload: Equatable {
     var kind: PushKind
     var squadId: UUID
     var messageId: UUID?
+    /// Only for `.thread`: the side thread the reply is in.
+    var threadId: UUID? = nil
 }
 
 enum PushPayloadParser {
@@ -31,6 +35,11 @@ enum PushPayloadParser {
               let squadId = uuid(values["squad_id"]) else { return nil }
         let messageId = uuid(values["message_id"])
         if kind == .chat && messageId == nil { return nil }
+        if kind == .thread {
+            // A thread tap needs both: which thread, and which reply to show.
+            guard let threadId = uuid(values["thread_id"]), let messageId else { return nil }
+            return PushPayload(kind: kind, squadId: squadId, messageId: messageId, threadId: threadId)
+        }
         return PushPayload(kind: kind, squadId: squadId, messageId: messageId)
     }
 
@@ -49,6 +58,17 @@ enum PushPayloadParser {
 enum PushBanner {
     /// A message for the squad chat already on screen does not raise a banner.
     static func shows(viewingSquad: UUID?, payload: PushPayload) -> Bool {
+        shows(viewingSquad: viewingSquad, viewingThread: nil, payload: payload)
+    }
+
+    /// A side-thread reply banners unless that same side thread is open. While a
+    /// side thread is open it covers the squad chat, so a squad message banners too.
+    static func shows(viewingSquad: UUID?, viewingThread: UUID?, payload: PushPayload) -> Bool {
+        if payload.kind == .thread {
+            guard let viewingThread, let threadId = payload.threadId else { return true }
+            return threadId != viewingThread
+        }
+        if viewingThread != nil { return true }
         guard let viewingSquad else { return true }
         return payload.squadId != viewingSquad
     }
@@ -181,6 +201,31 @@ enum PushNotice {
     static let notAMember = "You're not in that squad."
     static let openedChat = "Opened this chat."
     static let openedSquad = "Opened this squad."
+}
+
+struct PushThreadOpen: Equatable {
+    let thread: UUID
+    let reply: UUID
+}
+
+/// Where a landed tap goes. A side-thread reply opens that thread over the squad
+/// chat; the chat itself is not scrolled for it.
+enum PushDestination: Equatable {
+    case chat(message: UUID?)
+    case squad
+    case thread(UUID, reply: UUID)
+
+    static func of(_ payload: PushPayload) -> PushDestination {
+        switch payload.kind {
+        case .chat:
+            return .chat(message: payload.messageId)
+        case .squad:
+            return .squad
+        case .thread:
+            guard let thread = payload.threadId, let reply = payload.messageId else { return .squad }
+            return .thread(thread, reply: reply)
+        }
+    }
 }
 
 enum PushToast {

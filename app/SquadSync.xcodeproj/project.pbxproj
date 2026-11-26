@@ -38,6 +38,11 @@
 		A10000000000000000000061 /* PushRoute.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000060 /* PushRoute.swift */; };
 		A10000000000000000000063 /* PushRouteTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000062 /* PushRouteTests.swift */; };
 		A10000000000000000000065 /* PushCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000064 /* PushCoordinator.swift */; };
+		A10000000000000000003002 /* SideThreads.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003001 /* SideThreads.swift */; };
+		A10000000000000000003106 /* SideThreadListTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003105 /* SideThreadListTests.swift */; };
+		A10000000000000000003104 /* SideThreadPushTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003103 /* SideThreadPushTests.swift */; };
+		A10000000000000000003102 /* SideThreadListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003101 /* SideThreadListView.swift */; };
+		A10000000000000000003004 /* SideThreadView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000003003 /* SideThreadView.swift */; };
 		A10000000000000000000080 /* Typography.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000070 /* Typography.swift */; };
 		A10000000000000000000081 /* Surfaces.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000071 /* Surfaces.swift */; };
 		A10000000000000000000082 /* Haptics.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000072 /* Haptics.swift */; };
@@ -122,6 +127,11 @@
 		A10000000000000000000060 /* PushRoute.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRoute.swift; sourceTree = "<group>"; };
 		A10000000000000000000062 /* PushRouteTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushRouteTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000064 /* PushCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PushCoordinator.swift; sourceTree = "<group>"; };
+		A10000000000000000003001 /* SideThreads.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideThreads.swift; sourceTree = "<group>"; };
+		A10000000000000000003105 /* SideThreadListTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideThreadListTests.swift; sourceTree = "<group>"; };
+		A10000000000000000003103 /* SideThreadPushTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideThreadPushTests.swift; sourceTree = "<group>"; };
+		A10000000000000000003101 /* SideThreadListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideThreadListView.swift; sourceTree = "<group>"; };
+		A10000000000000000003003 /* SideThreadView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SideThreadView.swift; sourceTree = "<group>"; };
 		A10000000000000000000066 /* SquadSync.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SquadSync.entitlements; sourceTree = "<group>"; };
 		A10000000000000000000070 /* Typography.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Typography.swift; sourceTree = "<group>"; };
 		A10000000000000000000071 /* Surfaces.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Surfaces.swift; sourceTree = "<group>"; };
@@ -237,6 +247,8 @@
 				A10000000000000000000011 /* VoiceRoomView.swift */,
 				A10000000000000000002003 /* SquadVoiceSheet.swift */,
 				A10000000000000000000056 /* LiveSessionView.swift */,
+				A10000000000000000003003 /* SideThreadView.swift */,
+				A10000000000000000003101 /* SideThreadListView.swift */,
 				A10000000000000000000075 /* SquadHomeHeader.swift */,
 				A10000000000000000000972 /* WhosInSheet.swift */,
 				A10000000000000000000984 /* OnboardingView.swift */,
@@ -263,6 +275,8 @@
 				A10000000000000000000015 /* StoreTests.swift */,
 				A10000000000000000000031 /* VoiceRoomServiceTests.swift */,
 				A10000000000000000002005 /* SquadVoiceTests.swift */,
+				A10000000000000000003105 /* SideThreadListTests.swift */,
+				A10000000000000000003103 /* SideThreadPushTests.swift */,
 				A10000000000000000000057 /* ChatLogTests.swift */,
 				A10000000000000000000062 /* PushRouteTests.swift */,
 				A10000000000000000000076 /* SquadHomeTests.swift */,
@@ -301,6 +315,7 @@
 				A10000000000000000000055 /* SupabaseBackend.swift */,
 				A10000000000000000000058 /* RealtimeClient.swift */,
 				A10000000000000000000064 /* PushCoordinator.swift */,
+				A10000000000000000003001 /* SideThreads.swift */,
 				9768416076EE12B49D30B4BA /* StreamVoiceEngine.swift */,
 			);
 			path = Backend;
@@ -467,6 +482,9 @@
 				A10000000000000000000046 /* LiveSessionView.swift in Sources */,
 				A10000000000000000000061 /* PushRoute.swift in Sources */,
 				A10000000000000000000065 /* PushCoordinator.swift in Sources */,
+				A10000000000000000003002 /* SideThreads.swift in Sources */,
+				A10000000000000000003004 /* SideThreadView.swift in Sources */,
+				A10000000000000000003102 /* SideThreadListView.swift in Sources */,
 				A10000000000000000000080 /* Typography.swift in Sources */,
 				A10000000000000000000081 /* Surfaces.swift in Sources */,
 				A10000000000000000000082 /* Haptics.swift in Sources */,
@@ -502,6 +520,8 @@
 				A10000000000000000000029 /* StoreTests.swift in Sources */,
 				A10000000000000000000033 /* VoiceRoomServiceTests.swift in Sources */,
 				A10000000000000000002006 /* SquadVoiceTests.swift in Sources */,
+				A10000000000000000003106 /* SideThreadListTests.swift in Sources */,
+				A10000000000000000003104 /* SideThreadPushTests.swift in Sources */,
 				A10000000000000000000047 /* ChatLogTests.swift in Sources */,
 				A10000000000000000000063 /* PushRouteTests.swift in Sources */,
 				A10000000000000000000086 /* SquadHomeTests.swift in Sources */,

@@ -83,12 +83,14 @@ struct InboxView: View {
                 } label: {
                     HStack {
                         Image(systemName: "person.3.fill")
+                            .accessibilityHidden(true)
                         Text(space.title)
                             .font(.headline)
                             .lineLimit(typeSize.isAccessibilitySize ? 1 : 2)
                             .minimumScaleFactor(0.8)
                         Spacer()
                         Image(systemName: channelsOpen ? "chevron.down" : "chevron.right")
+                            .accessibilityHidden(true)
                     }
                 }
                 .buttonStyle(.plain)

@@ -342,6 +342,7 @@ struct GameOnCard: View {
                             .font(.caption2)
                             .foregroundStyle(SQColor.signal)
                             .background(Circle().fill(SQColor.card))
+                            .accessibilityHidden(true)
                     }
                 }
             }
@@ -560,7 +561,7 @@ struct GameOnSheet: View {
                                 Text(game).foregroundStyle(SQColor.ink)
                                 Spacer()
                                 if !choosingOther && draft.game == game {
-                                    Image(systemName: "checkmark").foregroundStyle(SQColor.signal)
+                                    Image(systemName: "checkmark").foregroundStyle(SQColor.signal).accessibilityHidden(true)
                                 }
                             }
                             .frame(minHeight: 44)
@@ -578,12 +579,13 @@ struct GameOnSheet: View {
                             Text(draft.games.isEmpty ? "Type a game" : GameOnDraft.other).foregroundStyle(SQColor.ink)
                             Spacer()
                             if choosingOther || draft.games.isEmpty {
-                                Image(systemName: "checkmark").foregroundStyle(SQColor.signal)
+                                Image(systemName: "checkmark").foregroundStyle(SQColor.signal).accessibilityHidden(true)
                             }
                         }
                         .frame(minHeight: 44)
                         .contentShape(Rectangle())
                     }
+                    .accessibilityAddTraits(choosingOther || draft.games.isEmpty ? .isSelected : [])
                     .accessibilityIdentifier("game-on-game-other")
                     if choosingOther || draft.games.isEmpty {
                         TextField(GameOnCopy.otherGame, text: $otherGame)

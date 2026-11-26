@@ -3171,14 +3171,19 @@ struct LiveSessionView: View {
                 }
                 // A side-thread reply's push opens that thread over the chat. It's a
                 // layer here, not a sheet, so it never races the sheets a tap closes.
+                // The list stays mounted under a thread opened from it, so Back uncovers
+                // the list where it was instead of sliding a new one in. A tap on Close
+                // right after Back used to land mid-slide and miss.
+                if model.sideThreadsOpen {
+                    SideThreadListView(model: model)
+                        .transition(systemReduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .bottom))
+                        .zIndex(2)
+                        .accessibilityHidden(model.sideThread != nil)
+                }
                 if model.sideThread != nil {
                     SideThreadView(model: model)
                         .transition(systemReduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .bottom))
                         .zIndex(3)
-                } else if model.sideThreadsOpen {
-                    SideThreadListView(model: model)
-                        .transition(systemReduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .bottom))
-                        .zIndex(2)
                 }
             }
             .animation(systemReduceMotion ? nil : Animation.easeOut(duration: 0.25), value: model.sideThread?.threadId)
@@ -4280,6 +4285,29 @@ struct LiveSessionView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("membership-status")
                 }
+                // First, so voice and side threads are on the first screen even at
+                // the largest text size; the rest of the panel is set-up.
+                if model.squad != nil {
+                    SQCardSurface {
+                        VStack(alignment: .leading, spacing: SQSpace.s) {
+                            panelHeading("Voice and side threads")
+                            VoiceRoomPillButton(voice: model.voicePill) {
+                                afterPanel = .voice
+                                showMembers = false
+                            }
+                            .frame(minHeight: 44)
+                            Button {
+                                showMembers = false
+                                model.openSideThreadList()
+                            } label: {
+                                Text("Open side threads")
+                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                            }
+                            .accessibilityHint("Your side groups and direct messages")
+                            .accessibilityIdentifier("panel-side-threads")
+                        }
+                    }
+                }
                 SQCardSurface {
                     VStack(alignment: .leading, spacing: SQSpace.s) {
                         panelHeading("Join with a code")
@@ -4325,27 +4353,6 @@ struct LiveSessionView: View {
                         VStack(alignment: .leading, spacing: SQSpace.s) {
                             panelHeading("Rename")
                             renameControls
-                        }
-                    }
-                }
-                if model.squad != nil {
-                    SQCardSurface {
-                        VStack(alignment: .leading, spacing: SQSpace.s) {
-                            panelHeading("Voice and side threads")
-                            VoiceRoomPillButton(voice: model.voicePill) {
-                                afterPanel = .voice
-                                showMembers = false
-                            }
-                            .frame(minHeight: 44)
-                            Button {
-                                showMembers = false
-                                model.openSideThreadList()
-                            } label: {
-                                Text("Open side threads")
-                                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                            }
-                            .accessibilityHint("Your side groups and direct messages")
-                            .accessibilityIdentifier("panel-side-threads")
                         }
                     }
                 }

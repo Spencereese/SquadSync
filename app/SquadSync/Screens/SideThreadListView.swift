@@ -27,7 +27,8 @@ struct SideThreadListView: View {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: Self.refreshSeconds * 1_000_000_000)
                 guard !Task.isCancelled else { return }
-                if model.sideThreadDraft == nil { await model.loadSideThreads(showLoading: false) }
+                // Covered by a thread opened from it: Back reads it again anyway.
+                if model.sideThreadDraft == nil, model.sideThread == nil { await model.loadSideThreads(showLoading: false) }
             }
         }
     }

@@ -223,7 +223,9 @@ final class AccessibilityUITests: XCTestCase {
         app.buttons["create-invite"].tap()
         let code = app.descendants(matching: .any)["invite-code"]
         XCTAssertTrue(code.waitForExistence(timeout: 5), "Invite code was not shown")
-        XCTAssertEqual(code.label, "ABCD2345")
+        // The code is spelled out for VoiceOver ("A B C D…", not a word); the exact
+        // mock code is still checked, character by character.
+        XCTAssertEqual(code.label, "Invite code A B C D 2 3 4 5")
         XCTAssertFalse(app.descendants(matching: .any)["invite-empty"].exists)
 
         app.buttons["remove-Riley"].tap()

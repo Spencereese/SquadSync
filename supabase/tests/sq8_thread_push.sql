@@ -1,4 +1,4 @@
--- 0025 thread push targets: who a side-thread reply notifies, and who may ask.
+-- 0026 thread push targets: who a side-thread reply notifies, and who may ask.
 -- Not the live project.
 \set ON_ERROR_STOP on
 

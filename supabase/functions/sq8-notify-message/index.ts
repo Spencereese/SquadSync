@@ -1,10 +1,10 @@
 // Deployed on sfckxrnoiwetmzdycqaa (Nov 26, 2026) for sq8_messages. The side-thread
-// path below is not deployed, and needs 0025 plus its own webhook (README.md).
+// path below is not deployed, and needs 0026 plus its own webhook (README.md).
 // A new sq8_messages row notifies the other current members of that squad.
 // Recipients come from sq8.message_push_targets, which drops the sender.
 // A new sq8_thread_messages row (a side-thread reply, its own webhook) notifies
 // that thread's members who are still in the squad, from
-// sq8.thread_push_targets (0025), which also drops the sender.
+// sq8.thread_push_targets (0026), which also drops the sender.
 // This function uses the service role, so it must not trust a client-supplied
 // recipient list. FCM is HTTP v1 with a service-account JWT, not the legacy
 // server key.

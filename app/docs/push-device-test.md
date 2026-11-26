@@ -53,7 +53,7 @@ function log line for that message and a screenshot.
 
 Not run on a phone yet. Before these steps, confirm (don't assume):
 
-1. `supabase/migrations/20261126_0025_thread_push_targets.sql` is applied.
+1. `supabase/migrations/20261126_0026_thread_push_targets.sql` is applied.
 2. `sq8-notify-message` is redeployed from this branch with `--no-verify-jwt`.
 3. A second Database Webhook on `public.sq8_thread_messages` INSERT points at
    the same function URL with the same `x-sq8-webhook-secret` header.

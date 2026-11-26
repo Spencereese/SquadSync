@@ -587,5 +587,11 @@ final class ChatServerTests: XCTestCase {
         XCTAssertEqual(flow.size(width: 100).width, 120, "It can't be narrower than its widest chip")
         XCTAssertEqual(ChipFlowGeometry(count: 0, spacing: 4) { _ in .zero }.size(width: 300), .zero)
     }
-}
 
+    // AX5 reactions hang (app/docs/known-issues.md): at accessibility sizes the
+    // thread is a plain VStack; every other size keeps the lazy stack.
+    func testThreadIsNonLazyOnlyAtAccessibilitySizes() {
+        XCTAssertFalse(ChatListStack.isLazy(accessibilitySize: true))
+        XCTAssertTrue(ChatListStack.isLazy(accessibilitySize: false))
+    }
+}

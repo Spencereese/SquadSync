@@ -628,3 +628,21 @@ struct ChipFlowGeometry: Equatable {
         return CGSize(width: rows.map(rowWidth).max() ?? 0, height: height)
     }
 }
+
+/// Which stack holds the thread's rows. Pure, so the choice is unit tested.
+///
+/// At accessibility text sizes the thread is a plain (non-lazy) VStack. Only a
+/// row or two fits on screen there, so laziness saves little, and the lazy stack
+/// is where the AX5 reactions hang lives: opening or closing the emoji row grew
+/// one row by a few 44 pt rows of emoji, and SwiftUI then spent minutes inside a
+/// single `LazyStack.place` (`ForEachList.applyNodes`, `measureEstimates`)
+/// with no app code running (see app/docs/known-issues.md). Most likely the lazy
+/// placement doesn't settle when AX5 rows are far taller than its estimates. A
+/// VStack has no estimates and no lazy placement: every row is measured exactly. The thread is bounded
+/// by the pages loaded (`ChatOlderPaging.pageSize` per page). Default and
+/// larger non-accessibility sizes keep the lazy stack, unchanged.
+enum ChatListStack {
+    static func isLazy(accessibilitySize: Bool) -> Bool {
+        !accessibilitySize
+    }
+}

@@ -267,6 +267,9 @@ final class LiveSessionModel {
     /// The new-thread form; nil when not making one.
     var sideThreadDraft: SideThreadDraft?
     @ObservationIgnored private var sideThreadsLoad: Task<Void, Never>?
+    /// Bumped when the list closes (and on sign-out), so a read that was already in
+    /// flight can't write its rows or a failure into the next state.
+    @ObservationIgnored private var sideThreadsGeneration = 0
     /// Mock only: the side-thread server (one seeded side group).
     @ObservationIgnored private var mockSideThreads: MockSideThreadService?
     @ObservationIgnored private var sideThreadLoad: Task<Void, Never>?
@@ -2871,6 +2874,7 @@ final class LiveSessionModel {
     }
 
     func closeSideThreadList() {
+        sideThreadsGeneration += 1
         sideThreadsLoad?.cancel()
         sideThreadsLoad = nil
         sideThreadsOpen = false
@@ -2879,12 +2883,17 @@ final class LiveSessionModel {
 
     private func reloadSideThreads(showLoading: Bool = false) {
         sideThreadsLoad?.cancel()
-        sideThreadsLoad = Task { [weak self] in await self?.loadSideThreads(showLoading: showLoading) }
+        let generation = sideThreadsGeneration
+        sideThreadsLoad = Task { [weak self] in await self?.loadSideThreads(showLoading: showLoading, generation: generation) }
     }
 
     /// The signed-in person's side threads for this squad, newest activity first. RLS
     /// is the filter: a thread you aren't in never comes back.
-    func loadSideThreads(showLoading: Bool = true) async {
+    func loadSideThreads(showLoading: Bool = true, generation: Int? = nil) async {
+        let generation = generation ?? sideThreadsGeneration
+        // A read the list (or sign-out) has given up on writes nothing.
+        let current = { !Task.isCancelled && generation == self.sideThreadsGeneration }
+        guard current() else { return }
         guard let squad, let session = try? requiredSession() else {
             sideThreadList.load = .failed
             return
@@ -2898,11 +2907,11 @@ final class LiveSessionModel {
             let ids = threads.map(\.id)
             let memberships = try await service.memberships(threadIds: ids)
             let last = try await service.lastMessages(threadIds: ids)
-            guard self.squad?.id == squadId else { return }
+            guard current(), self.squad?.id == squadId else { return }
             sideThreadList.rows = SideThreadList.rows(threads: threads, memberships: memberships, last: last, squadId: squadId)
             sideThreadList.load = .ready
         } catch {
-            if RequestNoise.isCancellation(error) { return }
+            if RequestNoise.isCancellation(error) || !current() { return }
             sideThreadLog.info("side thread list failed: \(String(describing: error), privacy: .public)")
             // A failed refresh over rows already shown keeps them rather than blanking the list.
             if sideThreadList.rows.isEmpty || showLoading { sideThreadList.load = .failed }
@@ -2989,7 +2998,10 @@ final class LiveSessionModel {
             sideThread?.memberIds = members
             sideThread?.merge(rows)
             if let tapped { sideThread?.merge([tapped]) }
-            sideThread?.note = panel.focus != nil && sideThread?.focusLoaded == false ? SideThreadCopy.replyMissing : ""
+            // Read first, then write: `sideThread?.note = … sideThread?.…` starts the write
+            // access before the right side runs, which traps under exclusivity checking.
+            let replyMissing = panel.focus != nil && sideThread?.focusLoaded == false
+            sideThread?.note = replyMissing ? SideThreadCopy.replyMissing : ""
             sideThread?.load = .ready
         } catch {
             if RequestNoise.isCancellation(error) { return }

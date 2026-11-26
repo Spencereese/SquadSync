@@ -30,14 +30,15 @@ final class ChatModelTests: XCTestCase {
     /// The mock backend has no socket, so it polls every 3 s for the app's whole
     /// life. A poll that brings nothing new must not write anything a view reads:
     /// an @Observable write redraws its readers even when the value is equal, and
-    /// re-entering the spot's loading state put a spinner row at the top of the
-    /// thread. That redraw every 3 s kept the AX5 chat busy under XCUI snapshots.
+    /// re-entering the loading state (the spot card's, now Game on's) put a spinner
+    /// row at the top of the thread. That redraw every 3 s kept the AX5 chat busy under XCUI snapshots.
     func testAPollThatBringsNothingNewRedrawsNothing() async {
         let model = model(.chatPolish)
         await model.reloadChat()
         await model.pollNow()
         XCTAssertEqual(model.polls, 1, "The poll didn't run; is the chat loaded?")
-        XCTAssertEqual(model.spotLoad, .loaded)
+        // Chat-first round 1: Game on replaced the spot card, so the poll reads Game ons.
+        XCTAssertEqual(model.gameOnLoad, .loaded)
         let changed = Changed()
         let reads: [(String, () -> Void)] = [
             ("log", { _ = model.log }),
@@ -47,6 +48,9 @@ final class ChatModelTests: XCTestCase {
             ("spotServer", { _ = model.spotServer }),
             ("spotHistory", { _ = model.spotHistory }),
             ("spotHistoryNote", { _ = model.spotHistoryNote }),
+            ("gameOns", { _ = model.gameOns }),
+            ("gameOnLoad", { _ = model.gameOnLoad }),
+            ("gameOnNote", { _ = model.gameOnNote }),
             ("status", { _ = model.status }),
             ("presenceNote", { _ = model.presenceNote }),
             ("reconnecting", { _ = model.reconnecting }),
@@ -58,7 +62,7 @@ final class ChatModelTests: XCTestCase {
         await model.pollNow()
         XCTAssertEqual(model.polls, 2)
         XCTAssertEqual(changed.names, [], "A poll with nothing new redrew views that read these")
-        XCTAssertEqual(model.spotLoad, .loaded, "A refresh must not show the spot loading row again")
+        XCTAssertEqual(model.gameOnLoad, .loaded, "A refresh must not show the Game on loading row again")
     }
 
     func testReplySendsWithTheOriginalsIdAndClearsTheBanner() async {

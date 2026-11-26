@@ -49,10 +49,47 @@ Phone A sends, phone B receives. Both are signed in and in the same squad.
 Record, for each step: pass or fail, the time (CT), and on a failure the
 function log line for that message and a screenshot.
 
+## Side-thread replies
+
+Not run on a phone yet. Before these steps, confirm (don't assume):
+
+1. `supabase/migrations/20261126_0025_thread_push_targets.sql` is applied.
+2. `sq8-notify-message` is redeployed from this branch with `--no-verify-jwt`.
+3. A second Database Webhook on `public.sq8_thread_messages` INSERT points at
+   the same function URL with the same `x-sq8-webhook-secret` header.
+4. A side thread exists with A and B in it, and a third squad member C who is
+   not in it. The app can't create side threads yet: make one in the SQL
+   editor (an `sq8_threads` row plus `sq8_thread_members` rows for A and B),
+   or reuse one that already exists.
+
+A replies in the side thread. The app can reply only inside a side thread a
+push opened, so the first reply comes from the SQL editor (an
+`sq8_thread_messages` row with A as `sender_id`) or from a side thread B
+opened.
+
+8. **Banner.** B on the home screen. A reply "thread 1" arrives on B as
+   "A in <title>" (or "A · Direct message"), body "thread 1". C gets nothing.
+   A gets nothing.
+9. **Background tap.** Tap it: the side thread opens over the chat with
+   "thread 1" on screen. Close returns to the squad chat.
+10. **Killed tap (cold).** Swipe B's app away, A replies "thread 2", tap: the
+    app launches into the side thread with "thread 2" on screen.
+11. **Sheet open, then tap (warm).** On B open Members, go home, A replies
+    "thread 3", tap: the sheet is gone and the side thread shows "thread 3".
+12. **In the side thread already.** Keep B in that side thread. A replies
+    "thread 4": no banner on B, and "thread 4" shows in the thread within a
+    few seconds. A squad-chat message from A while B is in the side thread
+    does banner (the chat is covered).
+13. **Reply back.** On B type "back" in the side thread and send: A gets a
+    banner "B in <title>", and B gets nothing for their own reply.
+14. **Left the squad.** If C (or anyone) leaves the squad while still a row in
+    the thread, they get nothing.
+15. **Signed out.** Sign out on B. A replies "thread 5": nothing arrives.
+
 ## Not covered
 
-- Side threads (`sq8_thread_messages`) have no push: the webhook is on
-  `sq8_messages` only, and the iOS app has no side-thread screen yet.
+- The app has no list of side threads and can't start one. A side thread opens
+  only from its reply's notification.
 - The `squad` payload type (squad card) is parsed and routed, but no server
   path sends it yet.
 - Spot nudges are a design note in `supabase/functions/sq8-notify-message/README.md`.

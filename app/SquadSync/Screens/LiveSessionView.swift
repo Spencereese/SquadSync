@@ -6,6 +6,7 @@ import os
 /// Opening a pushed message: each step, so a launch that doesn't open it can be read
 /// back from the device log (subsystem com.spencereese.squadsync, category chat-open).
 private let chatOpenLog = Logger(subsystem: "com.spencereese.squadsync", category: "chat-open")
+private let sideThreadLog = Logger(subsystem: "com.spencereese.squadsync", category: "side-thread")
 #if DEBUG
 /// One line per poll: whether it changed the thread. Capture with
 /// `log stream --level debug --predicate 'subsystem == "com.spencereese.squadsync"'`.
@@ -198,6 +199,13 @@ final class LiveSessionModel {
     private var poll: Task<Void, Never>?
     private var expiryRead: Task<Void, Never>?
     private var loadedSquad: UUID?
+    /// The side thread a reply's push opened, shown over the chat. Nil when closed.
+    var sideThread: SideThreadPanel?
+    /// Mock only: the side-thread server (one seeded side group).
+    @ObservationIgnored private var mockSideThreads: MockSideThreadService?
+    @ObservationIgnored private var sideThreadLoad: Task<Void, Never>?
+    /// The coordinator's cover serial last seen, so a landed squad-chat tap closes an open side thread.
+    @ObservationIgnored private var lastPushCover = 0
 
     enum Phase {
         case email
@@ -262,6 +270,9 @@ final class LiveSessionModel {
             self.mockProfiles = MockProfileService()
             self.mockSquads = squads
             self.mockChat = chat
+            let sideThreads = MockSideThreadService()
+            sideThreads.seed(viewerId: session.userId, otherId: ChatSeed.otherId, squadId: ChatSeed.squadId)
+            self.mockSideThreads = sideThreads
             self.mockInvites = MockInviteService(squads: squads)
             if !signedOut {
                 self.phase = .ready
@@ -1477,6 +1488,7 @@ final class LiveSessionModel {
         olderPagedThisSquad = false
         olderHoldAnchor = nil
         pendingOpen.clear()
+        closeSideThread()
         FunctionPresence.shared.reset()
         gamesEditor = ProfileGamesEditor()
         realtime?.stop()
@@ -1648,6 +1660,14 @@ final class LiveSessionModel {
         )
         if let message = PushCoordinator.shared.focusMessage {
             requestOpen(messageId: message)
+        }
+        let landed = PushCoordinator.shared.coverSerial != lastPushCover
+        lastPushCover = PushCoordinator.shared.coverSerial
+        if let thread = PushCoordinator.shared.takeThreadOpen() {
+            openSideThread(thread.thread, reply: thread.reply)
+        } else if landed, sideThread != nil {
+            // A squad-chat tap (or "not in that squad") landed: the chat has to show.
+            closeSideThread()
         }
         guard signedIn else { return }
         PushCoordinator.shared.askIfReady(signedIn: true, hasSquad: squad != nil)
@@ -2128,6 +2148,101 @@ final class LiveSessionModel {
 
     private var tokenRefresher: TokenRefreshing? { auth as? TokenRefreshing }
 
+    private func sideThreadService(_ session: AuthSession) -> SideThreadServing {
+        mockSideThreads ?? SupabaseSideThreadService(
+            config: config,
+            accessToken: session.accessToken,
+            refresher: tokenRefresher
+        )
+    }
+
+    // MARK: Side threads (opened from a reply's push)
+
+    /// Opens a side thread over the chat and loads it, with `reply` scrolled to.
+    func openSideThread(_ thread: UUID, reply: UUID?) {
+        sideThreadLoad?.cancel()
+        sideThread = SideThreadPanel(threadId: thread, focus: reply)
+        PushCoordinator.shared.viewingThread = thread
+        sideThreadLoad = Task { [weak self] in await self?.loadSideThread() }
+    }
+
+    func closeSideThread() {
+        sideThreadLoad?.cancel()
+        sideThreadLoad = nil
+        sideThread = nil
+        PushCoordinator.shared.viewingThread = nil
+    }
+
+    /// Thread, members, the newest page, and the tapped reply if it's older than that page.
+    func loadSideThread() async {
+        guard let panel = sideThread else { return }
+        let id = panel.threadId
+        guard let session = try? requiredSession() else {
+            sideThread?.load = .failed
+            return
+        }
+        let service = sideThreadService(session)
+        sideThread?.load = .loading
+        do {
+            // A thread from another squad (or one this person can't see) is "not available".
+            guard let info = try await service.thread(id: id), info.squadId == squad?.id else {
+                guard sideThread?.threadId == id else { return }
+                sideThread?.load = .notFound
+                return
+            }
+            let members = try await service.members(threadId: id)
+            let rows = try await service.messages(threadId: id, limit: SideThreadPanel.pageSize)
+            var tapped: SideThreadMessage?
+            if let focus = panel.focus, !rows.contains(where: { $0.id == focus }) {
+                tapped = try await service.message(threadId: id, id: focus)
+            }
+            guard sideThread?.threadId == id else { return }
+            sideThread?.info = info
+            sideThread?.memberIds = members
+            sideThread?.merge(rows)
+            if let tapped { sideThread?.merge([tapped]) }
+            sideThread?.note = panel.focus != nil && sideThread?.focusLoaded == false ? SideThreadCopy.replyMissing : ""
+            sideThread?.load = .ready
+        } catch {
+            if RequestNoise.isCancellation(error) { return }
+            guard sideThread?.threadId == id else { return }
+            sideThreadLog.info("side thread load failed: \(String(describing: error), privacy: .public)")
+            sideThread?.load = .failed
+        }
+    }
+
+    /// While a side thread is open: pick up replies that arrived since.
+    func refreshSideThread() async {
+        guard let panel = sideThread, panel.load == .ready, let session = try? requiredSession() else { return }
+        guard let rows = try? await sideThreadService(session).messages(threadId: panel.threadId, limit: SideThreadPanel.pageSize) else { return }
+        guard sideThread?.threadId == panel.threadId else { return }
+        sideThread?.merge(rows)
+    }
+
+    func sendSideThreadReply() async {
+        guard let panel = sideThread, let session = try? requiredSession(),
+              let row = panel.outgoing(id: UUID(), senderId: session.userId, now: Date()) else { return }
+        sideThread?.sending = true
+        sideThread?.sendError = ""
+        do {
+            try await sideThreadService(session).send(row)
+            guard sideThread?.threadId == panel.threadId else { return }
+            sideThread?.merge([row])
+            sideThread?.draft = ""
+            sideThread?.focus = row.id
+            sideThread?.note = ""
+        } catch {
+            guard sideThread?.threadId == panel.threadId else { return }
+            if !RequestNoise.isCancellation(error) { sideThread?.sendError = SideThreadCopy.sendFailed }
+        }
+        if sideThread?.threadId == panel.threadId { sideThread?.sending = false }
+    }
+
+    #if DEBUG
+    /// Tests: what the mock side-thread server was sent.
+    var mockSideThreadSends: [SideThreadMessage] { mockSideThreads?.sent ?? [] }
+    #endif
+
     private func handleSessionError(_ error: Error) {
         if RequestNoise.isCancellation(error) { return }
         guard let failure = error as? BackendFailure else {
@@ -2247,7 +2362,15 @@ struct LiveSessionView: View {
                             .padding(.bottom, SQSpace.xs)
                     }
                 }
+                // A side-thread reply's push opens that thread over the chat. It's a
+                // layer here, not a sheet, so it never races the sheets a tap closes.
+                if model.sideThread != nil {
+                    SideThreadView(model: model)
+                        .transition(systemReduceMotion ? AnyTransition.opacity : AnyTransition.move(edge: .bottom))
+                        .zIndex(2)
+                }
             }
+            .animation(systemReduceMotion ? nil : Animation.easeOut(duration: 0.25), value: model.sideThread?.threadId)
             .navigationTitle(squadTitle ?? "SquadSync")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.visible, for: .navigationBar)

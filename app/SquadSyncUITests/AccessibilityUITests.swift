@@ -624,6 +624,72 @@ final class AccessibilityUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any)["push-notice"].exists)
     }
 
+    private let threadPushPayload = #"{"type":"thread_message","squad_id":"00000000-0000-0000-0000-000000000010","thread_id":"00000000-0000-0000-0000-00000000B001","message_id":"00000000-0000-0000-0000-00000000B103"}"#
+
+    func testColdThreadPushOpensTheSideThreadWithTheReplyAndYouCanAnswer() {
+        // A tap on a side-thread reply's notification with the app not running: the
+        // side thread opens over the chat, the tapped reply is on screen, and you can reply.
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-debug-push-open", threadPushPayload]
+        app.launch()
+
+        let panel = app.descendants(matching: .any)["side-thread"]
+        XCTAssertTrue(panel.waitForExistence(timeout: 15), "The side thread did not open")
+        let title = app.staticTexts["side-thread-title"]
+        XCTAssertTrue(title.waitForExistence(timeout: 5))
+        XCTAssertEqual(title.label, "Ranked")
+        XCTAssertEqual(app.staticTexts["side-thread-context"].label, "Side group · 2 people")
+        let reply = app.descendants(matching: .any)["side-thread-message-00000000-0000-0000-0000-00000000b103"]
+        XCTAssertTrue(reply.waitForExistence(timeout: 5), "The tapped reply was not in the side thread")
+        XCTAssertEqual(reply.label, "Riley: On in 5, bring the mic")
+        let list = app.scrollViews["side-thread-list"]
+        XCTAssertTrue(waitUntil(timeout: 5) { reply.frame.intersects(list.frame) }, "The tapped reply was not scrolled into view: \(reply.frame)")
+        XCTAssertTrue(reply.isHittable, "The tapped reply was covered")
+        XCTAssertFalse(app.descendants(matching: .any)["push-opened-chat"].exists, "A side-thread tap isn't a squad-chat tap")
+        XCTAssertFalse(app.descendants(matching: .any)["push-notice"].exists)
+
+        let composer = app.descendants(matching: .any)["side-thread-composer"]
+        XCTAssertTrue(composer.waitForExistence(timeout: 5))
+        let send = app.buttons["side-thread-send"]
+        XCTAssertFalse(send.isEnabled, "Send is off with nothing typed")
+        composer.tap()
+        composer.typeText("omw")
+        XCTAssertTrue(waitUntil(timeout: 3) { send.isEnabled }, "Send did not turn on")
+        send.tap()
+        let mine = app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", "You: omw")).firstMatch
+        XCTAssertTrue(mine.waitForExistence(timeout: 5), "Your reply did not show in the side thread")
+
+        let close = app.buttons["side-thread-close"]
+        XCTAssertTrue(close.isHittable)
+        close.tap()
+        XCTAssertTrue(waitUntil(timeout: 5) { !panel.exists }, "Close left the side thread up")
+        XCTAssertTrue(app.scrollViews["message-list"].waitForExistence(timeout: 5), "The squad chat was not under the side thread")
+    }
+
+    func testWarmThreadPushClosesTheMembersSheetAndOpensTheSideThread() {
+        // A side-thread tap while the app is open and a sheet covers the chat: the sheet
+        // closes and the side thread opens with the reply on screen. Delivered 12 s in.
+        let app = XCUIApplication()
+        app.launchArguments = ["-backend", "mock", "-scenario", "invite", "-debug-push-open", threadPushPayload, "-debug-push-open-after", "12"]
+        app.launch()
+
+        let members = app.buttons["members"]
+        XCTAssertTrue(members.waitForExistence(timeout: 10), "Members button was not in the bar")
+        members.tap()
+        let count = app.descendants(matching: .any)["squad-count"]
+        XCTAssertTrue(count.waitForExistence(timeout: 5), "The members sheet did not open")
+        let panel = app.descendants(matching: .any)["side-thread"]
+        XCTAssertFalse(panel.exists, "The tap landed before the sheet was open, so this run proves nothing")
+
+        XCTAssertTrue(panel.waitForExistence(timeout: 25), "The warm tap did not open the side thread")
+        XCTAssertTrue(waitUntil(timeout: 5) { !count.exists }, "The members sheet stayed over the side thread")
+        let reply = app.descendants(matching: .any)["side-thread-message-00000000-0000-0000-0000-00000000b103"]
+        XCTAssertTrue(reply.waitForExistence(timeout: 5), "The tapped reply was not in the side thread")
+        let list = app.scrollViews["side-thread-list"]
+        XCTAssertTrue(waitUntil(timeout: 5) { reply.frame.intersects(list.frame) }, "The tapped reply was not scrolled into view: \(reply.frame)")
+        XCTAssertTrue(reply.isHittable, "The tapped reply was covered")
+    }
+
     func testPushBeforeASquadSaysYouAreNotInIt() {
         let app = XCUIApplication()
         let payload = #"{"type":"squad_message","squad_id":"00000000-0000-0000-0000-000000000010","message_id":"00000000-0000-0000-0000-00000000A001"}"#
